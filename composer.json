@@ -1,0 +1,40 @@
+{
+    "name": "thefountainhead/metis",
+    "description": "Data lookup platform for Danish properties, companies, and persons",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2",
+        "laravel/framework": "^12.0",
+        "livewire/livewire": "^3.0",
+        "livewire/flux": "^2.4",
+        "laravel/socialite": "^5.0",
+        "firebase/php-jwt": "^6.0",
+        "mattketmo/email-checker": "^3.0"
+    },
+    "require-dev": {
+        "pestphp/pest": "^4.4",
+        "pestphp/pest-plugin-laravel": "^4.1",
+        "orchestra/testbench": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "TheFountainhead\\Metis\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "TheFountainhead\\Metis\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "TheFountainhead\\Metis\\MetisServiceProvider"
+            ],
+            "aliases": {
+                "Metis": "TheFountainhead\\Metis\\Facades\\Metis"
+            }
+        }
+    }
+}
