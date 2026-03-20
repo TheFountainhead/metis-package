@@ -4,8 +4,9 @@
 
         @unless($result)
         <div class="mb-8 text-center">
+            <img src="/images/metis-logo.png" alt="Metis" class="w-10 h-10 mx-auto mb-4">
             <p class="text-3xl md:text-[40px] font-serif text-ink-800 font-normal tracking-tight">
-                <span class="text-warm-500">&#10042;</span> Hvad vil du vide?
+                Hvad vil du vide?
             </p>
         </div>
         @endunless
