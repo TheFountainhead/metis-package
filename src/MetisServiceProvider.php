@@ -29,9 +29,9 @@ class MetisServiceProvider extends ServiceProvider
             static::standaloneRoutes();
         }
 
-        $this->loadViewComponentsAs('metis', [
-            \TheFountainhead\Metis\View\Components\MetisLink::class,
-        ]);
+        $this->app->booted(function () {
+            \Illuminate\Support\Facades\Blade::component('metis-link', \TheFountainhead\Metis\View\Components\MetisLink::class);
+        });
 
         $this->registerPublishing();
         $this->registerLivewireComponents();
