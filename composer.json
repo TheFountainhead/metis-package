@@ -9,6 +9,7 @@
         "livewire/livewire": "^3.0",
         "livewire/flux": "^2.4",
         "laravel/socialite": "^5.24.1",
+        "codercat/jwk-to-pem": "^1.0",
         "firebase/php-jwt": "^6.4|^7.0",
         "mattketmo/email-checker": "^3.0"
     },

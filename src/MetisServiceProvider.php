@@ -75,6 +75,11 @@ class MetisServiceProvider extends ServiceProvider
             return;
         }
 
+        // Admin components
+        Livewire::component('metis-admin-dashboard', \TheFountainhead\Metis\Livewire\Admin\Dashboard::class);
+        Livewire::component('metis-admin-leads', \TheFountainhead\Metis\Livewire\Admin\Leads::class);
+        Livewire::component('metis-admin-logs', \TheFountainhead\Metis\Livewire\Admin\Logs::class);
+
         // Address sections
         Livewire::component('metis-address-bbr', \TheFountainhead\Metis\Livewire\Sections\AddressBbr::class);
         Livewire::component('metis-address-companies', \TheFountainhead\Metis\Livewire\Sections\AddressCompanies::class);
@@ -121,6 +126,11 @@ class MetisServiceProvider extends ServiceProvider
             return;
         }
 
-        // Criipto Socialite driver will be registered here in the admin auth task.
+        $socialite = $this->app->make(\Laravel\Socialite\Contracts\Factory::class);
+        $socialite->extend('criipto', function () use ($socialite) {
+            $config = config('services.criipto');
+
+            return $socialite->buildProvider(\TheFountainhead\Metis\Auth\SocialiteCriiptoProvider::class, $config);
+        });
     }
 }
