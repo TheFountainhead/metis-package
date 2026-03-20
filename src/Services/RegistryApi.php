@@ -146,9 +146,54 @@ class RegistryApi
         return $this->post('/v1/cvr/cross-ownership', ['cvr_numbers' => $cvrs]);
     }
 
-    public function fetchRolesByCvr(array $cvrs): array
+    public function fetchRolesByCvr(array $cvrs, ?string $excludeCpr = null): array
     {
-        return $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $cvrs]);
+        $payload = ['cvr_numbers' => $cvrs];
+        if ($excludeCpr) {
+            $payload['exclude_cpr'] = $excludeCpr;
+        }
+
+        return $this->post('/v1/cvr/roles-by-cvr', $payload);
+    }
+
+    public function fetchCompanyInfo(string $cvr): ?array
+    {
+        return $this->get("/v1/cvr/{$cvr}");
+    }
+
+    public function fetchCompanyStructure(string $cvr): array
+    {
+        return $this->get("/v1/cvr/{$cvr}/structure") ?? [];
+    }
+
+    public function fetchCompanyPropertyPortfolio(string $cvr): ?array
+    {
+        return $this->get("/v1/cvr/{$cvr}/properties");
+    }
+
+    public function fetchCompanyTaxRecords(string $cvr): ?array
+    {
+        return $this->get("/v1/cvr/{$cvr}/tax");
+    }
+
+    public function fetchCompaniesByCpr(string $cpr): ?array
+    {
+        return $this->post('/v1/cpr/companies', ['cpr' => $cpr]);
+    }
+
+    public function fetchPropertiesByCpr(string $cpr): ?array
+    {
+        return $this->post('/v1/cpr/properties', ['cpr' => $cpr]);
+    }
+
+    public function fetchPersonRoles(string $query): ?array
+    {
+        return $this->post('/v1/cpr/roles', ['query' => $query]);
+    }
+
+    public function fetchPersonPropertyPortfolioByCpr(string $cpr): ?array
+    {
+        return $this->post('/v1/cpr/property-portfolio', ['cpr' => $cpr]);
     }
 
     /**
