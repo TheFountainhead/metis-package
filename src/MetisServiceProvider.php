@@ -103,6 +103,12 @@ class MetisServiceProvider extends ServiceProvider
 
         // Map
         Livewire::component('metis-map-panel', \TheFountainhead\Metis\Livewire\MapPanel::class);
+
+        // Core components
+        Livewire::component('metis-search', \TheFountainhead\Metis\Livewire\Search::class);
+        Livewire::component('metis-email-gate', \TheFountainhead\Metis\Livewire\EmailGate::class);
+        Livewire::component('metis-index', \TheFountainhead\Metis\Livewire\Index::class);
+        Livewire::component('metis-lookup', \TheFountainhead\Metis\Livewire\Lookup::class);
     }
 
     protected function registerCriiptoDriver(): void

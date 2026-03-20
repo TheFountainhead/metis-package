@@ -131,9 +131,9 @@ class RegistryApi
         return $this->get("/v1/valuations/{$matrikelId}");
     }
 
-    public function addressAutocomplete(string $query): array
+    public function addressAutocomplete(string $query, int $limit = 10): array
     {
-        return $this->get('/v1/map/autocomplete', ['q' => $query]) ?? [];
+        return $this->get('/v1/map/autocomplete', ['q' => $query, 'limit' => $limit]) ?? [];
     }
 
     public function getMapLayers(): array
