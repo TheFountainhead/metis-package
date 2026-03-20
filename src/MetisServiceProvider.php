@@ -29,6 +29,10 @@ class MetisServiceProvider extends ServiceProvider
             static::standaloneRoutes();
         }
 
+        $this->loadViewComponentsAs('metis', [
+            \TheFountainhead\Metis\View\Components\MetisLink::class,
+        ]);
+
         $this->registerPublishing();
         $this->registerLivewireComponents();
         $this->registerCriiptoDriver();

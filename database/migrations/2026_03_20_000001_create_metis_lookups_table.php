@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('metis_lookups')) {
+            return;
+        }
+
         Schema::create('metis_lookups', function (Blueprint $table) {
             $table->id();
             $table->string('session_id')->index();
