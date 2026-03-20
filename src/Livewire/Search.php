@@ -42,21 +42,24 @@ class Search extends Component
     public function mount(): void
     {
         $allChips = [
-            // Ejendomsanalyse
-            ['label' => 'Hvem ejer Bredgade 40, KBH?', 'query' => 'Bredgade 40, 1260 København'],
-            ['label' => 'Oversvømmelsesrisiko på Strandvejen', 'query' => 'Strandvejen 100, 2900 Hellerup'],
-            ['label' => 'Tinglyst gæld på Amagertorv 15', 'query' => 'Amagertorv 15, 1160 København'],
+            // Person → selskaber + ejendomme
+            ['label' => 'Hvilke selskaber er Lars Larsen med i?', 'query' => 'Lars Larsen'],
+            ['label' => 'Hvad ejer Fritz Schur?', 'query' => 'Fritz Schur'],
+            ['label' => 'Alle roller for Niels B. Christiansen', 'query' => 'Niels B. Christiansen'],
 
-            // Virksomhedsanalyse
-            ['label' => 'Alle ejendomme ejet af Jeudan', 'query' => 'Jeudan A/S'],
+            // Virksomhed → ejendomme + personer + struktur
+            ['label' => 'Hvad ejer Jeudan A/S?', 'query' => 'Jeudan A/S'],
             ['label' => 'Hvem sidder i bestyrelsen hos Mærsk?', 'query' => 'A.P. Møller - Mærsk A/S'],
             ['label' => 'Carlsbergs selskabsstruktur', 'query' => 'Carlsberg A/S'],
-            ['label' => 'Hvilke firmaer ligger på Kongens Nytorv?', 'query' => 'Kongens Nytorv 1, 1050 København'],
 
-            // Krydstjek person ↔ selskab ↔ ejendom
-            ['label' => 'Ejendomme bag CVR 56811913', 'query' => '56811913'],
+            // Adresse → ejer + virksomheder + vurdering
+            ['label' => 'Hvem ejer Bredgade 40?', 'query' => 'Bredgade 40, 1260 København'],
             ['label' => 'Virksomheder på Nyhavn 71', 'query' => 'Nyhavn 71, 1051 København'],
-            ['label' => 'Hvem ejer Strøget 1?', 'query' => 'Østergade 1, 1100 København'],
+            ['label' => 'Vurdering af Amagertorv 15', 'query' => 'Amagertorv 15, 1160 København'],
+
+            // CVR → fuld analyse
+            ['label' => 'Ejendomme bag CVR 56811913', 'query' => '56811913'],
+            ['label' => 'Alle detaljer om CVR 10007127', 'query' => '10007127'],
         ];
 
         $this->chips = collect($allChips)->random(4)->values()->all();
