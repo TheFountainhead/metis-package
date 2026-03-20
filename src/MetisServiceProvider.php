@@ -100,6 +100,9 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-person-roles', \TheFountainhead\Metis\Livewire\Sections\PersonRoles::class);
         Livewire::component('metis-person-properties', \TheFountainhead\Metis\Livewire\Sections\PersonProperties::class);
         Livewire::component('metis-person-relations', \TheFountainhead\Metis\Livewire\Sections\PersonRelations::class);
+
+        // Map
+        Livewire::component('metis-map-panel', \TheFountainhead\Metis\Livewire\MapPanel::class);
     }
 
     protected function registerCriiptoDriver(): void
