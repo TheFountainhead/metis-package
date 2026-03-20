@@ -49,6 +49,6 @@ class Leads extends Component
 
         return view('metis::livewire.admin.leads', [
             'leads' => $leads,
-        ]);
+        ])->layout('metis::layouts.admin');
     }
 }

@@ -62,6 +62,6 @@ class Logs extends Component
 
         return view('metis::livewire.admin.logs', [
             'logs' => $logs,
-        ]);
+        ])->layout('metis::layouts.admin');
     }
 }

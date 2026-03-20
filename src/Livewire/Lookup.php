@@ -36,6 +36,12 @@ class Lookup extends Component
 
     public function render()
     {
-        return view('metis::livewire.lookup');
+        $view = view('metis::livewire.lookup');
+
+        if (config('metis.mode') === 'standalone') {
+            return $view->layout('metis::layouts.standalone');
+        }
+
+        return $view;
     }
 }

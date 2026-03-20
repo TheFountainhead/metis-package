@@ -129,8 +129,14 @@ class Index extends Component
                 ->get();
         }
 
-        return view('metis::livewire.index', [
+        $view = view('metis::livewire.index', [
             'lookups' => $lookups,
         ]);
+
+        if (config('metis.mode') === 'standalone') {
+            return $view->layout('metis::layouts.standalone');
+        }
+
+        return $view;
     }
 }

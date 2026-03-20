@@ -39,7 +39,8 @@ class MetisServiceProvider extends ServiceProvider
         $routesPath = __DIR__.'/../routes/web.php';
 
         if (file_exists($routesPath)) {
-            require $routesPath;
+            \Illuminate\Support\Facades\Route::middleware('web')
+                ->group($routesPath);
         }
     }
 
@@ -48,7 +49,8 @@ class MetisServiceProvider extends ServiceProvider
         $routesPath = __DIR__.'/../routes/embedded.php';
 
         if (file_exists($routesPath)) {
-            require $routesPath;
+            \Illuminate\Support\Facades\Route::middleware('web')
+                ->group($routesPath);
         }
     }
 

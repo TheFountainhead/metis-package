@@ -315,6 +315,12 @@ class Search extends Component
 
     public function render()
     {
-        return view('metis::livewire.search');
+        $view = view('metis::livewire.search');
+
+        if (config('metis.mode') === 'standalone') {
+            return $view->layout('metis::layouts.standalone');
+        }
+
+        return $view;
     }
 }

@@ -24,6 +24,6 @@ class Dashboard extends Component
                 ->orderByDesc('count')
                 ->limit(10)
                 ->get(),
-        ]);
+        ])->layout('metis::layouts.admin');
     }
 }
