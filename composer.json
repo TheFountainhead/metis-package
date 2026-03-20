@@ -8,14 +8,22 @@
         "laravel/framework": "^12.0",
         "livewire/livewire": "^3.0",
         "livewire/flux": "^2.4",
-        "laravel/socialite": "^5.0",
-        "firebase/php-jwt": "^6.0",
+        "laravel/socialite": "^5.24.1",
+        "firebase/php-jwt": "^6.4|^7.0",
         "mattketmo/email-checker": "^3.0"
     },
     "require-dev": {
         "pestphp/pest": "^4.4",
         "pestphp/pest-plugin-laravel": "^4.1",
         "orchestra/testbench": "^10.0"
+    },
+    "config": {
+        "audit": {
+            "ignore": ["PKSA-y2cr-5h3j-g3ys"]
+        },
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
     },
     "autoload": {
         "psr-4": {

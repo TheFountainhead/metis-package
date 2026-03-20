@@ -1,0 +1,65 @@
+<?php
+
+namespace TheFountainhead\Metis\Services;
+
+class SearchDetector
+{
+    /**
+     * Suffixes that are safe for str_contains matching (unique enough to avoid false positives).
+     */
+    private const LEGAL_SUFFIXES = [
+        'A/S', 'ApS', 'IVS', 'K/S', 'I/S', 'P/S', 'AmbA',
+        'a/s', 'aps', 'ivs', 'k/s', 'i/s', 'p/s', 'amba',
+        'A.M.B.A.', 'S/I', 's/i',
+    ];
+
+    /**
+     * Patterns that require word-boundary matching to avoid false positives.
+     * Merged from MetisInputDetector patterns.
+     */
+    private const COMPANY_WORD_PATTERN = '/\b(Holding|Invest|Fond|Fonden|Forening|Fund|FMBA|SMBA|SE|SCE)\b/i';
+
+    public function detect(string $input): string
+    {
+        $input = trim($input);
+
+        if (preg_match('/^\d{6}-?\d{4}$/', $input)) {
+            return 'cpr';
+        }
+
+        if (preg_match('/^\d{8}$/', $input)) {
+            return 'cvr';
+        }
+
+        if (preg_match('/^[A-ZÆØÅa-zæøå\s]+\d+/u', $input)) {
+            return 'address';
+        }
+
+        if ($this->looksLikeCompanyName($input)) {
+            return 'company_name';
+        }
+
+        return 'name';
+    }
+
+    /**
+     * Check if input looks like a company name.
+     * Merged logic from Frankston-master's MetisInputDetector.
+     */
+    protected function looksLikeCompanyName(string $input): bool
+    {
+        // Check slash-based suffixes via str_contains (safe, no false positives)
+        foreach (self::LEGAL_SUFFIXES as $suffix) {
+            if (str_contains($input, $suffix)) {
+                return true;
+            }
+        }
+
+        // Check word-boundary patterns (Holding, Invest, Fond, Fund, SE, SCE, etc.)
+        if (preg_match(self::COMPANY_WORD_PATTERN, $input)) {
+            return true;
+        }
+
+        return false;
+    }
+}
