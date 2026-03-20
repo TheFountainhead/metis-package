@@ -42,15 +42,24 @@ class Search extends Component
     public function mount(): void
     {
         $allChips = [
-            ['label' => 'Hvem ejer Bredgade 40?', 'query' => 'Bredgade 40, 1260 København'],
-            ['label' => 'Vis selskaber for CVR 12345678', 'query' => '12345678'],
-            ['label' => 'Carlsberg A/S', 'query' => 'Carlsberg A/S'],
-            ['label' => 'Ejendomme på Nørrebrogade', 'query' => 'Nørrebrogade 15, 2200'],
-            ['label' => 'Hvem er bag CVR 87654321?', 'query' => '87654321'],
-            ['label' => 'Vestergade 1, Roskilde', 'query' => 'Vestergade 1, 4000 Roskilde'],
+            // Ejendomsanalyse
+            ['label' => 'Hvem ejer Bredgade 40, KBH?', 'query' => 'Bredgade 40, 1260 København'],
+            ['label' => 'Oversvømmelsesrisiko på Strandvejen', 'query' => 'Strandvejen 100, 2900 Hellerup'],
+            ['label' => 'Tinglyst gæld på Amagertorv 15', 'query' => 'Amagertorv 15, 1160 København'],
+
+            // Virksomhedsanalyse
+            ['label' => 'Alle ejendomme ejet af Jeudan', 'query' => 'Jeudan A/S'],
+            ['label' => 'Hvem sidder i bestyrelsen hos Mærsk?', 'query' => 'A.P. Møller - Mærsk A/S'],
+            ['label' => 'Carlsbergs selskabsstruktur', 'query' => 'Carlsberg A/S'],
+            ['label' => 'Hvilke firmaer ligger på Kongens Nytorv?', 'query' => 'Kongens Nytorv 1, 1050 København'],
+
+            // Krydstjek person ↔ selskab ↔ ejendom
+            ['label' => 'Ejendomme bag CVR 56811913', 'query' => '56811913'],
+            ['label' => 'Virksomheder på Nyhavn 71', 'query' => 'Nyhavn 71, 1051 København'],
+            ['label' => 'Hvem ejer Strøget 1?', 'query' => 'Østergade 1, 1100 København'],
         ];
 
-        $this->chips = collect($allChips)->random(3)->values()->all();
+        $this->chips = collect($allChips)->random(4)->values()->all();
 
         // Handle ?q= on page load — guard against CPR in URL
         if ($q = request()->query('q')) {

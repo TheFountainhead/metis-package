@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Metis</title>
     <meta name="description" content="Ejendomme, virksomheder og personer.">
+    <link rel="icon" href="/favicon.ico" sizes="32x32">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>

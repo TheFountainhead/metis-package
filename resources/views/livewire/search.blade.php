@@ -3,8 +3,8 @@
     <div class="flex flex-col items-center {{ $result ? 'pt-5 pb-4 sticky top-0 z-30 bg-sand-50/95 backdrop-blur-sm' : 'justify-center min-h-screen -mt-12' }} px-4 transition-all duration-300">
 
         @unless($result)
-        <div class="mb-8 flex items-center justify-center gap-3">
-            <img src="/images/metis-logo.png" alt="Metis" class="w-10 h-10">
+        <div class="mb-8 flex items-center justify-center gap-4">
+            <img src="/images/metis-logo.png" alt="Metis" class="w-14 h-14 md:w-16 md:h-16">
             <p class="text-3xl md:text-[40px] font-serif text-ink-800 font-normal tracking-tight">
                 Hvad vil du vide?
             </p>
