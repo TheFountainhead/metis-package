@@ -181,17 +181,58 @@ Hvis godkendt (forventet 10-20 uger):
 - Samtykkebaseret flow (§17 nr. 7 kræver ejerens samtykke)
 - Automatisk discovery af ALLE ejede køretøjer (inkl. gældsfrie + leasede)
 
+## Forudsætninger (verify før implementering)
+
+Disse spørgsmål SKAL afklares inden implementering:
+
+1. **[KRITISK] Bilbogen SSL-API endpoint for CPR/CVR-søgning** — test med eksisterende certifikat om endpointet `tinglysning.dk/tinglysning/ssl/bilbog/...` eksisterer og accepterer CPR/CVR som parameter. Hvis ikke, kontakt Tinglysningsretten om API-adgang til Bilbogen.
+2. **[KRITISK] Bilbogen response-format** — dokumentér XML-skema for Bilbog-svar (felter, namespaces). Kan først afklares ved test af endpoint.
+3. **[VIGTIGT] Synsbasen `estimated_value`** — bekræft at Synsbasen API returnerer markedsværdi. Hvis ikke, gør feltet nullable og vis "Værdi ukendt". Alternativ kilde: TjekBil/Bilbasen.
+
+## Design-beslutninger (fra spec review)
+
+### Manuel persistering
+Manuelt tilføjede nummerplader gemmes i `metis_lookups.metadata` (JSON-kolonne) på det aktuelle opslag. Ved PDF-generering og genbesøg hentes de derfra og beriges på ny.
+
+### Samlet køretøjsformue
+Vises som tre tal: **Samlet værdi** (brutto), **Samlet gæld** (sum af pant), **Netto** (værdi - gæld). Hvis `estimated_value` er null for et køretøj, ekskluderes det fra brutto med note "Værdi ukendt for X køretøjer".
+
+### Duplikathåndtering
+Dedupliker på VIN. Hvis et Bilbog-fundet køretøj også tilføjes manuelt, merges data — ikke dobbelt-optælling.
+
+### Fejlhåndtering
+- **Bilbogen nede:** Vis "Køretøjsdata midlertidigt utilgængelig" — resten af opslaget fungerer
+- **Synsbasen nede:** Vis Bilbog-data (VIN + pant) uden teknisk berigelse, med note "Tekniske data utilgængelige"
+- **Ingen resultater:** Vis "Ingen køretøjer med registreret gæld fundet" (ikke "Ingen køretøjer" — personen kan have gældsfrie biler)
+- **Synsbasen kvote opbrugt:** Graceful degradation som "Synsbasen nede"
+
+### Timeout og parallelisering
+Synsbasen-kald for flere køretøjer paralleliseres via `Http::pool()`. Max samlet timeout: 15s (Bilbog) + 10s (Synsbasen pool) = 25s worst case.
+
+### Feature flag
+`vehicle_enrichment` — feature flag til at togge sektionen per klient/site.
+
+### Livewire-placering
+VehicleSection vises kun for `cpr` og `cvr` opslag — ikke `person` (navnesøgning) eller `address`.
+
 ## Acceptance Criteria
 
 1. [ ] CPR-opslag i Metis viser automatisk køretøjer med pant/gæld fra Bilbogen
 2. [ ] CVR-opslag i Metis viser automatisk køretøjer med pant/gæld fra Bilbogen
 3. [ ] Hvert køretøj beriges med mærke, model, årgang, km fra Synsbasen
-4. [ ] Estimeret markedsværdi vises per køretøj
-5. [ ] Nettoværdi (værdi - pant) beregnes og vises
-6. [ ] Rådgiver kan manuelt tilføje køretøj via nummerplade
-7. [ ] Manuelt tilføjede køretøjer beriges med Synsbasen + Bilbog-data
-8. [ ] Køretøjer vises i PDF-rapport med teknisk data + pant/gæld
-9. [ ] Samlet køretøjsformue vises i PDF
-10. [ ] Data caches i 24 timer — gentagne opslag inden for 24t bruger cache
-11. [ ] Fejlhåndtering: Bilbogen/Synsbasen utilgængelig → sektion vises med fejlbesked, resten af opslaget fungerer
-12. [ ] Tests: Bilbog-integration, Synsbasen-integration, VehicleService, API-endpoints
+4. [ ] Estimeret markedsværdi vises per køretøj (nullable — "Værdi ukendt" hvis ikke tilgængelig)
+5. [ ] Nettoværdi (værdi - pant) beregnes og vises per køretøj
+6. [ ] Samlet køretøjsformue: brutto, gæld og netto vises
+7. [ ] Rådgiver kan manuelt tilføje køretøj via nummerplade
+8. [ ] Manuelt tilføjede køretøjer beriges med Synsbasen + Bilbog-data
+9. [ ] Manuelt tilføjede nummerplader persisteres på opslaget (overlever page reload)
+10. [ ] Duplikater (samme VIN) deduplikeres automatisk
+11. [ ] Køretøjer vises i PDF-rapport med teknisk data + pant/gæld
+12. [ ] Samlet køretøjsformue (brutto/gæld/netto) vises i PDF
+13. [ ] Data caches i 24 timer — gentagne opslag inden for 24t bruger cache
+14. [ ] "Ingen køretøjer med registreret gæld fundet" ved tom Bilbog-respons (ikke "Ingen køretøjer")
+15. [ ] Graceful degradation: Bilbogen nede → fejlbesked, Synsbasen nede → kun pant-data vises
+16. [ ] Synsbasen-kald paralleliseres (Http::pool) for multiple køretøjer
+17. [ ] Feature flag `vehicle_enrichment` toggler sektionen
+18. [ ] VehicleSection vises kun for `cpr` og `cvr` opslag
+19. [ ] Tests: BilbogService, SynsbasenClient, VehicleService, API-endpoints, VehicleSection Livewire
