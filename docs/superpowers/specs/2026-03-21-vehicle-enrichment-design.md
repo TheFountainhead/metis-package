@@ -6,7 +6,7 @@
 
 ## Summary
 
-Udvid Metis med automatisk køretøjsberigelse ved person- og virksomhedsopslag. Systemet henter automatisk pant/gæld på køretøjer fra Bilbogen via CPR/CVR og beriger med tekniske data fra Synsbasen API. Rådgivere kan desuden manuelt tilføje nummerplader for gældsfrie biler.
+Udvid Metis med køretøjsberigelse via Synsbasen API. Rådgivere tilføjer nummerplader → systemet beriger med teknisk data (mærke, model, km, syn) og Bilbog-data (pant, udlæg, ejendomsforbehold) via Synsbasens `tinglysning_data` expansion. Ét API-kald giver begge datatyper.
 
 ## Motivation
 
@@ -14,37 +14,32 @@ Investeringsrådgivere og långivere har behov for et samlet formuebillede inkl.
 
 ## Datakilder
 
-### Bilbogen (tinglysning.dk) — Automatisk
-- **Adgang:** Eksisterende SSL-certifikat (MitID Erhverv), allerede deployed i Registry-API
-- **Søgning:** CPR eller CVR → alle køretøjer med registrerede hæftelser
-- **Data:** Pant (pantebrev, ejendomsforbehold, udlæg), kreditor, beløb, stelnummer
-- **Pris:** Gratis
-- **Begrænsning:** Kun køretøjer med registreret gæld. Gældsfrie biler og privatleasing dukker ikke op
-
-### Synsbasen API — Berigelse
+### Synsbasen API — Primær datakilde (teknisk + Bilbog)
 - **Adgang:** REST API med API-nøgle, ny integration
-- **Søgning:** Stelnummer (fra Bilbogen) eller registreringsnummer (manuelt input)
-- **Data:** Mærke, model, variant, årgang, brændstof, km-stand, synshistorik, estimeret værdi, afgifter
-- **Pris:** ~250 kr/md for 2.500 opslag
-- **Begrænsning:** Ingen ejerdata (kun teknisk)
+- **Søgning:** Registreringsnummer (nummerplade) eller stelnummer (VIN)
+- **Data (gratis opslag):** Mærke, model, variant, årgang, brændstof, km-stand, synshistorik, afgifter
+- **Data (1 token/opslag via `expand=tinglysning_data`):** Pant, ejendomsforbehold, udlæg, kreditorer, debitorer, beløb
+- **Pris:** Basic 250 kr/md (2.500 opslag + 150 Bilbog-tokens), Advanced 600 kr/md (12.500 opslag + 500 tokens)
+- **Begrænsning:** Ingen reverse lookup (CPR/CVR → køretøjer). Kræver nummerplade eller VIN som input
 
-### Manuel input — Supplement
-- Rådgiver indtaster nummerplader for biler uden gæld
-- Beriges via Synsbasen + Bilbogen (bekræft ingen pant)
+### Manuel input — Rådgiver-drevet
+- Rådgiver indtaster nummerplader de kender fra kreditansøgning eller kundedialog
+- Beriges automatisk med teknisk data + Bilbog-pant via Synsbasen
+
+### Fremtidige datakilder (parallelle spor)
+- **DMR §17-ansøgning** (sendt til Motorstyrelsen) — hvis godkendt: automatisk CPR/CVR → alle ejede køretøjer
+- **Tinglysningsretten** (mail sendt) — forespørgsel om direkte SSL-API til Bilbogen eller dataleveringsaftale. Hvis opnået: erstat Synsbasens tinglysning_data med direkte adgang (sparer tokens)
 
 ## Brugerflow
 
-### Automatisk (ved ethvert CPR/CVR-opslag i Metis)
-1. Rådgiver slår person (CPR) eller virksomhed (CVR) op
-2. Metis kalder Registry-API endpoint `/v1/vehicles/by-cpr` eller `/v1/vehicles/by-cvr`
-3. Registry-API kalder Bilbogen SSL-API med CPR/CVR → returnerer køretøjer med pant
-4. For hvert stelnummer fra Bilbogen → Synsbasen API beriger med teknisk data
-5. Samlet response vises som ny "Køretøjer"-sektion i Metis
-
-### Manuel (supplement)
-6. Rådgiver klikker "Tilføj køretøj" → indtaster nummerplade
-7. Registry-API kalder Synsbasen (nummerplade → teknisk data) + Bilbogen (stelnummer → evt. pant)
-8. Køretøjet tilføjes listen og gemmes på opslaget
+### Rådgiver-input (ved CPR/CVR-opslag i Metis)
+1. Rådgiver slår person (CPR) eller virksomhed (CVR) op — alle eksisterende sektioner vises
+2. Ny "Køretøjer"-sektion vises med "Tilføj køretøj"-knap
+3. Rådgiver indtaster nummerplade → klik "Tilføj"
+4. Registry-API kalder Synsbasen med `expand=tinglysning_data` → teknisk data + pant i ét kald
+5. Køretøjet vises som kort med alle data
+6. Rådgiver kan tilføje flere køretøjer
+7. Tilføjede nummerplader gemmes på opslaget (persisteres i `metis_lookups.metadata`)
 
 ### PDF-rapport
 9. Køretøjer inkluderes automatisk i Metis' PDF-rapport som ny sektion
@@ -53,31 +48,21 @@ Investeringsrådgivere og långivere har behov for et samlet formuebillede inkl.
 
 ### Registry-API (backend)
 
-**Nye/udvidede komponenter:**
+**Nye komponenter:**
 
 ```
-TinglysningClient (eksisterende, udvides)
-├── searchBilbogByCpr(string $cpr): array     // NYT
-├── searchBilbogByCvr(string $cvr): array     // NYT
-├── searchBilbogByVin(string $vin): array     // NYT
-└── (eksisterende ejendoms-metoder)
-
 SynsbasenClient (NY)
-├── getByVin(string $vin): ?array
-├── getByRegistration(string $registration): ?array
+├── getByRegistration(string $registration, bool $includeTinglysning = true): ?array
+├── getByVin(string $vin, bool $includeTinglysning = true): ?array
 └── isAvailable(): bool
 
 VehicleService (NY)
-├── findByCpr(string $cpr): VehicleCollection
-├── findByCvr(string $cvr): VehicleCollection
-├── findByRegistration(string $reg): ?Vehicle
-└── enrichWithSynsbasen(array $bilbogData): array
+├── findByRegistration(string $registration): ?Vehicle
+└── findByVin(string $vin): ?Vehicle
 ```
 
-**Nye endpoints:**
-- `POST /v1/vehicles/by-cpr` — automatisk Bilbog + Synsbasen
-- `POST /v1/vehicles/by-cvr` — automatisk Bilbog + Synsbasen
-- `POST /v1/vehicles/by-registration` — manuel nummerplade-opslag
+**Nyt endpoint:**
+- `POST /v1/vehicles/by-registration` — nummerplade → teknisk data + Bilbog-pant (via Synsbasen)
 
 ### Metis-package (frontend)
 
@@ -99,7 +84,7 @@ VehicleService (NY)
 
 ```json
 {
-  "source": "bilbogen",
+  "source": "synsbasen",
   "vin": "WBAPH5C55BA123456",
   "registration": "AB12345",
   "make": "BMW",
@@ -125,69 +110,60 @@ VehicleService (NY)
 
 ### Database (Registry-API)
 
-**`vehicles` tabel (Synsbasen-cache):**
-- `id`, `vin` (unique), `registration`, `make`, `model`, `variant`, `year`
+**`vehicles` tabel (Synsbasen-cache, samlet teknisk + Bilbog-data):**
+- `id`, `vin` (unique), `registration` (unique), `make`, `model`, `variant`, `year`
 - `fuel_type`, `mileage`, `last_inspection`, `inspection_result`
-- `estimated_value`, `raw_synsbasen_data` (JSON)
-- `fetched_at`, `created_at`, `updated_at`
-
-**`vehicle_liens` tabel (Bilbog-cache):**
-- `id`, `vin`, `search_type` (cpr/cvr), `search_value`
-- `lien_type` (pantebrev/ejendomsforbehold/udlaeg)
-- `creditor`, `amount`, `currency`
-- `raw_bilbog_data` (JSON)
+- `estimated_value` (nullable)
+- `liens` (JSON — array af pant/udlæg fra Synsbasens tinglysning_data)
+- `raw_data` (JSON — komplet Synsbasen-response inkl. tinglysning)
 - `fetched_at`, `created_at`, `updated_at`
 
 **Staleness:** 24 timer. Ved opslag: check `fetched_at` → hvis > 24t, hent frisk → gem → returnér.
 
 ## Caching-strategi
 
-- Bilbog-data caches i `vehicle_liens` med `search_type` + `search_value` som lookup-key
-- Synsbasen-data caches i `vehicles` med `vin` som lookup-key
+- Alt caches i én `vehicles` tabel med `registration` som primær lookup-key
 - 24 timers staleness (matcher ejendomsdata)
 - Cache invalideres ved nyt opslag efter 24t
-- Manuel nummerplade-opslag caches også
 
 ## Env vars
 
 **Registry-API (.env):**
 - `SYNSBASEN_API_KEY` — ny, påkrævet
 - `SYNSBASEN_BASE_URL=https://api.synsbasen.dk/v1` — ny, default
-- Tinglysnings-certifikat: allerede konfigureret (`storage/certificates/Tinglysningen.pem/.key`)
 
 ## Scope-afgrænsning
 
 ### Med i MVP
-- Automatisk Bilbog-opslag ved CPR/CVR-søgning
-- Synsbasen-berigelse per fundet køretøj
-- Manuel tilføjelse af nummerplader
+- Rådgiver-input af nummerplader ved CPR/CVR-opslag
+- Synsbasen-berigelse (teknisk data + Bilbog-pant i ét kald)
 - Køretøjskort i Metis UI
 - PDF-rapport med køretøjssektion
-- Bilbogen/Synsbasen-caching (24t)
+- Synsbasen-caching (24t)
+- Persistering af tilføjede nummerplader på opslaget
 
-### Ikke med (afventer §17-ansøgning)
-- DMR ejerdata (reverse lookup CPR/CVR → alle ejede køretøjer)
+### Ikke med (afventer parallelle spor)
+- Automatisk CPR/CVR → køretøjer (kræver DMR §17 eller direkte Bilbog-API)
 - Leasing-detection (kræver DMR — leasingtager ≠ Bilbog-debitor)
 - Køretøjs-historik (kun aktuel status)
 
-## Parallelt spor: DMR §17-ansøgning
+## Parallelle spor
 
-Ansøgning til Motorstyrelsen om terminaladgang under §17 stk. 2 nr. 7 (finansieringsvirksomhed via faktorkredit) er udarbejdet og klar til afsendelse.
-
+### DMR §17-ansøgning (sendt)
+Ansøgning til Motorstyrelsen om terminaladgang under §17 stk. 2 nr. 7 (finansieringsvirksomhed via faktorkredit).
 Fil: `Dropbox/Frankston/DATA PROVIDERS/Motorstyrelsen/ansogning-dmr-terminaladgang.md`
+Hvis godkendt → automatisk reverse lookup CPR/CVR → alle ejede køretøjer.
 
-Hvis godkendt (forventet 10-20 uger):
-- Tilføj `DmrService` til Registry-API
-- Samtykkebaseret flow (§17 nr. 7 kræver ejerens samtykke)
-- Automatisk discovery af ALLE ejede køretøjer (inkl. gældsfrie + leasede)
+### Tinglysningsretten (mail sendt)
+Forespørgsel om SSL-API til Bilbogen eller dataleveringsaftale.
+Fil: `Dropbox/Frankston/DATA PROVIDERS/Tinglysningsretten/mail-bilbog-api-adgang.md`
+Hvis opnået → direkte Bilbog-adgang, sparer Synsbasen-tokens.
 
 ## Forudsætninger (verify før implementering)
 
-Disse spørgsmål SKAL afklares inden implementering:
-
-1. **[KRITISK] Bilbogen SSL-API endpoint for CPR/CVR-søgning** — test med eksisterende certifikat om endpointet `tinglysning.dk/tinglysning/ssl/bilbog/...` eksisterer og accepterer CPR/CVR som parameter. Hvis ikke, kontakt Tinglysningsretten om API-adgang til Bilbogen.
-2. **[KRITISK] Bilbogen response-format** — dokumentér XML-skema for Bilbog-svar (felter, namespaces). Kan først afklares ved test af endpoint.
-3. **[VIGTIGT] Synsbasen `estimated_value`** — bekræft at Synsbasen API returnerer markedsværdi. Hvis ikke, gør feltet nullable og vis "Værdi ukendt". Alternativ kilde: TjekBil/Bilbasen.
+1. **[VIGTIGT] Opret Synsbasen-konto** — tilmeld Basic (250 kr/md) og bekræft API-adgang
+2. **[VIGTIGT] Synsbasen `estimated_value`** — bekræft at API'en returnerer markedsværdi. Hvis ikke, gør feltet nullable og vis "Værdi ukendt"
+3. **[VIGTIGT] Synsbasen `tinglysning_data` format** — test ét opslag og dokumentér response-felter for pant/udlæg
 
 ## Design-beslutninger (fra spec review)
 
@@ -201,13 +177,13 @@ Vises som tre tal: **Samlet værdi** (brutto), **Samlet gæld** (sum af pant), *
 Dedupliker på VIN. Hvis et Bilbog-fundet køretøj også tilføjes manuelt, merges data — ikke dobbelt-optælling.
 
 ### Fejlhåndtering
-- **Bilbogen nede:** Vis "Køretøjsdata midlertidigt utilgængelig" — resten af opslaget fungerer
-- **Synsbasen nede:** Vis Bilbog-data (VIN + pant) uden teknisk berigelse, med note "Tekniske data utilgængelige"
-- **Ingen resultater:** Vis "Ingen køretøjer med registreret gæld fundet" (ikke "Ingen køretøjer" — personen kan have gældsfrie biler)
-- **Synsbasen kvote opbrugt:** Graceful degradation som "Synsbasen nede"
+- **Synsbasen nede:** Vis "Køretøjsdata midlertidigt utilgængelig" — resten af opslaget fungerer
+- **Ugyldig nummerplade:** Vis "Køretøj ikke fundet — tjek nummerpladen"
+- **Synsbasen kvote opbrugt:** Graceful degradation, vis fejlbesked
+- **Tinglysning-data utilgængelig:** Vis teknisk data uden pant-info, med note "Pantdata utilgængelig"
 
-### Timeout og parallelisering
-Synsbasen-kald for flere køretøjer paralleliseres via `Http::pool()`. Max samlet timeout: 15s (Bilbog) + 10s (Synsbasen pool) = 25s worst case.
+### Timeout
+Synsbasen-kald har 10s timeout. Hvert køretøj tilføjes individuelt af rådgiveren, så parallelisering er ikke nødvendig i MVP.
 
 ### Feature flag
 `vehicle_enrichment` — feature flag til at togge sektionen per klient/site.
@@ -217,22 +193,18 @@ VehicleSection vises kun for `cpr` og `cvr` opslag — ikke `person` (navnesøgn
 
 ## Acceptance Criteria
 
-1. [ ] CPR-opslag i Metis viser automatisk køretøjer med pant/gæld fra Bilbogen
-2. [ ] CVR-opslag i Metis viser automatisk køretøjer med pant/gæld fra Bilbogen
-3. [ ] Hvert køretøj beriges med mærke, model, årgang, km fra Synsbasen
+1. [ ] Rådgiver kan tilføje køretøj via nummerplade ved CPR/CVR-opslag
+2. [ ] Køretøj beriges med mærke, model, årgang, km, syn fra Synsbasen
+3. [ ] Pant/gæld vises via Synsbasens tinglysning_data (kreditor, beløb, type)
 4. [ ] Estimeret markedsværdi vises per køretøj (nullable — "Værdi ukendt" hvis ikke tilgængelig)
 5. [ ] Nettoværdi (værdi - pant) beregnes og vises per køretøj
 6. [ ] Samlet køretøjsformue: brutto, gæld og netto vises
-7. [ ] Rådgiver kan manuelt tilføje køretøj via nummerplade
-8. [ ] Manuelt tilføjede køretøjer beriges med Synsbasen + Bilbog-data
-9. [ ] Manuelt tilføjede nummerplader persisteres på opslaget (overlever page reload)
-10. [ ] Duplikater (samme VIN) deduplikeres automatisk
-11. [ ] Køretøjer vises i PDF-rapport med teknisk data + pant/gæld
-12. [ ] Samlet køretøjsformue (brutto/gæld/netto) vises i PDF
-13. [ ] Data caches i 24 timer — gentagne opslag inden for 24t bruger cache
-14. [ ] "Ingen køretøjer med registreret gæld fundet" ved tom Bilbog-respons (ikke "Ingen køretøjer")
-15. [ ] Graceful degradation: Bilbogen nede → fejlbesked, Synsbasen nede → kun pant-data vises
-16. [ ] Synsbasen-kald paralleliseres (Http::pool) for multiple køretøjer
-17. [ ] Feature flag `vehicle_enrichment` toggler sektionen
-18. [ ] VehicleSection vises kun for `cpr` og `cvr` opslag
-19. [ ] Tests: BilbogService, SynsbasenClient, VehicleService, API-endpoints, VehicleSection Livewire
+7. [ ] Tilføjede nummerplader persisteres på opslaget (overlever page reload)
+8. [ ] Duplikater (samme VIN/nummerplade) forhindres
+9. [ ] Køretøjer vises i PDF-rapport med teknisk data + pant/gæld
+10. [ ] Samlet køretøjsformue (brutto/gæld/netto) vises i PDF
+11. [ ] Data caches i 24 timer — gentagne opslag bruger cache
+12. [ ] Graceful degradation: Synsbasen nede → fejlbesked, resten af opslaget fungerer
+13. [ ] Feature flag `vehicle_enrichment` toggler sektionen
+14. [ ] VehicleSection vises kun for `cpr` og `cvr` opslag
+15. [ ] Tests: SynsbasenClient, VehicleService, API-endpoint, VehicleSection Livewire
