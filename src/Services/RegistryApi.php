@@ -12,7 +12,7 @@ class RegistryApi
     {
         return Http::withToken(config('metis.registry_api.key'))
             ->acceptJson()
-            ->timeout(10)
+            ->timeout(30)
             ->baseUrl(config('metis.registry_api.url'));
     }
 
@@ -59,8 +59,7 @@ class RegistryApi
 
     public function searchPersonByName(string $name): array
     {
-        // Registry API has no person-by-name endpoint; return empty
-        return [];
+        return $this->fetchPersonRoles($name) ?? [];
     }
 
     public function fetchPropertyByAddress(string $address): array
@@ -178,22 +177,22 @@ class RegistryApi
 
     public function fetchCompaniesByCpr(string $cpr): ?array
     {
-        return $this->post('/v1/cpr/companies', ['cpr' => $cpr]);
+        return $this->post('/v1/cvr/search-by-cpr', ['cpr' => $cpr]);
     }
 
     public function fetchPropertiesByCpr(string $cpr): ?array
     {
-        return $this->post('/v1/cpr/properties', ['cpr' => $cpr]);
+        return $this->post('/v1/property-tinglysning/search-by-cpr', ['cpr' => $cpr]);
     }
 
     public function fetchPersonRoles(string $query): ?array
     {
-        return $this->post('/v1/cpr/roles', ['query' => $query]);
+        return $this->post('/v1/cvr/person-roles', ['name' => $query]);
     }
 
     public function fetchPersonPropertyPortfolioByCpr(string $cpr): ?array
     {
-        return $this->post('/v1/cpr/property-portfolio', ['cpr' => $cpr]);
+        return $this->post('/v1/person/property-portfolio', ['cpr' => $cpr]);
     }
 
     /**
