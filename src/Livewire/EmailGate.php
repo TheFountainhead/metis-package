@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Illuminate\Support\Facades\Mail;
+use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Mail\VerificationCode;
 use TheFountainhead\Metis\Models\EmailVerification;
@@ -27,6 +28,12 @@ class EmailGate extends Component
     public bool $codeError = false;
 
     public bool $show = false;
+
+    #[On('show-email-gate')]
+    public function showGate(): void
+    {
+        $this->show = true;
+    }
 
     // Company resolution fields
     public string $cvr = '';

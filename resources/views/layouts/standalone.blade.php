@@ -51,6 +51,10 @@
         {{ $slot }}
     </main>
 
+    @if(config('metis.gating.enabled', true))
+        <livewire:metis-email-gate />
+    @endif
+
     @include('metis::components.cookie-consent')
 
     @livewireScripts
