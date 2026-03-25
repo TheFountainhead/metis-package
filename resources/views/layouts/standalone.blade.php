@@ -28,7 +28,6 @@
         }
     </script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script defer src="https://unpkg.com/alpinejs@3.15/dist/cdn.min.js"></script>
 
     @if(config('metis.turnstile.site_key'))
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
