@@ -296,6 +296,15 @@ class Search extends Component
             return;
         }
 
+        // Strip nested error responses (e.g. persons returning ['error' => ...])
+        if (is_array($result)) {
+            foreach ($result as $key => $value) {
+                if (is_array($value) && isset($value['error'])) {
+                    $result[$key] = [];
+                }
+            }
+        }
+
         if (empty($result) || (is_array($result) && empty(array_filter($result)))) {
             $this->error = true;
             $this->errorMessage = 'no_results';
