@@ -18,6 +18,15 @@
                         sand: { 50: '#faf8f5', 100: '#f5f0e8', 200: '#ebe3d5', 300: '#d9ccb8' },
                         warm: { 400: '#c4956a', 500: '#b5805a', 600: '#a06b45' },
                         ink: { 700: '#3d3929', 800: '#2c2922', 900: '#1a1815' },
+                        claret: '#7a2846',
+                        paper: '#fdfcfa',
+                        linen: '#e8e0d4',
+                        wheat: '#f5ead8',
+                    },
+                    textColor: {
+                        'text-primary': '#2c2922',
+                        'text-secondary': '#5c5647',
+                        'text-muted': '#9c9485',
                     },
                     fontFamily: {
                         serif: ['Georgia', 'Times New Roman', 'serif'],
