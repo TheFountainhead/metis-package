@@ -23,7 +23,7 @@ class AddressBbr extends MetisSection
         $this->address = $analysis['property']['address'] ?? $query;
 
         // Update lookup label
-        if ($this->address) {
+        if ($this->address && auth()->check()) {
             MetisLookup::where('team_id', auth()->user()->current_team_id)
                 ->where('type', 'address')
                 ->where('query', $query)

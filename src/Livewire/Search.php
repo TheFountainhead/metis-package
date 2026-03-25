@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Models\MetisLookup;
@@ -120,6 +121,14 @@ class Search extends Component
 
                 return;
             }
+        }
+
+        // CVR and address lookups → redirect to full detail page when available
+        if (in_array($type, ['cvr', 'address']) && Route::has('metis.lookup')) {
+            $this->logLookup($type, $query, isCrossReference: false);
+            $this->redirect(route('metis.lookup', ['type' => $type, 'query' => $query]));
+
+            return;
         }
 
         $this->loading = true;

@@ -28,7 +28,7 @@ class CompanyInfo extends MetisSection
             $this->company = rescue(fn () => $api->fetchCompanyInfo($query));
         }
 
-        if ($this->company) {
+        if ($this->company && auth()->check()) {
             MetisLookup::where('team_id', auth()->user()->current_team_id)
                 ->where('type', 'cvr')
                 ->where('query', $query)

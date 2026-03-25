@@ -22,7 +22,7 @@ class PersonInfo extends MetisSection
 
         // Try to extract name from residence or first property for label
         $residence = $result['residence'] ?? null;
-        if ($residence) {
+        if ($residence && auth()->check()) {
             $label = trim(($residence['street'] ?? '') . ' ' . ($residence['number'] ?? '') . ', ' . ($residence['zip'] ?? '') . ' ' . ($residence['city'] ?? ''));
             MetisLookup::where('team_id', auth()->user()->current_team_id)
                 ->where('type', 'cpr')

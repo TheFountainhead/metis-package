@@ -38,6 +38,7 @@
     </style>
 
     @livewireStyles
+    @fluxAppearance
 </head>
 <body class="bg-sand-50 min-h-screen antialiased">
     @if(config('metis.admin.enabled'))
@@ -56,6 +57,7 @@
 
     @include('metis::components.cookie-consent')
 
+    @fluxScripts
     @livewireScripts
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
