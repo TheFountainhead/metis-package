@@ -18,13 +18,13 @@ class RegistryApi
 
     public function fetchCompany(string $cvr): array
     {
-        $result = $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => [$cvr]]);
+        $result = $this->get("/v1/cvr/company/{$cvr}");
 
         if (isset($result['error'])) {
             return $result;
         }
 
-        $company = $result['companies'][0] ?? null;
+        $company = $result['company'] ?? null;
 
         if (! $company) {
             return [];
@@ -44,7 +44,10 @@ class RegistryApi
                 'name' => $company['name'] ?? 'Ukendt',
                 'cvr' => $company['cvr'] ?? $cvr,
                 'status' => $company['status'] ?? '',
-                'type' => $company['company_type'] ?? '',
+                'type' => $company['long_company_type'] ?? $company['company_type'] ?? '',
+                'address' => trim(($company['address'] ?? '') . ', ' . ($company['postal_code'] ?? '') . ' ' . ($company['city'] ?? ''), ', '),
+                'industry' => $company['industry'] ?? null,
+                'founded' => $company['founded_date'] ?? null,
             ],
             'persons' => $persons,
         ];
