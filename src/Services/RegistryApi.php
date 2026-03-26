@@ -160,22 +160,24 @@ class RegistryApi
 
     public function fetchCompanyInfo(string $cvr): ?array
     {
-        return $this->get("/v1/cvr/{$cvr}");
+        $result = $this->get("/v1/cvr/company/{$cvr}");
+
+        return $result['data']['company'] ?? $result['company'] ?? null;
     }
 
     public function fetchCompanyStructure(string $cvr): array
     {
-        return $this->get("/v1/cvr/{$cvr}/structure") ?? [];
+        return $this->post('/v1/cvr/company-structure', ['cvr_numbers' => [$cvr]]) ?? [];
     }
 
     public function fetchCompanyPropertyPortfolio(string $cvr): ?array
     {
-        return $this->get("/v1/cvr/{$cvr}/properties");
+        return $this->get("/v1/company/{$cvr}/property-portfolio");
     }
 
     public function fetchCompanyTaxRecords(string $cvr): ?array
     {
-        return $this->get("/v1/cvr/{$cvr}/tax");
+        return $this->get("/v1/company/{$cvr}/tax");
     }
 
     public function fetchCompaniesByCpr(string $cpr): ?array
