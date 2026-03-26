@@ -8,7 +8,7 @@
             <span class="text-sm text-zinc-500">{{ $query }}</span>
         </div>
         <div class="flex space-x-3">
-            <flux:button href="{{ route('metis.index') }}" variant="outline" size="sm" icon="arrow-left">
+            <flux:button href="{{ route(Route::has('metis.index') ? 'metis.index' : 'metis.home') }}" variant="outline" size="sm" icon="arrow-left">
                 {{ __('New lookup') }}
             </flux:button>
         </div>
