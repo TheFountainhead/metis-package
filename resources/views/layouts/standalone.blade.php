@@ -20,7 +20,6 @@
     </style>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    @fluxAppearance
     @livewireStyles
 </head>
 <body class="bg-paper min-h-screen antialiased">
@@ -40,7 +39,6 @@
 
     @include('metis::components.cookie-consent')
 
-    @fluxScripts
     @livewireScripts
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
