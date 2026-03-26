@@ -31,7 +31,7 @@ class Lookup extends Component
             $data['email'] = session('metis_verified_email');
         }
 
-        MetisLookup::create($data);
+        rescue(fn () => MetisLookup::create($data));
     }
 
     public function render()

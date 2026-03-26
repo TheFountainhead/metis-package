@@ -269,14 +269,14 @@ class Search extends Component
 
     protected function logLookup(string $type, string $query, bool $isCrossReference): void
     {
-        MetisLookup::create([
+        rescue(fn () => MetisLookup::create([
             'session_id' => session()->getId(),
             'email' => session('metis_verified_email'),
             'search_type' => $type,
             'search_term' => $query,
             'ip_address' => request()->ip(),
             'is_cross_reference' => $isCrossReference,
-        ]);
+        ]));
 
         if (! $isCrossReference) {
             session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
