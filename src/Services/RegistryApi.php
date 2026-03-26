@@ -163,6 +163,8 @@ class RegistryApi
         $result = $this->get("/v1/cvr/company/{$cvr}");
 
         // get() already unwraps 'data' via ->json('data'), so result has 'company' at top level
+        logger()->info('fetchCompanyInfo', ['cvr' => $cvr, 'result_keys' => is_array($result) ? array_keys($result) : 'not_array', 'has_company' => isset($result['company'])]);
+
         return $result['company'] ?? null;
     }
 
