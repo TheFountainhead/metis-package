@@ -162,7 +162,8 @@ class RegistryApi
     {
         $result = $this->get("/v1/cvr/company/{$cvr}");
 
-        return $result['data']['company'] ?? $result['company'] ?? null;
+        // get() already unwraps 'data' via ->json('data'), so result has 'company' at top level
+        return $result['company'] ?? null;
     }
 
     public function fetchCompanyStructure(string $cvr): array
