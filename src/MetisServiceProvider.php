@@ -95,6 +95,7 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-address-planning', \TheFountainhead\Metis\Livewire\Sections\AddressPlanning::class);
         Livewire::component('metis-address-transactions', \TheFountainhead\Metis\Livewire\Sections\AddressTransactions::class);
         Livewire::component('metis-address-valuation', \TheFountainhead\Metis\Livewire\Sections\AddressValuation::class);
+        Livewire::component('metis-address-comparison', \TheFountainhead\Metis\Livewire\Sections\AddressComparison::class);
 
         // Company sections
         Livewire::component('metis-company-info', \TheFountainhead\Metis\Livewire\Sections\CompanyInfo::class);
