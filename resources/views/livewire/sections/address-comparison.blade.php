@@ -61,6 +61,7 @@
                                     <th class="pb-1 text-right">{{ __('m²') }}</th>
                                     <th class="pb-1 text-right">{{ __('Kr/m²') }}</th>
                                     <th class="pb-1 text-right">{{ __('Pris') }}</th>
+                                    <th class="text-right text-xs text-zinc-400 font-normal pb-1">{{ __('Køber') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -70,6 +71,15 @@
                                         <td class="text-right">{{ $ref['size'] ?? '-' }}</td>
                                         <td class="text-right">{{ number_format($ref['sqm_price'] ?? 0, 0, ',', '.') }}</td>
                                         <td class="text-right font-medium">{{ number_format(($ref['price'] ?? 0) / 1000000, 1, ',', '.') }}M</td>
+                                        <td class="text-right text-xs py-1">
+                                            @if ($ref['owner_age'] ?? null)
+                                                {{ $ref['owner_age'] }} {{ __('år') }}
+                                            @elseif (($ref['owner_type'] ?? null) === 'company')
+                                                {{ __('Selskab') }}
+                                            @else
+                                                &mdash;
+                                            @endif
+                                        </td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -116,6 +126,43 @@
                 <div class="mt-4">
                     <livewire:metis-address-comparison-detail :comparison="$comparison" lazy />
                 </div>
+            @endif
+
+            @if ($demographics = data_get($comparison, 'demographics'))
+                @if ($demographics['avg_buyer_age'] ?? null)
+                    <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-xs font-medium text-zinc-500">{{ __('Køberprofil') }}</span>
+                            <span class="text-xs text-zinc-400">{{ $demographics['coverage'] }}</span>
+                        </div>
+
+                        <div class="flex items-center gap-4 mb-3">
+                            <div>
+                                <div class="text-xl font-bold text-blue-600 dark:text-blue-400">
+                                    {{ round($demographics['avg_buyer_age']) }}
+                                </div>
+                                <div class="text-xs text-zinc-400">{{ __('Gns. alder') }}</div>
+                            </div>
+
+                            @php
+                                $groups = $demographics['buyer_age_groups'] ?? [];
+                                $maxCount = !empty($groups) ? max(array_values($groups)) : 1;
+                            @endphp
+                            @if (count($groups) > 0)
+                                <div class="flex-1 flex items-end gap-1 h-8">
+                                    @foreach ($groups as $group => $count)
+                                        <div class="flex-1 flex flex-col items-center">
+                                            <div class="w-full bg-blue-200 dark:bg-blue-800 rounded-t"
+                                                 style="height: {{ max(round(($count / $maxCount) * 100), 10) }}%;">
+                                            </div>
+                                            <span class="text-[9px] text-zinc-400 mt-0.5">{{ Str::before($group, '-') }}</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                @endif
             @endif
         @endif
 

@@ -120,6 +120,17 @@
                                 <div class="flex justify-between"><span class="text-zinc-400">{{ __('Areal') }}</span><span>{{ $ref['size'] ?? '-' }} m&sup2;</span></div>
                                 <div class="flex justify-between"><span class="text-zinc-400">{{ __('Kr/m²') }}</span><span>{{ number_format($ref['sqm_price'] ?? 0, 0, ',', '.') }}</span></div>
                                 <div class="flex justify-between"><span class="text-zinc-400">{{ __('Solgt') }}</span><span>{{ isset($ref['sold_date']) ? \Carbon\Carbon::parse($ref['sold_date'])->format('d. M Y') : '-' }}</span></div>
+                                @if ($ref['owner_age'] ?? null)
+                                    <div class="flex justify-between text-xs">
+                                        <span class="text-zinc-500">{{ __('Køber') }}</span>
+                                        <span>{{ $ref['owner_age'] }} {{ __('år') }}</span>
+                                    </div>
+                                @elseif (($ref['owner_type'] ?? null) === 'company')
+                                    <div class="flex justify-between text-xs">
+                                        <span class="text-zinc-500">{{ __('Køber') }}</span>
+                                        <span>{{ __('Selskab') }}</span>
+                                    </div>
+                                @endif
                             </div>
                             <div class="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-700 font-bold text-sm">
                                 {{ number_format($ref['price'] ?? 0, 0, ',', '.') }} DKK
