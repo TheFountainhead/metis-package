@@ -1,98 +1,61 @@
 # Ejendomssammenligning i Metis
 
 **Dato:** 27. marts 2026
-**Status:** Draft
+**Status:** Reviewed
 
 ## Problem
 
-Metis-brugere har brug for markedssammenligning når de slår en ejendom op — men typen af analyse afhænger af ejendomstypen. Boliger skal sammenlignes med solgte/udbudte referencer, mens erhvervs-/udlejningsejendomme har brug for lejeindtægt- og profitability-analyse.
+Metis-brugere har brug for markedsanalyse når de slår en ejendom op. Boliger skal sammenlignes med solgte/udbudte referencer, mens erhvervs-/udlejningsejendomme har brug for lejeindtægt og profitability. Sektionen skal vise hvad der er relevant baseret på data — ikke ejendomstype.
 
 ## Løsning
 
-Én ny lazy-loaded sektion (`AddressComparison`) i Metis' address-lookup der auto-detecter ejendomstype via BBR-anvendelseskode og viser den relevante analyse. Starter kompakt, kan udvides.
+Ny lazy-loaded sektion (`AddressComparison`) der viser data-drevet indhold: sammenligning hvis data findes, lejeestimat/profitability hvis det findes, begge hvis begge findes. Kompakt som default, udvidet visning som separat lazy-loaded child-komponent.
 
-## Auto-detect logik
+## Designprincipper (fra review)
 
-BBR-data fra `resolveAddressAnalysis()` indeholder `bbr.usage_code`. Mapping:
-
-| BBR anvendelseskode | Type | Primær visning |
-|---|---|---|
-| 110-150 (beboelse) | Bolig | Sammenligning (solgte + udbudte + prispyramide) |
-| 210-290 (erhverv) | Erhverv | Lejeindtægt + profitability + DSCR |
-| 310-390 (blandet) | Udlejning | Lejeindtægt + profitability + sammenligning |
-| Ukendt/manglende | Fallback | Begge dele collapsed |
+- **Data-drevet, ikke type-drevet** — vis hvad der er data for (`@if($comparison)`, `@if($rentalEstimate)`)
+- **Tynd `mount()`** — flyt conditional fetching til RegistryApi service
+- **Child-komponent for udvidet visning** — holder kompakt view hurtig
+- **Cache comparison results** — i RegistryApi, ikke i komponenten
+- **Ingen `$filters`** — YAGNI, tilføj når det behøves
 
 ## Dataflow
 
 ```
 AddressComparison.mount($query)
-├── parseAddress($query) → address + postal_code
-├── resolveAddressAnalysis($query) → bbr.usage_code, rental_estimate, profitability
-├── IF bolig/blandet: compareProperty(address, postal_code) → solgte, udbudte, prispyramide
-└── Render baseret på ejendomstype
+├── resolveAddressAnalysis($query) → rental_estimate, profitability (cached)
+├── resolvePropertyComparison($query) → comparison data (cached, handles address parsing internally)
+└── Render baseret på hvad der har data
+
+AddressComparisonDetail (child, lazy-loaded on "Vis alle")
+├── Modtager comparison data via prop
+└── Renderer kort + cards + PDF-knap
 ```
 
-Datakilder:
-- **Boligsammenligning:** `POST /v1/property/compare` (allerede deployed)
-- **Lejeindtægt + profitability:** Allerede i `resolveAddressAnalysis()` response (`rental_estimate`, `profitability`)
-
-## Visning
-
-### Kompakt visning (default, alle typer)
-
-**Bolig:**
-- Prispyramide (3 bokse: hurtigt salg / markedspris / drømmepris)
-- Stats-bar: gns. kr/m², median, liggedage, datakvalitet
-- Kompakt tabel: top 3 solgte + top 3 udbudte (adresse, m², pris, kr/m²)
-
-**Erhverv:**
-- Lejeestimat: gns. kr/m²/år, estimeret årlig leje, sample count
-- Profitability: bruttoafkast %, LTV %, DSCR, vurdering
-- Ingen sammenligning (ikke relevant for erhverv)
-
-**Udlejning/blandet:**
-- Lejeestimat + profitability (som erhverv)
-- Plus: kompakt prispyramide + top 3 handler
-
-**Fallback (ukendt type):**
-- Begge dele vist collapsed med "Vis sammenligning" / "Vis lejeestimat" knapper
-
-### Udvidet visning (klik "Vis alle")
-
-**Bolig/udlejning:**
-- Leaflet-kort med farvede markører (rød subject, blå solgte, grøn udbudte)
-- Reference-cards med billeder (solgte + udbudte)
-- "Download PDF"-knap
-
-**Erhverv:**
-- Detaljeret profitability-analyse
-- Lejesammenligning med markedsdata
-
-## Nye filer
-
-| Fil | Hvad |
-|---|---|
-| `src/Livewire/Sections/AddressComparison.php` | Sektion med auto-detect + `$expanded` toggle |
-| `resources/views/livewire/sections/address-comparison.blade.php` | Kompakt + udvidet view |
-
-## Edits
-
-| Fil | Ændring |
-|---|---|
-| `src/Services/RegistryApi.php` | Tilføj `compareProperty()` metode |
-| `src/MetisServiceProvider.php` | Registrér `metis-address-comparison` |
-| `resources/views/livewire/lookup.blade.php` | Tilføj `<livewire:metis-address-comparison>` efter transactions |
-
-## RegistryApi metode
+## RegistryApi metoder
 
 ```php
-public function compareProperty(string $address, string $postalCode, array $filters = []): ?array
+// Ny metode — cacher resultat, håndterer address parsing internt
+public function resolvePropertyComparison(string $query): ?array
 {
-    return rescue(fn () => $this->client()->post('property/compare', array_filter([
-        'address' => $address,
-        'postal_code' => $postalCode,
-        'filters' => ! empty($filters) ? $filters : null,
-    ]))->json('data'), null);
+    $parsed = $this->parseAddress($query);
+
+    if (! $parsed || empty($parsed['zip'])) {
+        return null;
+    }
+
+    $address = trim(($parsed['street'] ?? '') . ' ' . ($parsed['number'] ?? ''));
+    $postalCode = $parsed['zip'];
+
+    $cacheKey = "comparison_{$address}_{$postalCode}";
+
+    return Cache::remember($cacheKey, 3600, fn () =>
+        rescue(fn () => $this->client()
+            ->post('property/compare', [
+                'address' => $address,
+                'postal_code' => $postalCode,
+            ])->json('data'), null)
+    );
 }
 ```
 
@@ -104,8 +67,7 @@ class AddressComparison extends MetisSection
     public ?array $comparison = null;
     public ?array $rentalEstimate = null;
     public ?array $profitability = null;
-    public ?string $propertyType = null; // 'residential', 'commercial', 'mixed', 'unknown'
-    public bool $expanded = false;
+    public bool $showDetail = false;
 
     protected function sectionTitle(): string
     {
@@ -117,74 +79,166 @@ class AddressComparison extends MetisSection
         $this->query = $query;
         $api = app(RegistryApi::class);
 
-        // Get BBR + rental + profitability from existing analysis
         $analysis = $api->resolveAddressAnalysis($query);
-        $usageCode = data_get($analysis, 'property.bbr.usage_code');
-        $this->propertyType = $this->detectPropertyType($usageCode);
         $this->rentalEstimate = data_get($analysis, 'property.rental_estimate');
         $this->profitability = data_get($analysis, 'property.profitability');
 
-        // Fetch comparison data for residential/mixed
-        if (in_array($this->propertyType, ['residential', 'mixed', 'unknown'])) {
-            $parsed = $api->parseAddress($query);
-            if ($parsed) {
-                $this->comparison = $api->compareProperty(
-                    trim(($parsed['street'] ?? '') . ' ' . ($parsed['number'] ?? '')),
-                    $parsed['zip'] ?? '',
-                );
-            }
-        }
+        $this->comparison = $api->resolvePropertyComparison($query);
     }
 
-    public function expand(): void
+    public function render()
     {
-        $this->expanded = true;
-    }
-
-    protected function detectPropertyType(?int $usageCode): string
-    {
-        if (! $usageCode) {
-            return 'unknown';
-        }
-
-        return match (true) {
-            $usageCode >= 110 && $usageCode <= 150 => 'residential',
-            $usageCode >= 210 && $usageCode <= 290 => 'commercial',
-            $usageCode >= 310 && $usageCode <= 390 => 'mixed',
-            default => 'unknown',
-        };
+        return view('metis::livewire.sections.address-comparison');
     }
 }
 ```
 
-## Placering i lookup.blade.php
+Bemærk:
+- Altid fetch comparison — `rescue()` + `null` håndterer ejendomme uden data
+- Ingen `$propertyType` eller `detectPropertyType()` — blade checker data-presence
+- `mount()` er tynd — RegistryApi håndterer parsing og caching
+
+## AddressComparisonDetail child-komponent
+
+```php
+class AddressComparisonDetail extends MetisSection
+{
+    public array $comparison = [];
+
+    protected function sectionTitle(): string
+    {
+        return __('Detaljeret sammenligning');
+    }
+
+    public function mount(array $comparison): void
+    {
+        $this->comparison = $comparison;
+    }
+
+    public function render()
+    {
+        return view('metis::livewire.sections.address-comparison-detail');
+    }
+}
+```
+
+## Blade views
+
+### address-comparison.blade.php (kompakt)
 
 ```blade
-@elseif($type === 'address')
-    <livewire:metis-map-panel :query="$query" lazy />
-    <livewire:metis-address-bbr :query="$query" lazy />
-    <livewire:metis-address-valuation :query="$query" lazy />
-    <livewire:metis-address-owners :query="$query" lazy />
-    <livewire:metis-address-mortgages :query="$query" lazy />
-    <livewire:metis-address-transactions :query="$query" lazy />
-    <livewire:metis-address-comparison :query="$query" lazy />  {{-- NY --}}
-    <livewire:metis-address-companies :query="$query" lazy />
-    <livewire:metis-address-planning :query="$query" lazy />
-    <livewire:metis-address-heritage :query="$query" lazy />
-@endif
+<div>
+    <flux:card>
+        <flux:heading size="lg" class="mb-4">{{ __('Markedsanalyse') }}</flux:heading>
+
+        @if ($comparison)
+            {{-- Prispyramide --}}
+            @if ($pyramid = data_get($comparison, 'price_pyramid'))
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                    <div class="bg-zinc-50 rounded-lg p-3 text-center">
+                        <div class="font-bold">{{ number_format($pyramid['quick_sale'], 0, ',', '.') }}</div>
+                        <div class="text-xs text-zinc-400">{{ __('Hurtigt salg') }}</div>
+                    </div>
+                    <div class="bg-blue-50 border-blue-200 rounded-lg p-3 text-center">
+                        <div class="font-bold text-blue-700">{{ number_format($pyramid['market_price'], 0, ',', '.') }}</div>
+                        <div class="text-xs text-blue-500">{{ __('Markedspris') }}</div>
+                    </div>
+                    <div class="bg-zinc-50 rounded-lg p-3 text-center">
+                        <div class="font-bold">{{ number_format($pyramid['dream_price'], 0, ',', '.') }}</div>
+                        <div class="text-xs text-zinc-400">{{ __('Drømmepris') }}</div>
+                    </div>
+                </div>
+            @endif
+
+            {{-- Stats + kompakt tabel med top 3 --}}
+            ...
+
+            {{-- Vis alle knap --}}
+            @if (! $showDetail)
+                <flux:button variant="ghost" wire:click="$toggle('showDetail')" class="mt-4">
+                    {{ __('Vis alle referencer') }}
+                </flux:button>
+            @endif
+
+            {{-- Udvidet visning som child-komponent --}}
+            @if ($showDetail)
+                <livewire:metis-address-comparison-detail :comparison="$comparison" lazy />
+            @endif
+        @endif
+
+        @if ($rentalEstimate || $profitability)
+            {{-- Lejeestimat --}}
+            @if ($rentalEstimate)
+                <div class="mt-4 grid grid-cols-2 gap-3">
+                    ...gns kr/m²/år, estimeret årlig leje, sample count...
+                </div>
+            @endif
+
+            {{-- Profitability --}}
+            @if ($profitability)
+                <div class="mt-4 grid grid-cols-3 gap-3">
+                    ...bruttoafkast %, LTV %, DSCR...
+                </div>
+            @endif
+        @endif
+
+        @if (! $comparison && ! $rentalEstimate && ! $profitability)
+            <p class="text-sm text-zinc-500">{{ __('Ingen markedsdata tilgængelig') }}</p>
+        @endif
+    </flux:card>
+</div>
 ```
+
+### address-comparison-detail.blade.php (udvidet)
+
+```blade
+<div>
+    {{-- Leaflet kort med markører --}}
+    <flux:card class="mb-4 p-0!">
+        <div wire:ignore>
+            ...leaflet map med rød/blå/grøn markører...
+        </div>
+    </flux:card>
+
+    {{-- Solgte reference-cards med billeder --}}
+    ...3-kolonne grid...
+
+    {{-- Udbudte reference-cards --}}
+    ...3-kolonne grid...
+
+    {{-- Download PDF --}}
+    <flux:button variant="primary" :href="..." target="_blank">
+        {{ __('Download PDF') }}
+    </flux:button>
+</div>
+```
+
+## Nye filer
+
+| Fil | Hvad |
+|---|---|
+| `src/Livewire/Sections/AddressComparison.php` | Kompakt sektion (~25 linjer) |
+| `src/Livewire/Sections/AddressComparisonDetail.php` | Udvidet child med kort + cards (~15 linjer) |
+| `resources/views/livewire/sections/address-comparison.blade.php` | Kompakt view |
+| `resources/views/livewire/sections/address-comparison-detail.blade.php` | Udvidet view med kort + billeder |
+
+## Edits
+
+| Fil | Ændring |
+|---|---|
+| `src/Services/RegistryApi.php` | Tilføj `resolvePropertyComparison()` (~15 linjer) |
+| `src/MetisServiceProvider.php` | Registrér 2 komponenter |
+| `resources/views/livewire/lookup.blade.php` | Tilføj 1 linje |
 
 ## Acceptance Criteria
 
-1. **Auto-detect:** Ejendomstype detekteres korrekt fra BBR-anvendelseskode
-2. **Bolig:** Viser prispyramide, stats, top 3 solgte/udbudte i kompakt visning
-3. **Erhverv:** Viser lejeestimat + profitability (bruttoafkast, LTV, DSCR)
-4. **Udlejning/blandet:** Viser lejeestimat + profitability + sammenligning
-5. **Ukendt:** Viser begge dele collapsed med toggle-knapper
-6. **Udvidet visning:** Leaflet-kort + reference-cards med billeder
-7. **PDF:** Download-knap i udvidet visning (kun bolig/blandet)
-8. **Lazy-loaded:** Vises med loading-skeleton som andre sektioner
-9. **Sektionens titel:** "Markedsanalyse"
-10. **Placering:** Efter transactions, før companies i address-lookup
-11. **Kompakt tabel:** Top 3 solgte + top 3 udbudte med adresse, m², pris, kr/m²
-12. **Profitability:** Bruttoafkast beregnet som (årlig leje / salgspris) × 100
+1. **Sektion:** "Markedsanalyse" vises efter transactions i address-lookup
+2. **Data-drevet:** Viser sammenligning hvis data findes, lejeestimat/profitability hvis det findes, begge hvis begge
+3. **Kompakt sammenligning:** Prispyramide, stats-bar, top 3 solgte + udbudte tabel
+4. **Lejeestimat:** Gns. kr/m²/år, estimeret årlig leje, sample count
+5. **Profitability:** Bruttoafkast %, LTV %, DSCR
+6. **Udvidet visning:** "Vis alle" → lazy-loaded child med Leaflet-kort + reference-cards + PDF
+7. **Ingen data:** Viser "Ingen markedsdata tilgængelig"
+8. **Lazy-loaded:** Loading-skeleton som andre sektioner
+9. **Caching:** Comparison data cached i RegistryApi (1 time)
+10. **Placering:** Efter transactions, før companies
