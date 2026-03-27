@@ -214,6 +214,28 @@ class RegistryApi
         });
     }
 
+    public function resolvePropertyComparison(string $query): ?array
+    {
+        $parsed = $this->parseAddress($query);
+
+        if (! $parsed || empty($parsed['zip'])) {
+            return null;
+        }
+
+        $address = trim(($parsed['street'] ?? '') . ' ' . ($parsed['number'] ?? ''));
+        $postalCode = $parsed['zip'];
+
+        $cacheKey = "metis_comparison_{$postalCode}_{$address}";
+
+        return Cache::remember($cacheKey, 3600, fn () =>
+            rescue(fn () => $this->client()
+                ->post('property/compare', [
+                    'address' => $address,
+                    'postal_code' => $postalCode,
+                ])->json('data'), null)
+        );
+    }
+
     public function parseAddress(string $address): array
     {
         $parts = array_map('trim', explode(',', $address, 2));
