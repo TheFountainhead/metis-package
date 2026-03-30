@@ -127,6 +127,7 @@ class Search extends Component
         if (in_array($type, ['cvr', 'address'])) {
             $this->resultType = $type;
             $this->logLookup($type, $query, isCrossReference: false);
+            $this->dispatch('update-url', query: $query, type: $type);
 
             return;
         }
@@ -138,6 +139,7 @@ class Search extends Component
         // Log only successful searches
         if ($this->result) {
             $this->logLookup($type, $query, isCrossReference: false);
+            $this->dispatch('update-url', query: $query, type: $type);
             $this->dispatchSearchCompleted();
         }
     }
