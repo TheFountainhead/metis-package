@@ -160,16 +160,19 @@ class RegistryApi
 
     public function fetchCompanyInfo(string $cvr): ?array
     {
-        // Direct HTTP call to avoid get()'s ->json('data') unwrapping
+        // Direct HTTP call with explicit error capture
         try {
             $response = $this->client()
-                ->get("/v1/cvr/company/{$cvr}")
-                ->throw()
-                ->json();
+                ->get("/v1/cvr/company/{$cvr}");
 
-            return $response['data']['company'] ?? $response['company'] ?? null;
-        } catch (RequestException $e) {
-            return null;
+            $json = $response->json();
+
+            // Try multiple response formats
+            return $json['data']['company']
+                ?? $json['company']
+                ?? null;
+        } catch (\Throwable $e) {
+            return ['_debug_error' => get_class($e).': '.$e->getMessage()];
         }
     }
 
