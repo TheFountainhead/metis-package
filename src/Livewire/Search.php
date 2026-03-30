@@ -179,7 +179,7 @@ class Search extends Component
         if (in_array($type, ['cvr', 'address'])) {
             $this->resultType = $type;
             $this->logLookup($type, $value, isCrossReference: true);
-            $this->dispatch('update-url', query: $value);
+            $this->dispatch('update-url', query: $value, type: $type);
 
             return;
         }
