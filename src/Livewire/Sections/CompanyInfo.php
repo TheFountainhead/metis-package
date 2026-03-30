@@ -25,7 +25,12 @@ class CompanyInfo extends MetisSection
 
         // Fallback: fetch directly from CVR Elasticsearch
         if (! $this->company) {
-            $this->company = rescue(fn () => $api->fetchCompanyInfo($query));
+            try {
+                $this->company = $api->fetchCompanyInfo($query);
+            } catch (\Throwable $e) {
+                // Expose error temporarily for debugging
+                $this->company = ['name' => 'DEBUG ERROR: '.get_class($e).': '.$e->getMessage(), 'cvr' => $query];
+            }
         }
 
         if ($this->company && auth()->check()) {
