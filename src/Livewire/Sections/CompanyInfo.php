@@ -25,7 +25,11 @@ class CompanyInfo extends MetisSection
 
         // Fallback: fetch directly from CVR Elasticsearch
         if (! $this->company) {
-            $this->company = rescue(fn () => $api->fetchCompanyInfo($query));
+            $info = $api->fetchCompanyInfo($query);
+            // Map to expected format for blade template
+            if ($info && isset($info['name'])) {
+                $this->company = $info;
+            }
         }
 
         if ($this->company && auth()->check()) {
