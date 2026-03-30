@@ -160,10 +160,17 @@ class RegistryApi
 
     public function fetchCompanyInfo(string $cvr): ?array
     {
-        $result = $this->get("/v1/cvr/company/{$cvr}");
+        // Direct HTTP call to avoid get()'s ->json('data') unwrapping
+        try {
+            $response = $this->client()
+                ->get("/v1/cvr/company/{$cvr}")
+                ->throw()
+                ->json();
 
-        // get() already unwraps 'data' via ->json('data'), so result has 'company' at top level
-        return $result['company'] ?? null;
+            return $response['data']['company'] ?? $response['company'] ?? null;
+        } catch (RequestException $e) {
+            return null;
+        }
     }
 
     public function fetchCompanyStructure(string $cvr): array
@@ -173,12 +180,26 @@ class RegistryApi
 
     public function fetchCompanyPropertyPortfolio(string $cvr): ?array
     {
-        return $this->get("/v1/company/{$cvr}/property-portfolio");
+        try {
+            return $this->client()
+                ->get("/v1/company/{$cvr}/property-portfolio")
+                ->throw()
+                ->json('data');
+        } catch (RequestException $e) {
+            return null;
+        }
     }
 
     public function fetchCompanyTaxRecords(string $cvr): ?array
     {
-        return $this->get("/v1/company/{$cvr}/tax");
+        try {
+            return $this->client()
+                ->get("/v1/company/{$cvr}/tax")
+                ->throw()
+                ->json('data');
+        } catch (RequestException $e) {
+            return null;
+        }
     }
 
     public function fetchCompaniesByCpr(string $cpr): ?array
