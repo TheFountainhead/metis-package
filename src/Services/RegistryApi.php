@@ -228,7 +228,16 @@ class RegistryApi
         $cacheKey = 'metis:address_analysis:'.md5($address);
 
         return Cache::remember($cacheKey, now()->addHours(24), function () use ($address) {
-            return $this->fetchPropertyByAddress($address);
+            $parsed = $this->parseAddress($address);
+
+            // Return raw API response (not transformed) — sections need full data
+            $result = $this->post('/v1/property/analysis', $parsed);
+
+            if (isset($result['error']) || empty($result['property'] ?? null)) {
+                return [];
+            }
+
+            return $result;
         });
     }
 

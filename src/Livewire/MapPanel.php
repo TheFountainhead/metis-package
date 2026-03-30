@@ -16,11 +16,23 @@ class MapPanel extends Component
     public array $layers = [];
     public bool $layersUnavailable = false;
 
-    public function mount(?float $lat = null, ?float $lng = null, ?string $searchType = null): void
+    public function mount(?float $lat = null, ?float $lng = null, ?string $searchType = null, ?string $query = null): void
     {
         $this->lat = $lat;
         $this->lng = $lng;
         $this->searchType = $searchType;
+
+        // Resolve address query to coordinates if lat/lng not provided
+        if (! $this->lat && $query) {
+            $analysis = rescue(fn () => app(RegistryApi::class)->resolveAddressAnalysis($query));
+            $coords = $analysis['property']['coordinates'] ?? null;
+            if ($coords) {
+                $this->lat = (float) ($coords['lat'] ?? $coords['latitude'] ?? 0);
+                $this->lng = (float) ($coords['lng'] ?? $coords['longitude'] ?? 0);
+            }
+            $this->searchType = 'address';
+        }
+
         $this->loadLayers();
     }
 
