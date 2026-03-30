@@ -194,7 +194,7 @@ class Search extends Component
         }
 
         if ($type !== 'cpr') {
-            $this->dispatch('update-url', query: $value);
+            $this->dispatch('update-url', query: $value, type: $type);
         }
     }
 
