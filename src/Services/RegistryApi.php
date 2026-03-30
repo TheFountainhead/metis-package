@@ -160,22 +160,13 @@ class RegistryApi
 
     public function fetchCompanyInfo(string $cvr): ?array
     {
-        // DEBUG: return raw response keys to identify structure
         try {
             $response = $this->client()
                 ->get("/v1/cvr/company/{$cvr}");
 
-            $json = $response->json();
-
-            return [
-                '_debug_status' => $response->status(),
-                '_debug_keys' => is_array($json) ? array_keys($json) : gettype($json),
-                '_debug_data_keys' => is_array($json['data'] ?? null) ? array_keys($json['data']) : gettype($json['data'] ?? null),
-                '_debug_url' => config('metis.registry_api.url')."/v1/cvr/company/{$cvr}",
-                'name' => $json['data']['company']['name'] ?? $json['company']['name'] ?? 'NOT_FOUND',
-            ];
+            return $response->json('data.company');
         } catch (\Throwable $e) {
-            return ['name' => 'ERROR: '.get_class($e).': '.$e->getMessage(), 'cvr' => $cvr];
+            return null;
         }
     }
 
