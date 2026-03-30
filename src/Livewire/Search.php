@@ -123,10 +123,10 @@ class Search extends Component
             }
         }
 
-        // CVR and address lookups → redirect to full detail page when available
-        if (in_array($type, ['cvr', 'address']) && Route::has('metis.lookup')) {
+        // For CVR/address, show full sections inline (no redirect)
+        if (in_array($type, ['cvr', 'address'])) {
+            $this->resultType = $type;
             $this->logLookup($type, $query, isCrossReference: false);
-            $this->redirect(route('metis.lookup', ['type' => $type, 'query' => $query]));
 
             return;
         }
@@ -172,6 +172,15 @@ class Search extends Component
 
         $this->query = $value;
         $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+
+        // CVR/address → show sections inline
+        if (in_array($type, ['cvr', 'address'])) {
+            $this->resultType = $type;
+            $this->logLookup($type, $value, isCrossReference: true);
+            $this->dispatch('update-url', query: $value);
+
+            return;
+        }
 
         $this->loading = true;
         $this->performSearch($type, $value);
