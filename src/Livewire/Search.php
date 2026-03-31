@@ -40,6 +40,8 @@ class Search extends Component
 
     public string $turnstileToken = '';
 
+    public array $suggestions = [];
+
     public function mount(): void
     {
         $allChips = [
@@ -77,8 +79,32 @@ class Search extends Component
         }
     }
 
+    public function updatedQuery(): void
+    {
+        $q = trim($this->query);
+        $this->suggestions = [];
+
+        if (strlen($q) < 3) {
+            return;
+        }
+
+        // Only show address suggestions for text with numbers (likely address)
+        $detector = new SearchDetector;
+        if ($detector->detect($q) === 'address') {
+            $this->suggestions = rescue(fn () => app(RegistryApi::class)->addressAutocomplete($q, 5), []) ?? [];
+        }
+    }
+
+    public function selectSuggestion(string $text): void
+    {
+        $this->query = $text;
+        $this->suggestions = [];
+        $this->search();
+    }
+
     public function search(): void
     {
+        $this->suggestions = [];
         $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
         $this->retryCount = 0;
 
