@@ -11,16 +11,16 @@
             Vi bruger cookies til at forbedre din oplevelse og huske dine opslag.
             <a href="#" class="text-warm-500 underline">Læs mere</a>
         </p>
-        <div class="flex gap-2 shrink-0">
+        <div class="flex gap-2 shrink-0 w-full sm:w-auto">
             <button
                 @click="document.cookie = 'metis_consent=essential; max-age=31536000; path=/'; show = false"
-                class="px-4 py-2 text-sm border border-sand-200 rounded-lg text-ink-800 hover:bg-sand-100 transition"
+                class="flex-1 sm:flex-none px-4 py-2 text-sm border border-sand-200 rounded-lg text-ink-800 hover:bg-sand-100 transition text-center"
             >
                 Kun nødvendige
             </button>
             <button
                 @click="document.cookie = 'metis_consent=all; max-age=31536000; path=/'; show = false"
-                class="px-4 py-2 text-sm bg-ink-800 text-white rounded-lg hover:bg-ink-900 transition"
+                class="flex-1 sm:flex-none px-4 py-2 text-sm bg-ink-800 text-white rounded-lg hover:bg-ink-900 transition text-center"
             >
                 Acceptér alle
             </button>
