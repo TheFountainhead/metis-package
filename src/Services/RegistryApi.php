@@ -70,6 +70,7 @@ class RegistryApi
 
         // Transform to array of persons with roles for blade template
         $roles = collect($result['companies'] ?? [])
+            ->filter(fn ($c) => ($c['status'] ?? '') === 'NORMAL' || ($c['status'] ?? '') === '')
             ->flatMap(fn ($company) => collect($company['roles'] ?? [])
                 ->map(fn ($role) => [
                     'company' => $company['name'] ?? '',
@@ -77,7 +78,7 @@ class RegistryApi
                     'role' => $role['role_label'] ?? '',
                     'is_current' => $role['is_current'] ?? false,
                 ]))
-            ->filter(fn ($r) => $r['is_current'])
+            ->unique(fn ($r) => $r['cvr'].$r['role'])
             ->values()
             ->all();
 
