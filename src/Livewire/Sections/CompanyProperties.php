@@ -13,7 +13,7 @@ class CompanyProperties extends MetisSection
         return __('Property Portfolio');
     }
 
-    public int $visibleCount = 25;
+    public int $visibleCount = 10;
 
     public function mount(string $query): void
     {
