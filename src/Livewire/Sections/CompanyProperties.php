@@ -13,35 +13,22 @@ class CompanyProperties extends MetisSection
         return __('Property Portfolio');
     }
 
-    public int $visibleCount = 10;
-
     public function mount(string $query): void
     {
         $this->query = $query;
-        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($query));
-        $portfolio = $result['portfolio'] ?? null;
-
-        if ($portfolio) {
-            // Keep summary but limit properties for Livewire serialization
-            $allProperties = $portfolio['properties'] ?? [];
-            $portfolio['properties'] = array_slice($allProperties, 0, $this->visibleCount);
-            $portfolio['total_count'] = count($allProperties);
-        }
-
-        $this->portfolio = $portfolio;
+        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($query, limit: 15));
+        $this->portfolio = $result['portfolio'] ?? null;
     }
 
     public function loadMore(): void
     {
-        $this->visibleCount += 50;
-        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query));
-        $portfolio = $result['portfolio'] ?? null;
+        $current = count($this->portfolio['properties'] ?? []);
+        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query, limit: 50, offset: $current));
+        $more = $result['portfolio']['properties'] ?? [];
 
-        if ($portfolio) {
-            $allProperties = $portfolio['properties'] ?? [];
-            $portfolio['properties'] = array_slice($allProperties, 0, $this->visibleCount);
-            $portfolio['total_count'] = count($allProperties);
-            $this->portfolio = $portfolio;
+        if ($more && $this->portfolio) {
+            $this->portfolio['properties'] = array_merge($this->portfolio['properties'], $more);
+            $this->portfolio['property_count'] = count($this->portfolio['properties']);
         }
     }
 

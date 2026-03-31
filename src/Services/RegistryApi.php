@@ -198,12 +198,15 @@ class RegistryApi
         return $this->post('/v1/cvr/company-structure', ['cvr_numbers' => [$cvr]]) ?? [];
     }
 
-    public function fetchCompanyPropertyPortfolio(string $cvr): ?array
+    public function fetchCompanyPropertyPortfolio(string $cvr, int $limit = 25, int $offset = 0): ?array
     {
         try {
             return $this->client()
-                ->timeout(120)
-                ->get("/v1/company/{$cvr}/property-portfolio")
+                ->timeout(30)
+                ->get("/v1/company/{$cvr}/property-portfolio", [
+                    'limit' => $limit,
+                    'offset' => $offset,
+                ])
                 ->throw()
                 ->json('data');
         } catch (\Throwable $e) {
