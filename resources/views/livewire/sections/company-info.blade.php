@@ -3,7 +3,7 @@
         @if($company)
             <div class="flex items-start justify-between mb-4">
                 <div>
-                    <flux:heading size="xl">{{ $company['name'] ?? $query }}</flux:heading>
+                    <flux:heading size="xl" data-company-name>{{ $company['name'] ?? $query }}</flux:heading>
                     <div class="flex items-center gap-2 mt-1">
                         <span class="text-sm text-zinc-500">CVR {{ $query }}</span>
                         @if($company['company_type'] ?? null)
@@ -137,7 +137,12 @@
                             <tbody>
                                 @foreach(array_slice($financials, 0, 5) as $fin)
                                     <tr class="border-b border-zinc-100 dark:border-zinc-800">
-                                        <td class="py-2 pr-4">{{ $fin['year'] ?? ($fin['period_end'] ? \Carbon\Carbon::parse($fin['period_end'])->format('Y') : '—') }}</td>
+                                        <td class="py-2 pr-4">
+                                            {{ $fin['year'] ?? ($fin['period_end'] ? \Carbon\Carbon::parse($fin['period_end'])->format('Y') : '—') }}
+                                            @if(($fin['source'] ?? '') === 'pdf')
+                                                <span class="text-[10px] text-zinc-400 ml-1">pdf</span>
+                                            @endif
+                                        </td>
                                         @php
                                             $eq = $toTdkk($fin['equity'] ?? null, $fin);
                                             $as = $toTdkk($fin['assets'] ?? null, $fin);

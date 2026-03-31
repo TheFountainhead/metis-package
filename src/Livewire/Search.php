@@ -128,6 +128,7 @@ class Search extends Component
             $this->resultType = $type;
             $this->logLookup($type, $query, isCrossReference: false);
             $this->dispatch('update-url', query: $query, type: $type);
+            $this->dispatch('scroll-top');
 
             return;
         }
@@ -158,6 +159,13 @@ class Search extends Component
         $this->search();
     }
 
+    public function clearSearch(): void
+    {
+        $this->reset(['query', 'result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->dispatch('scroll-top');
+        $this->js("history.pushState(null, '', '/'); document.title = 'Metis';");
+    }
+
     public function fillChip(string $chip): void
     {
         $this->query = $chip;
@@ -180,6 +188,7 @@ class Search extends Component
             $this->resultType = $type;
             $this->logLookup($type, $value, isCrossReference: true);
             $this->dispatch('update-url', query: $value, type: $type);
+            $this->dispatch('scroll-top');
 
             return;
         }
