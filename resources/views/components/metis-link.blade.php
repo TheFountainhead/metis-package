@@ -1,4 +1,5 @@
+@props(['type', 'query', 'label' => null])
 <a href="{{ route('metis.lookup', ['type' => $type, 'query' => $query]) }}"
-   class="text-blue-600 hover:underline dark:text-blue-400 {{ $attributes->get('class', '') }}">
+   {{ $attributes->merge(['class' => 'text-blue-600 hover:underline dark:text-blue-400']) }}>
     {{ $label ?? $slot ?? $query }}
 </a>
