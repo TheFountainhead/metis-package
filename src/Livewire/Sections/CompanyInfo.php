@@ -19,17 +19,10 @@ class CompanyInfo extends MetisSection
         $this->query = $query;
         $api = app(RegistryApi::class);
 
-        // Try local DB first (fast, has enriched data)
-        $result = rescue(fn () => $api->fetchRolesByCvr([$query]));
-        $this->company = $result['companies'][0] ?? null;
-
-        // Fallback: fetch directly from CVR Elasticsearch
-        if (! $this->company) {
-            $info = $api->fetchCompanyInfo($query);
-            // Map to expected format for blade template
-            if ($info && isset($info['name'])) {
-                $this->company = $info;
-            }
+        // Always fetch from CVR API for complete data (type, financials, contact, etc.)
+        $info = rescue(fn () => $api->fetchCompanyInfo($query));
+        if ($info && isset($info['name'])) {
+            $this->company = $info;
         }
 
         if ($this->company && auth()->check()) {

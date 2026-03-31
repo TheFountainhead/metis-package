@@ -2,7 +2,7 @@
     x-data="{ show: !document.cookie.includes('metis_consent=') }"
     x-show="show"
     x-transition
-    class="fixed bottom-16 inset-x-0 z-40 bg-white border-t border-sand-200 p-4 shadow-lg rounded-t-xl mx-4 sm:mx-auto sm:max-w-xl"
+    class="fixed bottom-16 inset-x-0 z-40 bg-white border border-sand-200 p-4 shadow-lg rounded-xl mx-4 sm:mx-auto sm:max-w-2xl"
     role="region"
     aria-label="Cookie-samtykke"
 >

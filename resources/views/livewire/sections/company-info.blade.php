@@ -133,17 +133,17 @@
                                     <tr class="border-b border-zinc-100 dark:border-zinc-800">
                                         <td class="py-2 pr-4">{{ $fin['year'] ?? ($fin['period_end'] ? \Carbon\Carbon::parse($fin['period_end'])->format('Y') : '—') }}</td>
                                         <td class="py-2 pr-4 {{ ($fin['equity'] ?? 0) < 0 ? 'text-red-600' : '' }}">
-                                            {{ ($fin['equity'] ?? null) !== null ? number_format($fin['equity'] / 100000, 0, ',', '.') : '—' }}
+                                            {{ ($fin['equity'] ?? null) !== null ? number_format($fin['equity'] / 1000, 0, ',', '.') : '—' }}
                                         </td>
                                         <td class="py-2 pr-4">
-                                            {{ ($fin['assets'] ?? null) !== null ? number_format($fin['assets'] / 100000, 0, ',', '.') : '—' }}
+                                            {{ ($fin['assets'] ?? null) !== null ? number_format($fin['assets'] / 1000, 0, ',', '.') : '—' }}
                                         </td>
                                         <td class="py-2 pr-4">
                                             @php $liabilities = ($fin['assets'] ?? null) !== null && ($fin['equity'] ?? null) !== null ? $fin['assets'] - $fin['equity'] : null; @endphp
-                                            {{ $liabilities !== null ? number_format($liabilities / 100000, 0, ',', '.') : '—' }}
+                                            {{ $liabilities !== null ? number_format($liabilities / 1000, 0, ',', '.') : '—' }}
                                         </td>
                                         <td class="py-2 {{ ($fin['profit_loss'] ?? 0) < 0 ? 'text-red-600' : (($fin['profit_loss'] ?? null) !== null ? 'text-green-600' : '') }}">
-                                            {{ ($fin['profit_loss'] ?? null) !== null ? number_format($fin['profit_loss'] / 100000, 0, ',', '.') : '—' }}
+                                            {{ ($fin['profit_loss'] ?? null) !== null ? number_format($fin['profit_loss'] / 1000, 0, ',', '.') : '—' }}
                                         </td>
                                     </tr>
                                 @endforeach
