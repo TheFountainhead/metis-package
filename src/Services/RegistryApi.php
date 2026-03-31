@@ -202,10 +202,11 @@ class RegistryApi
     {
         try {
             return $this->client()
+                ->timeout(120)
                 ->get("/v1/company/{$cvr}/property-portfolio")
                 ->throw()
                 ->json('data');
-        } catch (RequestException $e) {
+        } catch (\Throwable $e) {
             return null;
         }
     }
