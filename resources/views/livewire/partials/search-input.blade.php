@@ -5,6 +5,7 @@
         </svg>
         <input
             wire:model.live.debounce.300ms="query"
+            wire:keydown.enter="search"
             type="text"
             class="flex-1 bg-transparent border-none outline-none text-ink-800 placeholder-sand-300 text-[15px] focus:ring-0"
             placeholder="Søg person, virksomhed eller adresse..."
