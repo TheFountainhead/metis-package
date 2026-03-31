@@ -62,7 +62,29 @@ class RegistryApi
 
     public function searchPersonByName(string $name): array
     {
-        return $this->fetchPersonRoles($name) ?? [];
+        $result = $this->fetchPersonRoles($name);
+
+        if (! $result || ! isset($result['person_name'])) {
+            return [];
+        }
+
+        // Transform to array of persons with roles for blade template
+        $roles = collect($result['companies'] ?? [])
+            ->flatMap(fn ($company) => collect($company['roles'] ?? [])
+                ->map(fn ($role) => [
+                    'company' => $company['name'] ?? '',
+                    'cvr' => $company['cvr'] ?? '',
+                    'role' => $role['role_label'] ?? '',
+                    'is_current' => $role['is_current'] ?? false,
+                ]))
+            ->filter(fn ($r) => $r['is_current'])
+            ->values()
+            ->all();
+
+        return [[
+            'name' => $result['person_name'],
+            'roles' => $roles,
+        ]];
     }
 
     public function fetchPropertyByAddress(string $address): array

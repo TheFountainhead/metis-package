@@ -110,6 +110,12 @@
                 if (is_array($financials) && ! array_is_list($financials) && ! empty($financials)) {
                     $financials = [$financials]; // Wrap single financial as array
                 }
+                // PDF-sourced entries are already in t.DKK, API entries are in DKK
+                $toTdkk = function($value, $fin) {
+                    if ($value === null) return null;
+                    // PDF source values are already small (t.DKK), API values are large (DKK)
+                    return ($fin['source'] ?? '') === 'pdf' ? (int) $value : (int) ($value / 1000);
+                };
             @endphp
             @if(count($financials) > 0)
                 <div class="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
@@ -132,18 +138,23 @@
                                 @foreach(array_slice($financials, 0, 5) as $fin)
                                     <tr class="border-b border-zinc-100 dark:border-zinc-800">
                                         <td class="py-2 pr-4">{{ $fin['year'] ?? ($fin['period_end'] ? \Carbon\Carbon::parse($fin['period_end'])->format('Y') : '—') }}</td>
-                                        <td class="py-2 pr-4 {{ ($fin['equity'] ?? 0) < 0 ? 'text-red-600' : '' }}">
-                                            {{ ($fin['equity'] ?? null) !== null ? number_format($fin['equity'] / 1000, 0, ',', '.') : '—' }}
+                                        @php
+                                            $eq = $toTdkk($fin['equity'] ?? null, $fin);
+                                            $as = $toTdkk($fin['assets'] ?? null, $fin);
+                                            $li = ($as !== null && $eq !== null) ? $as - $eq : null;
+                                            $pl = $toTdkk($fin['profit_loss'] ?? null, $fin);
+                                        @endphp
+                                        <td class="py-2 pr-4 {{ ($eq ?? 0) < 0 ? 'text-red-600' : '' }}">
+                                            {{ $eq !== null ? number_format($eq, 0, ',', '.') : '—' }}
                                         </td>
                                         <td class="py-2 pr-4">
-                                            {{ ($fin['assets'] ?? null) !== null ? number_format($fin['assets'] / 1000, 0, ',', '.') : '—' }}
+                                            {{ $as !== null ? number_format($as, 0, ',', '.') : '—' }}
                                         </td>
                                         <td class="py-2 pr-4">
-                                            @php $liabilities = ($fin['assets'] ?? null) !== null && ($fin['equity'] ?? null) !== null ? $fin['assets'] - $fin['equity'] : null; @endphp
-                                            {{ $liabilities !== null ? number_format($liabilities / 1000, 0, ',', '.') : '—' }}
+                                            {{ $li !== null ? number_format($li, 0, ',', '.') : '—' }}
                                         </td>
-                                        <td class="py-2 {{ ($fin['profit_loss'] ?? 0) < 0 ? 'text-red-600' : (($fin['profit_loss'] ?? null) !== null ? 'text-green-600' : '') }}">
-                                            {{ ($fin['profit_loss'] ?? null) !== null ? number_format($fin['profit_loss'] / 1000, 0, ',', '.') : '—' }}
+                                        <td class="py-2 {{ ($pl ?? 0) < 0 ? 'text-red-600' : ($pl !== null ? 'text-green-600' : '') }}">
+                                            {{ $pl !== null ? number_format($pl, 0, ',', '.') : '—' }}
                                         </td>
                                     </tr>
                                 @endforeach
