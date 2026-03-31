@@ -3,7 +3,7 @@
         <flux:heading size="lg" class="mb-4">{{ __('Property Portfolio') }}</flux:heading>
         @if($portfolio && count($portfolio['properties'] ?? []) > 0)
             <div class="mb-3 flex gap-4 text-sm">
-                <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $portfolio['property_count'] ?? 0 }}</span></span>
+                <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $portfolio['total_count'] ?? $portfolio['property_count'] ?? 0 }}</span></span>
                 <span class="text-zinc-500">{{ __('Total valuation') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_valuation'] ?? 0, 0, ',', '.') }} kr.</span></span>
             </div>
             <div class="overflow-x-auto">
@@ -31,6 +31,13 @@
                     </tbody>
                 </table>
             </div>
+            @if(($portfolio['total_count'] ?? 0) > count($portfolio['properties'] ?? []))
+                <div class="mt-3 text-center">
+                    <button wire:click="loadMore" class="text-sm text-blue-600 hover:text-blue-800 transition">
+                        {{ __('Show more') }} ({{ count($portfolio['properties']) }} / {{ $portfolio['total_count'] }})
+                    </button>
+                </div>
+            @endif
         @else
             <p class="text-sm text-zinc-500">{{ __('No properties found for this company.') }}</p>
         @endif

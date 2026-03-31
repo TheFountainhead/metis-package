@@ -13,11 +13,36 @@ class CompanyProperties extends MetisSection
         return __('Property Portfolio');
     }
 
+    public int $visibleCount = 25;
+
     public function mount(string $query): void
     {
         $this->query = $query;
         $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($query));
-        $this->portfolio = $result['portfolio'] ?? null;
+        $portfolio = $result['portfolio'] ?? null;
+
+        if ($portfolio) {
+            // Keep summary but limit properties for Livewire serialization
+            $allProperties = $portfolio['properties'] ?? [];
+            $portfolio['properties'] = array_slice($allProperties, 0, $this->visibleCount);
+            $portfolio['total_count'] = count($allProperties);
+        }
+
+        $this->portfolio = $portfolio;
+    }
+
+    public function loadMore(): void
+    {
+        $this->visibleCount += 50;
+        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query));
+        $portfolio = $result['portfolio'] ?? null;
+
+        if ($portfolio) {
+            $allProperties = $portfolio['properties'] ?? [];
+            $portfolio['properties'] = array_slice($allProperties, 0, $this->visibleCount);
+            $portfolio['total_count'] = count($allProperties);
+            $this->portfolio = $portfolio;
+        }
     }
 
     public function render()
