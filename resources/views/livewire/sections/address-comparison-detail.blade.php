@@ -1,4 +1,4 @@
-<div>
+<div
     @php
         $subject = $comparison['subject'] ?? [];
         $soldRefs = $comparison['sold_references'] ?? [];
@@ -6,95 +6,149 @@
         $allMarkers = [];
 
         if (($subject['lat'] ?? null) && ($subject['lng'] ?? null)) {
-            $allMarkers[] = ['lat' => $subject['lat'], 'lng' => $subject['lng'], 'color' => 'red', 'label' => $subject['address'] ?? ''];
+            $allMarkers[] = ['lat' => $subject['lat'], 'lng' => $subject['lng'], 'color' => 'red', 'type' => 'subject', 'label' => $subject['address'] ?? ''];
         }
-        foreach ($soldRefs as $ref) {
+        foreach ($soldRefs as $i => $ref) {
             if (($ref['lat'] ?? null) && ($ref['lng'] ?? null)) {
-                $allMarkers[] = ['lat' => $ref['lat'], 'lng' => $ref['lng'], 'color' => 'blue', 'label' => ($ref['address'] ?? '') . ' — ' . number_format($ref['price'] ?? 0, 0, ',', '.') . ' DKK'];
+                $allMarkers[] = ['lat' => $ref['lat'], 'lng' => $ref['lng'], 'color' => 'blue', 'type' => 'sold', 'index' => $i, 'label' => $ref['address'] ?? '', 'price' => $ref['price'] ?? 0, 'sqm_price' => $ref['sqm_price'] ?? 0];
             }
         }
-        foreach ($listedRefs as $ref) {
+        foreach ($listedRefs as $i => $ref) {
             if (($ref['lat'] ?? null) && ($ref['lng'] ?? null)) {
-                $allMarkers[] = ['lat' => $ref['lat'], 'lng' => $ref['lng'], 'color' => 'green', 'label' => ($ref['address'] ?? '') . ' — ' . number_format($ref['price'] ?? 0, 0, ',', '.') . ' DKK'];
+                $allMarkers[] = ['lat' => $ref['lat'], 'lng' => $ref['lng'], 'color' => 'green', 'type' => 'listed', 'index' => $i, 'label' => $ref['address'] ?? '', 'price' => $ref['price'] ?? 0, 'sqm_price' => $ref['sqm_price'] ?? 0, 'days' => $ref['days_for_sale'] ?? null];
             }
         }
+
+        $subjectLat = $subject['lat'] ?? null;
+        $subjectLng = $subject['lng'] ?? null;
+        $radiusKm = $comparison['radius_km'] ?? 5;
     @endphp
 
+    x-data="{
+        map: null,
+        markers: @js($allMarkers),
+        soldMarkers: [],
+        listedMarkers: [],
+        subjectLat: @js($subjectLat),
+        subjectLng: @js($subjectLng),
+        radiusKm: @js($radiusKm),
+
+        async init() {
+            await this.loadLeaflet();
+            this.initMap();
+        },
+
+        formatDkk(n) {
+            return new Intl.NumberFormat('da-DK').format(n) + ' DKK';
+        },
+
+        buildPopup(m) {
+            let html = '<strong>' + m.label + '</strong>';
+            if (m.type === 'sold') {
+                html += '<br>' + this.formatDkk(m.price);
+                html += '<br>' + new Intl.NumberFormat('da-DK').format(m.sqm_price) + ' kr/m&sup2;';
+            } else if (m.type === 'listed') {
+                html += '<br>' + this.formatDkk(m.price);
+                html += '<br>' + new Intl.NumberFormat('da-DK').format(m.sqm_price) + ' kr/m&sup2;';
+                if (m.days !== null) {
+                    html += '<br>' + m.days + ' {{ __('liggedage') }}';
+                }
+            }
+            return html;
+        },
+
+        panTo(type, index) {
+            const arr = type === 'sold' ? this.soldMarkers : this.listedMarkers;
+            const leafletMarker = arr[index];
+            if (leafletMarker) {
+                this.map.setView(leafletMarker.getLatLng(), 15, { animate: true });
+                leafletMarker.openPopup();
+            }
+        },
+
+        initMap() {
+            const defaultLat = 55.6761;
+            const defaultLng = 12.5683;
+
+            const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 19,
+            });
+
+            const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '&copy; Esri',
+                maxZoom: 19,
+            });
+
+            this.map = L.map(this.$refs.detailMap, {
+                scrollWheelZoom: false,
+                layers: [osm],
+            }).setView([defaultLat, defaultLng], 7);
+
+            L.control.layers(
+                { 'OpenStreetMap': osm, 'Satellite': satellite },
+                {},
+                { position: 'topright' }
+            ).addTo(this.map);
+
+            if (this.subjectLat && this.subjectLng) {
+                L.circle([this.subjectLat, this.subjectLng], {
+                    radius: this.radiusKm * 1000,
+                    color: '#ef4444',
+                    fillColor: '#ef4444',
+                    fillOpacity: 0.05,
+                    weight: 1,
+                    dashArray: '6 4',
+                }).addTo(this.map);
+            }
+
+            const iconUrl = 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
+            const bounds = [];
+
+            for (const m of this.markers) {
+                const icon = new L.Icon({
+                    iconUrl: iconUrl + 'marker-icon-2x-' + m.color + '.png',
+                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+                    iconSize: [25, 41],
+                    iconAnchor: [12, 41],
+                    popupAnchor: [1, -34],
+                    shadowSize: [41, 41],
+                });
+
+                const leafletMarker = L.marker([m.lat, m.lng], { icon }).addTo(this.map);
+                leafletMarker.bindPopup(this.buildPopup(m));
+
+                if (m.type === 'sold' && m.index !== undefined) {
+                    this.soldMarkers[m.index] = leafletMarker;
+                } else if (m.type === 'listed' && m.index !== undefined) {
+                    this.listedMarkers[m.index] = leafletMarker;
+                }
+
+                bounds.push([m.lat, m.lng]);
+            }
+
+            if (bounds.length > 0) {
+                this.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+            }
+        },
+
+        loadLeaflet() {
+            return new Promise((resolve) => {
+                if (window.L) { resolve(); return; }
+                const css = document.createElement('link');
+                css.rel = 'stylesheet';
+                css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+                document.head.appendChild(css);
+                const js = document.createElement('script');
+                js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+                js.onload = () => resolve();
+                document.head.appendChild(js);
+            });
+        }
+    }"
+>
     <div
         wire:ignore
-        x-data="{
-            map: null,
-            markers: @js($allMarkers),
-
-            async init() {
-                await this.loadLeaflet();
-                this.initMap();
-            },
-
-            initMap() {
-                const defaultLat = 55.6761;
-                const defaultLng = 12.5683;
-
-                const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; OpenStreetMap contributors',
-                    maxZoom: 19,
-                });
-
-                const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                    attribution: '&copy; Esri',
-                    maxZoom: 19,
-                });
-
-                this.map = L.map(this.$refs.detailMap, {
-                    scrollWheelZoom: false,
-                    layers: [osm],
-                }).setView([defaultLat, defaultLng], 7);
-
-                L.control.layers(
-                    { 'OpenStreetMap': osm, 'Satellite': satellite },
-                    {},
-                    { position: 'topright' }
-                ).addTo(this.map);
-
-                const iconUrl = 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/';
-                const bounds = [];
-
-                for (const m of this.markers) {
-                    const icon = new L.Icon({
-                        iconUrl: iconUrl + 'marker-icon-2x-' + m.color + '.png',
-                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-                        iconSize: [25, 41],
-                        iconAnchor: [12, 41],
-                        popupAnchor: [1, -34],
-                        shadowSize: [41, 41],
-                    });
-
-                    const marker = L.marker([m.lat, m.lng], { icon }).addTo(this.map);
-                    if (m.label) {
-                        marker.bindPopup(m.label);
-                    }
-                    bounds.push([m.lat, m.lng]);
-                }
-
-                if (bounds.length > 0) {
-                    this.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
-                }
-            },
-
-            loadLeaflet() {
-                return new Promise((resolve) => {
-                    if (window.L) { resolve(); return; }
-                    const css = document.createElement('link');
-                    css.rel = 'stylesheet';
-                    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-                    document.head.appendChild(css);
-                    const js = document.createElement('script');
-                    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-                    js.onload = () => resolve();
-                    document.head.appendChild(js);
-                });
-            }
-        }"
         x-ref="detailMap"
         class="h-[300px] rounded-lg"
         style="z-index: 0;"
@@ -104,8 +158,8 @@
         <div class="mt-4">
             <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Solgte referencer') }} ({{ count($soldRefs) }})</div>
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                @foreach ($soldRefs as $ref)
-                    <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                @foreach ($soldRefs as $idx => $ref)
+                    <div @click="panTo('sold', {{ $idx }})" class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden cursor-pointer transition hover:ring-2 hover:ring-blue-400">
                         @if ($ref['image_url'] ?? null)
                             <img src="{{ $ref['image_url'] }}" alt="{{ $ref['address'] }}" class="w-full h-32 object-cover">
                         @else
@@ -146,8 +200,8 @@
         <div class="mt-4">
             <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Udbudte referencer') }} ({{ count($listedRefs) }})</div>
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                @foreach ($listedRefs as $ref)
-                    <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                @foreach ($listedRefs as $idx => $ref)
+                    <div @click="panTo('listed', {{ $idx }})" class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden cursor-pointer transition hover:ring-2 hover:ring-green-400">
                         @if ($ref['image_url'] ?? null)
                             <img src="{{ $ref['image_url'] }}" alt="{{ $ref['address'] }}" class="w-full h-32 object-cover">
                         @else
