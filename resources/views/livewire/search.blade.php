@@ -164,6 +164,27 @@
                         @endforeach
                     </div>
                     @endif
+
+                    @if($properties = $person['properties'] ?? [])
+                    <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
+                        <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">Ejendomme via selskaber</h3>
+                        @php $grouped = collect($properties)->groupBy('via_company'); @endphp
+                        @foreach($grouped as $company => $props)
+                            <div class="{{ !$loop->first ? 'mt-3 pt-3 border-t border-sand-100' : '' }}">
+                                <div class="text-xs text-sand-300 mb-1">{{ $company }}</div>
+                                @foreach($props as $prop)
+                                    @php $addr = trim(($prop['address'] ?? '') . ', ' . ($prop['postal_code'] ?? '') . ' ' . ($prop['city'] ?? ''), ', '); @endphp
+                                    <div class="flex justify-between items-center py-1">
+                                        <span class="text-[14px] text-ink-800">{{ $addr ?: 'BFE ' . ($prop['matrikel_id'] ?? '?') }}</span>
+                                        @if($addr)
+                                        <button wire:click="crossReference('address', @js($addr))" class="text-warm-500 text-xs hover:text-warm-600 transition-colors">Slå op</button>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endforeach
+                    </div>
+                    @endif
                 </div>
                 @endforeach
             </div>

@@ -82,9 +82,33 @@ class RegistryApi
             ->values()
             ->all();
 
+        // Find properties via owned companies (Reelle ejere / EJERREGISTER)
+        $ownedCvrs = collect($result['companies'] ?? [])
+            ->filter(fn ($c) => ($c['status'] ?? '') === 'NORMAL')
+            ->filter(fn ($c) => collect($c['roles'] ?? [])
+                ->contains(fn ($r) => in_array($r['role_label'] ?? '', ['Reelle ejere', 'EJERREGISTER']) && ($r['is_current'] ?? false)))
+            ->pluck('cvr')
+            ->take(5) // Limit to avoid too many API calls
+            ->all();
+
+        $properties = [];
+        foreach ($ownedCvrs as $cvr) {
+            $portfolio = rescue(fn () => $this->fetchCompanyPropertyPortfolio($cvr, limit: 5));
+            $companyProps = $portfolio['portfolio']['properties'] ?? [];
+            if ($companyProps) {
+                $companyName = collect($result['companies'])->firstWhere('cvr', $cvr)['name'] ?? $cvr;
+                foreach ($companyProps as $prop) {
+                    $prop['via_company'] = $companyName;
+                    $prop['via_cvr'] = $cvr;
+                    $properties[] = $prop;
+                }
+            }
+        }
+
         return [[
             'name' => $result['person_name'],
             'roles' => $roles,
+            'properties' => $properties,
         ]];
     }
 
