@@ -167,13 +167,21 @@
 
                     @if($owned = $person['owned_companies'] ?? [])
                     <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
-                        <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">Ejer</h3>
+                        <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">
+                            Ejer
+                            @if($person['total_properties'] ?? 0)
+                                <span class="text-sand-300 font-normal normal-case ml-2">{{ $person['total_properties'] }} {{ __('properties') }}</span>
+                            @endif
+                        </h3>
                         @foreach($owned as $company)
                         <div class="flex justify-between items-center py-2 {{ !$loop->last ? 'border-b border-sand-100' : '' }}">
                             <span class="text-[14px]">
                                 <span class="text-ink-800">{{ $company['name'] }}</span>
                                 @if($company['ownership'] ?? null)
                                     <span class="text-warm-500 ml-1">{{ number_format($company['ownership'], 0) }}%</span>
+                                @endif
+                                @if($company['property_count'] ?? 0)
+                                    <span class="text-sand-300 text-xs ml-1">({{ $company['property_count'] }} ejd.)</span>
                                 @endif
                             </span>
                             <button wire:click="crossReference('cvr', @js($company['cvr']))" class="text-warm-500 text-xs hover:text-warm-600 transition-colors">Slå op</button>

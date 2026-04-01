@@ -88,21 +88,39 @@ class RegistryApi
             ->filter(fn ($c) => collect($c['roles'] ?? [])
                 ->contains(fn ($r) => in_array($r['role_label'] ?? '', ['Reelle ejere', 'EJERREGISTER']) && ($r['is_current'] ?? false)))
             ->take(10)
-            ->map(fn ($c) => [
-                'name' => $c['name'] ?? '',
-                'cvr' => $c['cvr'] ?? '',
-                'ownership' => collect($c['roles'] ?? [])
+            ->map(function ($c) {
+                $cvr = $c['cvr'] ?? '';
+                $ownership = collect($c['roles'] ?? [])
                     ->where('is_current', true)
                     ->whereIn('role_label', ['Reelle ejere', 'EJERREGISTER'])
-                    ->max('ownership_share'),
-            ])
+                    ->max('ownership_share');
+
+                // Count properties via cached portfolio or quick API check
+                $propertyCount = rescue(function () use ($cvr) {
+                    $result = $this->client()->timeout(5)
+                        ->get("/v1/company/{$cvr}/property-portfolio", ['limit' => 0])
+                        ->json('data.portfolio.total_count');
+
+                    return $result ?? 0;
+                }, 0);
+
+                return [
+                    'name' => $c['name'] ?? '',
+                    'cvr' => $cvr,
+                    'ownership' => $ownership,
+                    'property_count' => $propertyCount,
+                ];
+            })
             ->values()
             ->all();
+
+        $totalProperties = collect($ownedCompanies)->sum('property_count');
 
         return [[
             'name' => $result['person_name'],
             'roles' => $roles,
             'owned_companies' => $ownedCompanies,
+            'total_properties' => $totalProperties,
         ]];
     }
 
