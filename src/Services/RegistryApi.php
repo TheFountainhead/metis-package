@@ -236,18 +236,20 @@ class RegistryApi
 
     public function fetchCompanyPropertyPortfolio(string $cvr, int $limit = 25, int $offset = 0): ?array
     {
-        try {
-            return $this->client()
-                ->timeout(30)
-                ->get("/v1/company/{$cvr}/property-portfolio", [
-                    'limit' => $limit,
-                    'offset' => $offset,
-                ])
-                ->throw()
-                ->json('data');
-        } catch (\Throwable $e) {
-            return null;
-        }
+        return Cache::remember("portfolio:{$cvr}:{$limit}:{$offset}", now()->addHours(24), function () use ($cvr, $limit, $offset) {
+            try {
+                return $this->client()
+                    ->timeout(30)
+                    ->get("/v1/company/{$cvr}/property-portfolio", [
+                        'limit' => $limit,
+                        'offset' => $offset,
+                    ])
+                    ->throw()
+                    ->json('data');
+            } catch (\Throwable) {
+                return null;
+            }
+        });
     }
 
     public function fetchCompanyTaxRecords(string $cvr): ?array

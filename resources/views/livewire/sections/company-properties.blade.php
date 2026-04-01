@@ -1,20 +1,19 @@
 <div>
     <flux:card>
         <flux:heading size="lg" class="mb-4">{{ __('Property Portfolio') }}</flux:heading>
-        @if($portfolio && count($portfolio['properties'] ?? []) > 0)
+        @if($properties && count($properties) > 0)
             <div class="mb-3 flex flex-wrap gap-4 text-sm">
-                <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $portfolio['total_count'] ?? $portfolio['property_count'] ?? 0 }}</span></span>
-                @if(($portfolio['total_valuation'] ?? 0) > 0)
-                    <span class="text-zinc-500">{{ __('Total valuation') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_valuation'], 0, ',', '.') }} kr.</span></span>
+                <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $totalCount }}</span></span>
+                @if(($summary['total_valuation'] ?? 0) > 0)
+                    <span class="text-zinc-500">{{ __('Total valuation') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($summary['total_valuation'], 0, ',', '.') }} kr.</span></span>
                 @endif
-                @if(($portfolio['total_area'] ?? 0) > 0)
-                    <span class="text-zinc-500">{{ __('Total area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_area'], 0, ',', '.') }} m²</span></span>
+                @if(($summary['total_area'] ?? 0) > 0)
+                    <span class="text-zinc-500">{{ __('Total area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($summary['total_area'], 0, ',', '.') }} m²</span></span>
                 @endif
             </div>
 
             @php
-                // Group properties by address to deduplicate ejerlejligheder
-                $grouped = collect($portfolio['properties'])->groupBy(function ($p) {
+                $grouped = collect($properties)->groupBy(function ($p) {
                     $addr = trim(($p['address'] ?? '') . ', ' . ($p['postal_code'] ?? '') . ' ' . ($p['city'] ?? ''), ', ');
                     return $addr ?: 'BFE ' . ($p['matrikel_id'] ?? '?');
                 });
@@ -59,10 +58,10 @@
                     </tbody>
                 </table>
             </div>
-            @if(($portfolio['total_count'] ?? 0) > count($portfolio['properties'] ?? []))
+            @if($totalCount > count($properties))
                 <div class="mt-3 text-center">
                     <button wire:click="loadMore" class="text-sm text-blue-600 hover:text-blue-800 transition">
-                        {{ __('Show more') }} ({{ count($portfolio['properties']) }} / {{ $portfolio['total_count'] }})
+                        {{ __('Show more') }} ({{ count($properties) }} / {{ $totalCount }})
                     </button>
                 </div>
             @endif
