@@ -79,24 +79,51 @@ class Search extends Component
         }
     }
 
+    public string $suggestionType = '';
+
     public function updatedQuery(): void
     {
         $q = trim($this->query);
         $this->suggestions = [];
+        $this->suggestionType = '';
 
         if (strlen($q) < 3) {
             return;
         }
 
-        // Only show address suggestions for text with numbers (likely address)
         $detector = new SearchDetector;
-        if ($detector->detect($q) === 'address') {
+        $type = $detector->detect($q);
+
+        if ($type === 'address') {
+            $this->suggestionType = 'address';
             $this->suggestions = rescue(fn () => app(RegistryApi::class)->addressAutocomplete($q, 5), []) ?? [];
+        } elseif (in_array($type, ['company_name', 'name']) && strlen($q) >= 4) {
+            $results = rescue(fn () => app(RegistryApi::class)->searchByName($q), []) ?? [];
+            if (! empty($results)) {
+                $this->suggestionType = 'company';
+                $this->suggestions = collect($results)->take(5)->map(fn ($c) => [
+                    'tekst' => ($c['name'] ?? '').' · CVR '.($c['cvr'] ?? ''),
+                    'cvr' => $c['cvr'] ?? '',
+                    'name' => $c['name'] ?? '',
+                ])->all();
+            }
         }
     }
 
     public function selectSuggestion(string $text): void
     {
+        // For company suggestions, use CVR directly
+        if ($this->suggestionType === 'company') {
+            $match = collect($this->suggestions)->first(fn ($s) => $s['tekst'] === $text);
+            if ($match && ! empty($match['cvr'])) {
+                $this->query = $match['cvr'];
+                $this->suggestions = [];
+                $this->search();
+
+                return;
+            }
+        }
+
         $this->query = $text;
         $this->suggestions = [];
         $this->search();

@@ -26,7 +26,7 @@
         </button>
     </div>
 
-    {{-- Address autocomplete dropdown --}}
+    {{-- Autocomplete dropdown --}}
     @if(count($suggestions) > 0)
     <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-sand-200 shadow-lg z-50 overflow-hidden">
         @foreach($suggestions as $suggestion)
@@ -35,9 +35,15 @@
             wire:click="selectSuggestion(@js($suggestion['tekst'] ?? ''))"
             class="w-full text-left px-5 py-2.5 text-sm text-ink-800 hover:bg-sand-50 transition-colors flex items-center gap-3 {{ !$loop->last ? 'border-b border-sand-100' : '' }}"
         >
-            <svg class="w-3.5 h-3.5 text-sand-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
-            </svg>
+            @if($suggestionType === 'company')
+                <svg class="w-3.5 h-3.5 text-sand-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 21h18M3 7v14M21 7v14M6 11h2M6 15h2M10 11h2M10 15h2M14 11h2M14 15h2M18 11h2M18 15h2M6 7l6-4 6 4"/>
+                </svg>
+            @else
+                <svg class="w-3.5 h-3.5 text-sand-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+                </svg>
+            @endif
             {{ $suggestion['tekst'] ?? '' }}
         </button>
         @endforeach
