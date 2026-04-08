@@ -6,15 +6,9 @@ use TheFountainhead\Metis\Services\RegistryApi;
 
 class CompanyProperties extends MetisSection
 {
-    public ?array $summary = null;
-
-    public ?array $properties = null;
-
-    public int $offset = 0;
-
-    public int $totalCount = 0;
-
-    protected int $pageSize = 25;
+    public ?array $portfolio = null;
+    public bool $enriching = false;
+    public int $propertiesFound = 0;
 
     protected function sectionTitle(): string
     {
@@ -24,29 +18,57 @@ class CompanyProperties extends MetisSection
     public function mount(string $query): void
     {
         $this->query = $query;
-        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($query, limit: $this->pageSize));
-        $portfolio = $result['portfolio'] ?? null;
 
-        if ($portfolio) {
-            $this->summary = [
-                'total_count' => $portfolio['total_count'] ?? 0,
-                'total_valuation' => $portfolio['total_valuation'] ?? 0,
-                'total_area' => $portfolio['total_area'] ?? 0,
-            ];
-            $this->properties = $portfolio['properties'] ?? [];
-            $this->totalCount = $portfolio['total_count'] ?? 0;
-            $this->offset = count($this->properties);
+        // Load existing cached data immediately
+        $result = rescue(fn () => app(RegistryApi::class)
+            ->fetchCompanyPropertyPortfolio($query, limit: 15));
+        $this->portfolio = $result['portfolio'] ?? null;
+
+        // Check if enrichment is running
+        $status = rescue(fn () => app(RegistryApi::class)
+            ->getEnrichmentStatus($query));
+        $this->enriching = in_array($status['status'] ?? '', ['pending', 'running']);
+        $this->propertiesFound = $status['properties_found'] ?? 0;
+    }
+
+    public function pollForUpdates(): void
+    {
+        if (! $this->enriching) {
+            return;
+        }
+
+        $status = rescue(fn () => app(RegistryApi::class)
+            ->getEnrichmentStatus($this->query));
+
+        $newStatus = $status['status'] ?? 'completed';
+        $newCount = $status['properties_found'] ?? 0;
+        $isDone = in_array($newStatus, ['completed', 'failed']);
+
+        if ($newCount > $this->propertiesFound || $isDone) {
+            $result = rescue(fn () => app(RegistryApi::class)
+                ->fetchCompanyPropertyPortfolio($this->query, limit: 500));
+            $this->portfolio = $result['portfolio'] ?? $this->portfolio;
+            $this->propertiesFound = $newCount;
+        }
+
+        if ($isDone) {
+            $this->enriching = false;
         }
     }
 
     public function loadMore(): void
     {
-        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query, limit: $this->pageSize, offset: $this->offset));
+        $current = count($this->portfolio['properties'] ?? []);
+        $result = rescue(fn () => app(RegistryApi::class)
+            ->fetchCompanyPropertyPortfolio($this->query, limit: 50, offset: $current));
         $more = $result['portfolio']['properties'] ?? [];
 
-        if ($more) {
-            $this->properties = array_merge($this->properties, $more);
-            $this->offset = count($this->properties);
+        if ($more && $this->portfolio) {
+            $this->portfolio['properties'] = array_merge(
+                $this->portfolio['properties'],
+                $more
+            );
+            $this->portfolio['property_count'] = count($this->portfolio['properties']);
         }
     }
 

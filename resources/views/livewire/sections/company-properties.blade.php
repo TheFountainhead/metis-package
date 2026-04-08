@@ -1,19 +1,34 @@
-<div>
+<div @if($enriching) wire:poll.2s="pollForUpdates" @endif>
     <flux:card>
         <flux:heading size="lg" class="mb-4">{{ __('Property Portfolio') }}</flux:heading>
-        @if($properties && count($properties) > 0)
+        @if($enriching)
+            <div class="flex items-center gap-2 text-blue-500 text-sm mb-4 px-1">
+                <svg class="size-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>
+                    {{ __('Searching subsidiary companies for properties...') }}
+                    @if($propertiesFound > 0)
+                        <span class="font-medium">{{ $propertiesFound }} {{ __('found') }}</span>
+                    @endif
+                </span>
+            </div>
+        @endif
+        @if($portfolio && count($portfolio['properties'] ?? []) > 0)
             <div class="mb-3 flex flex-wrap gap-4 text-sm">
-                <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $totalCount }}</span></span>
-                @if(($summary['total_valuation'] ?? 0) > 0)
-                    <span class="text-zinc-500">{{ __('Total valuation') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($summary['total_valuation'], 0, ',', '.') }} kr.</span></span>
+                <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $portfolio['total_count'] ?? $portfolio['property_count'] ?? 0 }}</span></span>
+                @if(($portfolio['total_valuation'] ?? 0) > 0)
+                    <span class="text-zinc-500">{{ __('Total valuation') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_valuation'], 0, ',', '.') }} kr.</span></span>
                 @endif
-                @if(($summary['total_area'] ?? 0) > 0)
-                    <span class="text-zinc-500">{{ __('Total area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($summary['total_area'], 0, ',', '.') }} m²</span></span>
+                @if(($portfolio['total_area'] ?? 0) > 0)
+                    <span class="text-zinc-500">{{ __('Total area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_area'], 0, ',', '.') }} m²</span></span>
                 @endif
             </div>
 
             @php
-                $grouped = collect($properties)->groupBy(function ($p) {
+                // Group properties by address to deduplicate ejerlejligheder
+                $grouped = collect($portfolio['properties'])->groupBy(function ($p) {
                     $addr = trim(($p['address'] ?? '') . ', ' . ($p['postal_code'] ?? '') . ' ' . ($p['city'] ?? ''), ', ');
                     return $addr ?: 'BFE ' . ($p['matrikel_id'] ?? '?');
                 });
@@ -58,10 +73,10 @@
                     </tbody>
                 </table>
             </div>
-            @if($totalCount > count($properties))
+            @if(($portfolio['total_count'] ?? 0) > count($portfolio['properties'] ?? []))
                 <div class="mt-3 text-center">
                     <button wire:click="loadMore" class="text-sm text-blue-600 hover:text-blue-800 transition">
-                        {{ __('Show more') }} ({{ count($properties) }} / {{ $totalCount }})
+                        {{ __('Show more') }} ({{ count($portfolio['properties']) }} / {{ $portfolio['total_count'] }})
                     </button>
                 </div>
             @endif
