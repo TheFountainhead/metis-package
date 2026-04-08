@@ -236,29 +236,39 @@ class RegistryApi
 
     public function fetchCompanyPropertyPortfolio(string $cvr, int $limit = 25, int $offset = 0): ?array
     {
-        try {
-            return $this->client()
-                ->timeout(30)
-                ->get("/v1/company/{$cvr}/property-portfolio", [
-                    'limit' => $limit,
-                    'offset' => $offset,
-                ])
-                ->throw()
-                ->json('data');
-        } catch (\Throwable $e) {
-            return null;
-        }
+        $cacheKey = "metis:company_property_portfolio:{$cvr}:{$limit}:{$offset}";
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($cvr, $limit, $offset) {
+            try {
+                return $this->client()
+                    ->timeout(30)
+                    ->get("/v1/company/{$cvr}/property-portfolio", [
+                        'limit' => $limit,
+                        'offset' => $offset,
+                    ])
+                    ->throw()
+                    ->json('data');
+            } catch (\Throwable $e) {
+                return null;
+            }
+        });
     }
 
     public function getEnrichmentStatus(string $cvr): ?array
     {
-        $result = $this->get("/v1/enrichment/{$cvr}/status");
+        try {
+            $response = $this->client()
+                ->timeout(5)
+                ->get("/v1/enrichment/{$cvr}/status");
 
-        if (isset($result['error'])) {
+            if (! $response->successful()) {
+                return null;
+            }
+
+            return $response->json('data');
+        } catch (\Throwable) {
             return null;
         }
-
-        return $result;
     }
 
     public function fetchCompanyTaxRecords(string $cvr): ?array

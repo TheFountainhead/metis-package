@@ -80,7 +80,7 @@
                     </button>
                 </div>
             @endif
-        @else
+        @elseif(! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No properties found for this company.') }}</p>
         @endif
     </flux:card>

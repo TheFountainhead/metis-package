@@ -78,7 +78,7 @@
             </div>
         @endif
 
-        @if(count($owners) === 0 && count($subsidiaries) === 0)
+        @if(count($owners) === 0 && count($subsidiaries) === 0 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @endif
     </flux:card>

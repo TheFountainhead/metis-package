@@ -45,8 +45,9 @@ class CompanyProperties extends MetisSection
         $isDone = in_array($newStatus, ['completed', 'failed']);
 
         if ($newCount > $this->propertiesFound || $isDone) {
+            $limit = $isDone ? 500 : 50; // Full fetch on completion, summary during polling
             $result = rescue(fn () => app(RegistryApi::class)
-                ->fetchCompanyPropertyPortfolio($this->query, limit: 500));
+                ->fetchCompanyPropertyPortfolio($this->query, limit: $limit));
             $this->portfolio = $result['portfolio'] ?? $this->portfolio;
             $this->propertiesFound = $newCount;
         }
