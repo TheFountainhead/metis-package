@@ -8,6 +8,8 @@ class CompanyStructure extends MetisSection
 {
     public array $owners = [];
     public array $subsidiaries = [];
+    public bool $enriching = false;
+    public int $companiesFound = 0;
 
     protected function sectionTitle(): string
     {
@@ -49,6 +51,28 @@ class CompanyStructure extends MetisSection
                         ->toArray();
                 }
             }
+        }
+
+        $status = rescue(fn () => app(RegistryApi::class)->getEnrichmentStatus($query));
+        $this->enriching = in_array($status['status'] ?? '', ['pending', 'running']);
+        $this->companiesFound = $status['companies_found'] ?? 0;
+    }
+
+    public function pollForUpdates(): void
+    {
+        if (! $this->enriching) {
+            return;
+        }
+
+        $status = rescue(fn () => app(RegistryApi::class)->getEnrichmentStatus($this->query));
+        $newStatus = $status['status'] ?? 'completed';
+        $this->companiesFound = $status['companies_found'] ?? 0;
+
+        if (in_array($newStatus, ['completed', 'failed'])) {
+            $this->enriching = false;
+            $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyStructure($this->query), []);
+            $this->owners = $result['owners'] ?? $this->owners;
+            $this->subsidiaries = $result['subsidiaries'] ?? $this->subsidiaries;
         }
     }
 
