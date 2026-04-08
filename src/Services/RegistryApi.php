@@ -187,6 +187,12 @@ class RegistryApi
         return $transformed;
     }
 
+    public function fetchPropertyDetails(string $bfe): ?array
+    {
+        $result = $this->get("/v1/properties/{$bfe}");
+        return isset($result['error']) ? null : $result;
+    }
+
     public function fetchValuation(string $matrikelId): ?array
     {
         return $this->get("/v1/valuations/{$matrikelId}");

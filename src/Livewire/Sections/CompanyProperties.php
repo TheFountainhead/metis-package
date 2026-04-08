@@ -9,6 +9,8 @@ class CompanyProperties extends MetisSection
     public ?array $portfolio = null;
     public bool $enriching = false;
     public int $propertiesFound = 0;
+    public ?string $expandedBfe = null;
+    public ?array $expandedDetails = null;
 
     protected function sectionTitle(): string
     {
@@ -55,6 +57,18 @@ class CompanyProperties extends MetisSection
         if ($isDone) {
             $this->enriching = false;
         }
+    }
+
+    public function toggleProperty(string $bfe): void
+    {
+        if ($this->expandedBfe === $bfe) {
+            $this->expandedBfe = null;
+            $this->expandedDetails = null;
+            return;
+        }
+
+        $this->expandedBfe = $bfe;
+        $this->expandedDetails = rescue(fn () => app(RegistryApi::class)->fetchPropertyDetails($bfe));
     }
 
     public function loadMore(): void
