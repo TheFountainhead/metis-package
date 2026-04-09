@@ -309,6 +309,24 @@ class RegistryApi
         return $this->post('/v1/person/property-portfolio', ['cpr' => $cpr]);
     }
 
+    public function searchMortgages(array $filters): ?array
+    {
+        $result = $this->post('/v1/mortgages/search', $filters);
+        return isset($result['error']) ? null : $result;
+    }
+
+    public function getMortgageCreditors(): ?array
+    {
+        $result = $this->get('/v1/mortgages/creditors');
+        return isset($result['error']) ? null : $result;
+    }
+
+    public function getMortgageStats(): ?array
+    {
+        $result = $this->get('/v1/mortgages/stats');
+        return isset($result['error']) ? null : $result;
+    }
+
     /**
      * Resolve address to property analysis with caching.
      * Merged from MetisInputDetector::resolveAddressAnalysis().
