@@ -54,14 +54,52 @@ it('mounts with non-default filters fires search', function () {
         && $r->data()['min_rate'] == 10.0);
 });
 
-it('updating a filter triggers search and resets cursor', function () {
+it('updating a filter triggers search and resets cursor + history', function () {
     Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('cursor', 'previous-page-cursor')
-        ->set('postalCode', '2000')
+        ->set('cursorHistory', ['old-cursor'])
+        ->set('postalCodeFrom', '2000')
         ->assertSet('cursor', null)
+        ->assertSet('cursorHistory', [])
         ->assertSet('hasSearched', true);
+});
+
+it('postalCodeFrom + postalCodeTo are sent as separate filters', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('postalCodeFrom', '9000')
+        ->set('postalCodeTo', '9499');
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/debt-search')
+        && ($r->data()['postal_code_from'] ?? null) === '9000'
+        && ($r->data()['postal_code_to'] ?? null) === '9499');
+});
+
+it('previousPage pops cursorHistory and re-searches', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse([
+        'pagination' => ['next_cursor' => 'page-2-cursor', 'limit' => 25, 'has_more' => true],
+    ]))]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('postalCodeFrom', '2000')
+        ->call('nextPage')
+        ->assertSet('cursor', 'page-2-cursor')
+        ->assertSet('cursorHistory', [null])
+        ->call('previousPage')
+        ->assertSet('cursor', null)
+        ->assertSet('cursorHistory', []);
+});
+
+it('previousPage does nothing when cursorHistory is empty', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('postalCodeFrom', '2000')
+        ->call('previousPage')
+        ->assertSet('cursor', null);
 });
 
 it('renders empty state when API returns zero loans', function () {
@@ -73,7 +111,7 @@ it('renders empty state when API returns zero loans', function () {
     ]);
 
     Livewire::test(DebtSearch::class)
-        ->set('postalCode', '9999')
+        ->set('postalCodeFrom', '9999')
         ->assertSee('Ingen lån matcher dine filtre');
 });
 
@@ -81,7 +119,7 @@ it('renders error state on API failure', function () {
     Http::fake(['*/v1/debt-search*' => Http::response([], 500)]);
 
     Livewire::test(DebtSearch::class)
-        ->set('postalCode', '2000')
+        ->set('postalCodeFrom', '2000')
         ->assertSet('error', 'Søgetjenesten er midlertidigt utilgængelig')
         ->assertSee('midlertidigt utilgængelig');
 });
@@ -90,7 +128,7 @@ it('renders quota-exceeded state on 429', function () {
     Http::fake(['*/v1/debt-search*' => Http::response(['error' => 'daily_quota_exceeded'], 429)]);
 
     Livewire::test(DebtSearch::class)
-        ->set('postalCode', '2000')
+        ->set('postalCodeFrom', '2000')
         ->assertSet('quotaExceeded', true)
         ->assertSee('søgekvote');
 });
@@ -117,26 +155,30 @@ it('resetFilters clears state to defaults', function () {
     Http::fake();
 
     Livewire::test(DebtSearch::class)
-        ->set('postalCode', '2000')
+        ->set('postalCodeFrom', '2000')
+        ->set('postalCodeTo', '2999')
         ->set('debtType', 'ejerpantebrev')
         ->call('resetFilters')
-        ->assertSet('postalCode', null)
+        ->assertSet('postalCodeFrom', null)
+        ->assertSet('postalCodeTo', null)
         ->assertSet('debtType', null)
+        ->assertSet('cursorHistory', [])
         ->assertSet('hasSearched', false)
         ->assertSet('response', null);
 });
 
-it('nextPage uses next_cursor from response', function () {
+it('nextPage uses next_cursor and pushes current cursor onto history', function () {
     Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse([
         'pagination' => ['next_cursor' => 'page-2-cursor.signature', 'limit' => 25, 'has_more' => true],
     ]))]);
 
     Livewire::test(DebtSearch::class)
-        ->set('postalCode', '2000')
+        ->set('postalCodeFrom', '2000')
         ->call('nextPage')
-        ->assertSet('cursor', 'page-2-cursor.signature');
+        ->assertSet('cursor', 'page-2-cursor.signature')
+        ->assertSet('cursorHistory', [null]);
 
-    Http::assertSent(function ($r) {
-        return isset($r->data()['cursor']) && $r->data()['cursor'] === 'page-2-cursor.signature';
-    });
+    Http::assertSent(fn ($r) =>
+        isset($r->data()['cursor']) && $r->data()['cursor'] === 'page-2-cursor.signature'
+    );
 });
