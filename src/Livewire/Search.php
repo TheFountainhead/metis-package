@@ -84,8 +84,10 @@ class Search extends Component
 
         $this->chips = collect($allChips)->random(4)->values()->all();
 
-        // Handle ?mode= on page load (type-first navigation from sidebar)
-        $mode = request()->query('mode');
+        // Handle ?mode= on page load (type-first navigation from sidebar).
+        // Accept legacy ?hint= for back-compat with older sidebar URLs that
+        // may still live in browser history / bookmarks.
+        $mode = request()->query('mode') ?: request()->query('hint');
         if (in_array($mode, ['person', 'company', 'address'], true)) {
             $this->searchMode = $mode;
         }
@@ -109,6 +111,12 @@ class Search extends Component
         $q = trim($this->query);
         $this->suggestions = [];
         $this->suggestionType = '';
+
+        // Clear any stale result from a previous search — otherwise the user
+        // sees an old "best fuzzy match" while typing a new query, e.g.
+        // searching "christian ø" returned Christian Øster Due, then user
+        // continued typing "hlers" and the old result lingered.
+        $this->reset(['result', 'resultType', 'error', 'errorMessage']);
 
         if (strlen($q) < 3) {
             return;
