@@ -58,6 +58,71 @@
         </div>
     @else
 
+    @php
+        $watches = $watchlists ?? [];
+        $watchCount = count($watches);
+        $propertyCount = collect($watches)->where('watch_type', 'property')->count();
+        $companyCount = collect($watches)->where('watch_type', 'company')->count();
+    @endphp
+
+    @if($watchCount > 0)
+        <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-900/20 dark:border-blue-800">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-blue-900 dark:text-blue-200">
+                        {{ __('Du følger') }} <strong>{{ $watchCount }}</strong> {{ __('entiteter') }}
+                        <span class="text-xs font-normal text-blue-700 dark:text-blue-300">
+                            ({{ $propertyCount }} {{ __('ejendomme') }}, {{ $companyCount }} {{ __('selskaber') }})
+                        </span>
+                    </p>
+                    <p class="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                        {{ __('Alerts dukker op her når der tinglyses ny gæld eller ændringer på dem.') }}
+                    </p>
+                </div>
+                <button wire:click="toggleWatchlists"
+                        class="text-xs px-3 py-1 border border-blue-300 rounded hover:bg-blue-100 dark:border-blue-700 dark:hover:bg-blue-900/40">
+                    {{ $showWatchlists ? __('Skjul liste') : __('Vis alle') }}
+                </button>
+            </div>
+
+            @if($showWatchlists)
+                <div class="mt-4 max-h-96 overflow-y-auto bg-white border rounded">
+                    <table class="w-full text-sm">
+                        <thead class="text-xs text-zinc-500 bg-zinc-50">
+                            <tr>
+                                <th class="text-left px-3 py-2">{{ __('Type') }}</th>
+                                <th class="text-left px-3 py-2">{{ __('Label') }}</th>
+                                <th class="text-left px-3 py-2">{{ __('Værdi') }}</th>
+                                <th class="text-right px-3 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($watches as $w)
+                                <tr class="border-t">
+                                    <td class="px-3 py-2">
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs
+                                                     {{ $w['watch_type'] === 'company' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700' }}">
+                                            {{ $w['watch_type'] === 'company' ? __('Selskab') : __('Ejendom') }}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2">{{ $w['display_label'] ?? '—' }}</td>
+                                    <td class="px-3 py-2 font-mono text-xs text-zinc-500">{{ $w['watch_value'] }}</td>
+                                    <td class="px-3 py-2 text-right">
+                                        <button wire:click="unfollow({{ $w['id'] }})"
+                                                wire:confirm="{{ __('Stop med at følge?') }}"
+                                                class="text-xs text-red-600 hover:underline">
+                                            {{ __('Stop') }}
+                                        </button>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    @endif
+
     <div class="flex items-center gap-3 mb-4">
         <label class="flex items-center gap-1 text-sm">
             <input type="checkbox" wire:model.live="unreadOnly">
@@ -92,24 +157,32 @@
 
     @if(! $hasAlerts && ! $loading && ! $error)
         <div class="p-12 text-center bg-white border rounded-lg">
-            <h2 class="text-lg font-semibold mb-2">{{ __('Du følger ikke noget endnu') }}</h2>
-            <p class="text-sm text-zinc-600 mb-4">
-                {{ __('Du får besked når der tinglyses ny gæld på ejendomme eller selskaber du følger.') }}
-            </p>
-            <div class="flex justify-center gap-3">
-                @if(Route::has('metis.home'))
-                    <a href="{{ route('metis.home') }}"
-                       class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
-                        {{ __('Søg ejendom eller selskab') }}
-                    </a>
-                @endif
-                @if(Route::has('metis.debt-search'))
-                    <a href="{{ route('metis.debt-search') }}"
-                       class="px-4 py-2 text-sm border rounded hover:bg-zinc-50">
-                        {{ __('Søg gæld') }}
-                    </a>
-                @endif
-            </div>
+            @if($watchCount > 0)
+                <h2 class="text-lg font-semibold mb-2">{{ __('Ingen alerts endnu') }}</h2>
+                <p class="text-sm text-zinc-600 mb-4">
+                    {{ __('Du følger') }} <strong>{{ $watchCount }}</strong> {{ __('entiteter, men der er ikke tinglyst ændringer på dem siden du startede.') }}<br>
+                    {{ __('Alerts dukker op automatisk her — typisk indenfor få timer når en pant-ændring sker.') }}
+                </p>
+            @else
+                <h2 class="text-lg font-semibold mb-2">{{ __('Du følger ikke noget endnu') }}</h2>
+                <p class="text-sm text-zinc-600 mb-4">
+                    {{ __('Du får besked når der tinglyses ny gæld på ejendomme eller selskaber du følger.') }}
+                </p>
+                <div class="flex justify-center gap-3">
+                    @if(Route::has('metis.home'))
+                        <a href="{{ route('metis.home') }}"
+                           class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
+                            {{ __('Søg ejendom eller selskab') }}
+                        </a>
+                    @endif
+                    @if(Route::has('metis.debt-search'))
+                        <a href="{{ route('metis.debt-search') }}"
+                           class="px-4 py-2 text-sm border rounded hover:bg-zinc-50">
+                            {{ __('Søg gæld') }}
+                        </a>
+                    @endif
+                </div>
+            @endif
         </div>
     @endif
 
