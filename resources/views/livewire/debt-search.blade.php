@@ -54,11 +54,15 @@
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Postnummer') }}</label>
-                    <input type="text" maxlength="4" pattern="\d{4}"
-                           wire:model.live.debounce.500ms="postalCode"
-                           placeholder="2000"
-                           class="w-full px-2 py-1 text-sm border rounded">
+                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Postnummer (fra/til)') }}</label>
+                    <div class="flex gap-2">
+                        <input type="text" maxlength="4" pattern="\d{4}"
+                               wire:model.live.debounce.500ms="postalCodeFrom"
+                               placeholder="fra" class="w-1/2 px-2 py-1 text-sm border rounded">
+                        <input type="text" maxlength="4" pattern="\d{4}"
+                               wire:model.live.debounce.500ms="postalCodeTo"
+                               placeholder="til" class="w-1/2 px-2 py-1 text-sm border rounded">
+                    </div>
                 </div>
 
                 <div>
@@ -199,10 +203,22 @@
                             </div>
                             <ul class="divide-y dark:divide-zinc-700">
                                 @foreach($results as $r)
-                                    <li class="px-4 py-3">
+                                    @php
+                                        $addr = trim(($r['property']['address'] ?? '').', '.($r['property']['postal_code'] ?? ''), ', ');
+                                        $detailUrl = (Route::has('metis.lookup') && $addr)
+                                            ? route('metis.lookup', ['type' => 'address', 'query' => $addr])
+                                            : null;
+                                    @endphp
+                                    <li class="px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition">
                                         <div class="flex justify-between items-start gap-4">
                                             <div class="flex-1 min-w-0">
-                                                <p class="font-medium">{{ $r['property']['address'] ?? '—' }}, {{ $r['property']['postal_code'] ?? '' }}</p>
+                                                @if($detailUrl)
+                                                    <a href="{{ $detailUrl }}" class="font-medium text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400">
+                                                        {{ $r['property']['address'] ?? '—' }}, {{ $r['property']['postal_code'] ?? '' }}
+                                                    </a>
+                                                @else
+                                                    <p class="font-medium">{{ $r['property']['address'] ?? '—' }}, {{ $r['property']['postal_code'] ?? '' }}</p>
+                                                @endif
                                                 <p class="text-xs text-zinc-500 mt-0.5">
                                                     @foreach($r['owners'] ?? [] as $o)
                                                         <span>{{ $o['name'] ?? '' }}@if(($o['cvr'] ?? false)) ({{ $o['cvr'] }})@endif</span>@if(! $loop->last), @endif
@@ -218,14 +234,27 @@
                                         @if(($r['debt']['creditor'] ?? null))
                                             <p class="text-xs text-zinc-500 mt-1">{{ __('Kreditor') }}: {{ $r['debt']['creditor'] }}</p>
                                         @endif
+                                        @if($detailUrl)
+                                            <p class="text-[11px] text-zinc-400 mt-1">→ {{ __('Klik på adressen for ejer-detaljer, BBR, valuation, transaktioner og pantebreve') }}</p>
+                                        @endif
                                     </li>
                                 @endforeach
                             </ul>
-                            @if($pagination['has_more'] ?? false)
-                                <div class="px-4 py-3 border-t dark:border-zinc-700 text-center">
-                                    <button wire:click="nextPage" class="text-sm px-4 py-1.5 border rounded hover:bg-zinc-50">
-                                        {{ __('Næste side') }}
-                                    </button>
+                            @if(count($cursorHistory) > 0 || ($pagination['has_more'] ?? false))
+                                <div class="px-4 py-3 border-t dark:border-zinc-700 flex justify-between items-center">
+                                    @if(count($cursorHistory) > 0)
+                                        <button wire:click="previousPage" class="text-sm px-4 py-1.5 border rounded hover:bg-zinc-50">
+                                            ← {{ __('Forrige side') }}
+                                        </button>
+                                    @else
+                                        <span></span>
+                                    @endif
+
+                                    @if($pagination['has_more'] ?? false)
+                                        <button wire:click="nextPage" class="text-sm px-4 py-1.5 border rounded hover:bg-zinc-50">
+                                            {{ __('Næste side') }} →
+                                        </button>
+                                    @endif
                                 </div>
                             @endif
                         </section>

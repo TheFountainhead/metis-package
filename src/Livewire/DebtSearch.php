@@ -25,13 +25,23 @@ class DebtSearch extends Component
     public ?float $maxRate = 25.0;
     public string $ownerType = 'company';
     public ?string $debtType = null;
-    public ?string $postalCode = null;
+    public ?string $postalCodeFrom = null;
+    public ?string $postalCodeTo = null;
     public ?string $creditorContains = null;
     public ?int $minAmount = null;
     public ?int $maxAmount = null;
 
     public ?array $response = null;
     public ?string $cursor = null;
+
+    /**
+     * Stack of cursors visited via nextPage(), used for previousPage().
+     * Cursor pagination is forward-only on the server (HMAC-signed); we
+     * implement back-navigation client-side by remembering the path taken.
+     * Lost on full page reload — acceptable trade for Phase 1.
+     */
+    public array $cursorHistory = [];
+
     public bool $hasSearched = false;
     public bool $loading = false;
     public ?string $error = null;
@@ -44,7 +54,8 @@ class DebtSearch extends Component
         'maxRate' => ['as' => 'rate_max', 'except' => 25.0],
         'ownerType' => ['as' => 'owner', 'except' => 'company'],
         'debtType' => ['as' => 'type'],
-        'postalCode' => ['as' => 'postal'],
+        'postalCodeFrom' => ['as' => 'postal_from'],
+        'postalCodeTo' => ['as' => 'postal_to'],
         'creditorContains' => ['as' => 'creditor'],
         'minAmount' => ['as' => 'amount_min'],
         'maxAmount' => ['as' => 'amount_max'],
@@ -59,11 +70,12 @@ class DebtSearch extends Component
 
     public function updated(string $name): void
     {
-        if (in_array($name, ['cursor', 'response', 'csvUrl', 'loading', 'error', 'hasSearched', 'quotaExceeded'], true)) {
+        if (in_array($name, ['cursor', 'cursorHistory', 'response', 'csvUrl', 'loading', 'error', 'hasSearched', 'quotaExceeded'], true)) {
             return;
         }
 
         $this->cursor = null;
+        $this->cursorHistory = [];
         $this->search();
     }
 
@@ -101,7 +113,17 @@ class DebtSearch extends Component
         if (! $next) {
             return;
         }
+        $this->cursorHistory[] = $this->cursor;
         $this->cursor = $next;
+        $this->search();
+    }
+
+    public function previousPage(): void
+    {
+        if (empty($this->cursorHistory)) {
+            return;
+        }
+        $this->cursor = array_pop($this->cursorHistory);
         $this->search();
     }
 
@@ -111,11 +133,13 @@ class DebtSearch extends Component
         $this->maxRate = 25.0;
         $this->ownerType = 'company';
         $this->debtType = null;
-        $this->postalCode = null;
+        $this->postalCodeFrom = null;
+        $this->postalCodeTo = null;
         $this->creditorContains = null;
         $this->minAmount = null;
         $this->maxAmount = null;
         $this->cursor = null;
+        $this->cursorHistory = [];
         $this->response = null;
         $this->hasSearched = false;
         $this->error = null;
@@ -153,7 +177,8 @@ class DebtSearch extends Component
             'max_rate' => $this->maxRate,
             'owner_type' => $this->ownerType,
             'debt_type' => $this->debtType,
-            'postal_code' => $this->postalCode,
+            'postal_code_from' => $this->postalCodeFrom,
+            'postal_code_to' => $this->postalCodeTo,
             'creditor_contains' => $this->creditorContains,
             'min_amount' => $this->minAmount,
             'max_amount' => $this->maxAmount,
@@ -172,7 +197,8 @@ class DebtSearch extends Component
             || $this->maxRate !== 25.0
             || $this->ownerType !== 'company'
             || $this->debtType !== null
-            || $this->postalCode !== null
+            || $this->postalCodeFrom !== null
+            || $this->postalCodeTo !== null
             || $this->creditorContains !== null
             || $this->minAmount !== null
             || $this->maxAmount !== null;
