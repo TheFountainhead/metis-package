@@ -90,23 +90,32 @@
                     <table class="w-full text-sm">
                         <thead class="text-xs text-zinc-500 bg-zinc-50">
                             <tr>
-                                <th class="text-left px-3 py-2">{{ __('Type') }}</th>
-                                <th class="text-left px-3 py-2">{{ __('Label') }}</th>
-                                <th class="text-left px-3 py-2">{{ __('Værdi') }}</th>
-                                <th class="text-right px-3 py-2"></th>
+                                <th class="text-left px-3 py-2 w-24">{{ __('Type') }}</th>
+                                <th class="text-left px-3 py-2">{{ __('Følger') }}</th>
+                                <th class="text-right px-3 py-2 w-20"></th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach($watches as $w)
+                                @php
+                                    $isCompany = $w['watch_type'] === 'company';
+                                    $detail = $isCompany
+                                        ? 'CVR '.$w['watch_value']
+                                        : null;
+                                @endphp
                                 <tr class="border-t">
                                     <td class="px-3 py-2">
                                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs
-                                                     {{ $w['watch_type'] === 'company' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700' }}">
-                                            {{ $w['watch_type'] === 'company' ? __('Selskab') : __('Ejendom') }}
+                                                     {{ $isCompany ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700' }}">
+                                            {{ $isCompany ? __('Selskab') : __('Ejendom') }}
                                         </span>
                                     </td>
-                                    <td class="px-3 py-2">{{ $w['display_label'] ?? '—' }}</td>
-                                    <td class="px-3 py-2 font-mono text-xs text-zinc-500">{{ $w['watch_value'] }}</td>
+                                    <td class="px-3 py-2">
+                                        <div>{{ $w['display_label'] ?? '—' }}</div>
+                                        @if($detail)
+                                            <div class="text-xs text-zinc-500 font-mono">{{ $detail }}</div>
+                                        @endif
+                                    </td>
                                     <td class="px-3 py-2 text-right">
                                         <button wire:click="unfollow({{ $w['id'] }})"
                                                 wire:confirm="{{ __('Stop med at følge?') }}"
