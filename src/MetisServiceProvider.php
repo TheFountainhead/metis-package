@@ -123,6 +123,8 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-index', \TheFountainhead\Metis\Livewire\Index::class);
         Livewire::component('metis-lookup', \TheFountainhead\Metis\Livewire\Lookup::class);
         Livewire::component('metis-debt-search', \TheFountainhead\Metis\Livewire\DebtSearch::class);
+        Livewire::component('metis-follow-button', \TheFountainhead\Metis\Livewire\FollowButton::class);
+        Livewire::component('metis-alerts-inbox', \TheFountainhead\Metis\Livewire\AlertsInbox::class);
     }
 
     protected function registerCriiptoDriver(): void
