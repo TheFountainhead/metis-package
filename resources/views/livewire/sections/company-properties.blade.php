@@ -53,10 +53,17 @@
                                 $year = $units->pluck('building_year')->filter()->first();
                                 $first = $units->first();
                                 $addr = trim(($first['address'] ?? '') . ', ' . ($first['postal_code'] ?? '') . ' ' . ($first['city'] ?? ''), ', ');
+                                $bfe = $first['matrikel_id'] ?? null;
                             @endphp
                             <tr class="border-b border-zinc-100 dark:border-zinc-800">
                                 <td class="py-2 pr-4">
-                                    <x-metis-link type="address" :query="$addr" />
+                                    @if($addr)
+                                        <x-metis-link type="address" :query="$addr" />
+                                    @elseif($bfe)
+                                        <span class="text-zinc-400 text-xs">BFE {{ $bfe }}</span>
+                                    @else
+                                        <span class="text-zinc-400">-</span>
+                                    @endif
                                 </td>
                                 <td class="py-2 pr-4 text-right">
                                     @if($units->count() > 1)
