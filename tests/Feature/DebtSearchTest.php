@@ -78,6 +78,39 @@ it('postalCodeFrom + postalCodeTo are sent as separate filters', function () {
         && ($r->data()['postal_code_to'] ?? null) === '9499');
 });
 
+it('strips partial postal codes (1-3 digits) from API call', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('postalCodeFrom', '1');
+
+    Http::assertSent(fn ($r) =>
+        str_contains($r->url(), '/v1/debt-search')
+        && ! isset($r->data()['postal_code_from'])
+    );
+});
+
+it('strips creditor_contains shorter than 3 chars', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('creditorContains', 'ab');
+
+    Http::assertSent(fn ($r) =>
+        str_contains($r->url(), '/v1/debt-search')
+        && ! isset($r->data()['creditor_contains'])
+    );
+});
+
+it('422 from server does not surface as service-unavailable error', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(['error' => 'invalid filter'], 422)]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('postalCodeFrom', '9000')
+        ->assertSet('error', null)
+        ->assertSet('quotaExceeded', false);
+});
+
 it('previousPage pops cursorHistory and re-searches', function () {
     Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse([
         'pagination' => ['next_cursor' => 'page-2-cursor', 'limit' => 25, 'has_more' => true],

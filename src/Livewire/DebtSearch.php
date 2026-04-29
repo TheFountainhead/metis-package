@@ -91,8 +91,18 @@ class DebtSearch extends Component
             $response = $api->debtSearch($this->filters(), source: 'ui_filter');
 
             if (isset($response['error'])) {
-                if (($response['status'] ?? 0) === 429) {
+                $status = $response['status'] ?? 0;
+                if ($status === 429) {
                     $this->quotaExceeded = true;
+                } elseif ($status === 422) {
+                    // Validation error means a filter slipped past client-side
+                    // checks. Don't shout at the user — the malformed filter
+                    // would have been stripped if it were known. Log instead.
+                    $this->error = null;
+                    logger()->warning('debt-search 422 validation error', [
+                        'filters' => $this->filters(),
+                        'response' => $response,
+                    ]);
                 } else {
                     $this->error = 'Søgetjenesten er midlertidigt utilgængelig';
                 }
@@ -177,9 +187,9 @@ class DebtSearch extends Component
             'max_rate' => $this->maxRate,
             'owner_type' => $this->ownerType,
             'debt_type' => $this->debtType,
-            'postal_code_from' => $this->postalCodeFrom,
-            'postal_code_to' => $this->postalCodeTo,
-            'creditor_contains' => $this->creditorContains,
+            'postal_code_from' => $this->validPostalOrNull($this->postalCodeFrom),
+            'postal_code_to' => $this->validPostalOrNull($this->postalCodeTo),
+            'creditor_contains' => $this->validCreditorOrNull($this->creditorContains),
             'min_amount' => $this->minAmount,
             'max_amount' => $this->maxAmount,
         ], fn ($v) => $v !== null && $v !== '');
@@ -189,6 +199,27 @@ class DebtSearch extends Component
         }
 
         return $filters;
+    }
+
+    /**
+     * Skip partially-typed postal codes from the API call. Backend validates
+     * with regex /^\d{4}$/ and returns 422 on '1' or '12'; that surfaces as
+     * "tjeneste utilgængelig" in the UI which is misleading. Stripping
+     * malformed values means the user sees broader results while still typing,
+     * and the postal filter applies as soon as they enter the 4th digit.
+     */
+    private function validPostalOrNull(?string $value): ?string
+    {
+        return preg_match('/^\d{4}$/', (string) $value) ? $value : null;
+    }
+
+    /**
+     * Backend requires creditor_contains to be at least 3 chars. Same
+     * principle as postal codes — strip while user is typing.
+     */
+    private function validCreditorOrNull(?string $value): ?string
+    {
+        return strlen((string) $value) >= 3 ? $value : null;
     }
 
     private function hasNonDefaultFilters(): bool
