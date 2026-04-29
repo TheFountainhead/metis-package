@@ -2,50 +2,102 @@
 
 <div id="main-content" class="min-h-screen flex flex-col">
 
-    {{-- No result: centered hero --}}
-    @unless($hasResult)
-    <div class="flex flex-col items-center justify-center min-h-screen -mt-12 px-4">
-        <div class="mb-8 flex items-center justify-center gap-3">
+    {{-- Type-selection: when no mode chosen and no result --}}
+    @if(! $hasResult && $searchMode === '')
+    <div class="flex flex-col items-center justify-center min-h-[60vh] px-4">
+        <div class="mb-10 flex items-center justify-center gap-3">
             <img src="/images/metis-logo.png" alt="Metis" class="w-10 h-10 md:w-12 md:h-12 -mt-1">
             <p class="text-3xl md:text-[40px] font-serif text-ink-800 font-normal tracking-tight">
-                Hvad vil du vide?
+                Hvad vil du søge på?
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl">
+            <button wire:click="setSearchMode('person')"
+                    class="group p-8 bg-white border border-zinc-200 rounded-xl hover:border-blue-400 hover:shadow-md transition-all text-center">
+                <div class="w-12 h-12 mx-auto mb-3 flex items-center justify-center rounded-full bg-blue-50 group-hover:bg-blue-100 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold text-zinc-900 mb-1">Person</h3>
+                <p class="text-sm text-zinc-600">Søg efter person — se roller, ejede selskaber, ejendomme</p>
+            </button>
+
+            <button wire:click="setSearchMode('company')"
+                    class="group p-8 bg-white border border-zinc-200 rounded-xl hover:border-purple-400 hover:shadow-md transition-all text-center">
+                <div class="w-12 h-12 mx-auto mb-3 flex items-center justify-center rounded-full bg-purple-50 group-hover:bg-purple-100 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold text-zinc-900 mb-1">Selskab</h3>
+                <p class="text-sm text-zinc-600">Søg efter virksomhed — regnskaber, ejerstruktur, ejendomme</p>
+            </button>
+
+            <button wire:click="setSearchMode('address')"
+                    class="group p-8 bg-white border border-zinc-200 rounded-xl hover:border-green-400 hover:shadow-md transition-all text-center">
+                <div class="w-12 h-12 mx-auto mb-3 flex items-center justify-center rounded-full bg-green-50 group-hover:bg-green-100 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold text-zinc-900 mb-1">Ejendom</h3>
+                <p class="text-sm text-zinc-600">Søg efter adresse — BBR, vurdering, ejere, transaktioner</p>
+            </button>
+        </div>
+
+        <div class="mt-12 text-center">
+            <p class="text-sm text-zinc-500 mb-3">Eller spring direkte til:</p>
+            <div class="flex flex-wrap justify-center gap-2">
+                <a href="{{ Route::has('metis.debt-search') ? route('metis.debt-search') : '/soeg' }}"
+                   class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
+                    💰 Søg gæld
+                </a>
+                @if(! empty(session('metis_user_token')))
+                    <a href="{{ Route::has('metis.alerts') ? route('metis.alerts') : '/alerts' }}"
+                       class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
+                        🔔 Mine alerts
+                    </a>
+                @endif
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- Type-locked search: mode selected, no result yet --}}
+    @if(! $hasResult && $searchMode !== '')
+    @php
+        $modeConfig = [
+            'person' => ['label' => 'person', 'placeholder' => 'Indtast personnavn…', 'color' => 'blue'],
+            'company' => ['label' => 'selskab', 'placeholder' => 'Indtast selskabsnavn eller CVR…', 'color' => 'purple'],
+            'address' => ['label' => 'adresse', 'placeholder' => 'Indtast adresse, fx Esrumvej 151, 3000…', 'color' => 'green'],
+        ][$searchMode];
+    @endphp
+    <div class="flex flex-col items-center justify-center min-h-[60vh] px-4">
+        <button wire:click="setSearchMode('')"
+                class="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900">
+            ← Vælg anden type
+        </button>
+
+        <div class="mb-6 flex items-center justify-center gap-3">
+            <p class="text-2xl md:text-3xl font-serif text-ink-800 font-normal tracking-tight">
+                Søg efter {{ $modeConfig['label'] }}
             </p>
         </div>
 
         <div class="w-full max-w-[640px]">
-            @include('metis::livewire.partials.search-input')
+            @include('metis::livewire.partials.search-input', ['placeholder' => $modeConfig['placeholder']])
 
             @if(config('metis.turnstile.site_key'))
             <div class="cf-turnstile mt-3" data-sitekey="{{ config('metis.turnstile.site_key') }}" data-callback="onTurnstileSuccess" data-theme="light"></div>
             <script>function onTurnstileSuccess(token) { @this.set('turnstileToken', token); }</script>
             @endif
-
-            {{-- Chips --}}
-            @unless($loading)
-            <div class="flex flex-wrap justify-center gap-2 mt-5">
-                @foreach($chips as $chip)
-                <button
-                    wire:click="fillChip(@js($chip['query']))"
-                    type="button"
-                    class="border border-sand-200 bg-white px-4 py-2 rounded-full text-[13px] text-ink-700/70 hover:text-ink-800 hover:border-sand-300 hover:shadow-sm transition-all"
-                >
-                    {{ $chip['label'] }}
-                </button>
-                @endforeach
-            </div>
-            @endunless
         </div>
 
-        {{-- Footer --}}
-        <div class="fixed bottom-0 left-0 right-0 pb-5 text-center pointer-events-none">
-            <p class="text-sand-300 text-xs pointer-events-auto">
-                <a href="mailto:info@frankston.io" class="hover:text-ink-700 transition-colors">Kontakt</a>
-                <span class="mx-2">&middot;</span>
-                <a href="#" class="hover:text-ink-700 transition-colors">API</a>
-            </p>
-        </div>
     </div>
-    @endunless
+    @endif
 
     {{-- Has result: content + sticky bottom search --}}
     @if($hasResult)

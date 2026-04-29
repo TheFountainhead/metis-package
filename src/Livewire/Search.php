@@ -42,6 +42,23 @@ class Search extends Component
 
     public array $suggestions = [];
 
+    /**
+     * Type-first search mode. When set, search is locked to that type
+     * (no SearchDetector ambiguity). Empty = show type-selection screen.
+     * Values: '', 'person', 'company', 'address'.
+     */
+    public string $searchMode = '';
+
+    public function setSearchMode(string $mode): void
+    {
+        if (! in_array($mode, ['', 'person', 'company', 'address'], true)) {
+            return;
+        }
+        $this->searchMode = $mode;
+        $this->query = '';
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'suggestions', 'cprBlocked', 'rateLimited']);
+    }
+
     public function mount(): void
     {
         $allChips = [
@@ -67,6 +84,12 @@ class Search extends Component
 
         $this->chips = collect($allChips)->random(4)->values()->all();
 
+        // Handle ?mode= on page load (type-first navigation from sidebar)
+        $mode = request()->query('mode');
+        if (in_array($mode, ['person', 'company', 'address'], true)) {
+            $this->searchMode = $mode;
+        }
+
         // Handle ?q= on page load — guard against CPR in URL
         if ($q = request()->query('q')) {
             if (preg_match('/^\d{6}-?\d{4}$/', trim($q))) {
@@ -91,8 +114,18 @@ class Search extends Component
             return;
         }
 
-        $detector = new SearchDetector;
-        $type = $detector->detect($q);
+        // Type-first mode: bypass SearchDetector, use locked mode
+        if ($this->searchMode !== '') {
+            $type = match ($this->searchMode) {
+                'person' => 'name',
+                'company' => 'company_name',
+                'address' => 'address',
+                default => null,
+            };
+        } else {
+            $detector = new SearchDetector;
+            $type = $detector->detect($q);
+        }
 
         if ($type === 'address') {
             $this->suggestionType = 'address';
@@ -152,8 +185,18 @@ class Search extends Component
             return;
         }
 
-        $detector = new SearchDetector;
-        $type = $detector->detect($query);
+        // Type-first mode: bypass SearchDetector
+        if ($this->searchMode !== '') {
+            $type = match ($this->searchMode) {
+                'person' => 'name',
+                'company' => 'company_name',
+                'address' => 'address',
+                default => 'name',
+            };
+        } else {
+            $detector = new SearchDetector;
+            $type = $detector->detect($query);
+        }
 
         if ($type === 'cpr') {
             $this->cprBlocked = true;

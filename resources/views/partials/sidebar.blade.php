@@ -14,9 +14,9 @@
         [
             'label' => __('Søg efter type'),
             'items' => [
-                ['route' => 'metis.home', 'label' => __('Person'), 'icon' => 'user', 'query' => ['hint' => 'person']],
-                ['route' => 'metis.home', 'label' => __('Selskab'), 'icon' => 'building', 'query' => ['hint' => 'company']],
-                ['route' => 'metis.home', 'label' => __('Ejendom'), 'icon' => 'map-pin', 'query' => ['hint' => 'address']],
+                ['route' => 'metis.home', 'label' => __('Person'), 'icon' => 'user', 'query' => ['mode' => 'person']],
+                ['route' => 'metis.home', 'label' => __('Selskab'), 'icon' => 'building', 'query' => ['mode' => 'company']],
+                ['route' => 'metis.home', 'label' => __('Ejendom'), 'icon' => 'map-pin', 'query' => ['mode' => 'address']],
             ],
         ],
     ];
