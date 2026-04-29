@@ -20,6 +20,8 @@ class AlertsInbox extends Component
     public ?string $priority = null;
 
     public ?array $response = null;
+    public ?array $watchlists = null;
+    public bool $showWatchlists = false;
     public bool $loading = false;
     public ?string $error = null;
 
@@ -30,7 +32,23 @@ class AlertsInbox extends Component
     {
         if ($this->hasUserToken()) {
             $this->fetch();
+            $this->loadWatchlists();
         }
+    }
+
+    public function loadWatchlists(): void
+    {
+        try {
+            $resp = app(RegistryApi::class)->listWatchlists();
+            $this->watchlists = $resp['data'] ?? [];
+        } catch (\Throwable $e) {
+            $this->watchlists = [];
+        }
+    }
+
+    public function toggleWatchlists(): void
+    {
+        $this->showWatchlists = ! $this->showWatchlists;
     }
 
     public function hasUserToken(): bool
@@ -50,12 +68,26 @@ class AlertsInbox extends Component
         $this->tokenInput = '';
         $this->tokenError = false;
         $this->fetch();
+        $this->loadWatchlists();
     }
 
     public function clearToken(): void
     {
         session()->forget('metis_user_token');
         $this->response = null;
+        $this->watchlists = null;
+        $this->showWatchlists = false;
+    }
+
+    public function unfollow(int $watchlistId): void
+    {
+        try {
+            app(RegistryApi::class)->deleteWatchlist($watchlistId);
+            $this->loadWatchlists();
+            $this->fetch();
+        } catch (\Throwable $e) {
+            // Silent — UI remains stale, user can refresh
+        }
     }
 
     public function updated(string $name): void
