@@ -49,6 +49,15 @@ class Search extends Component
      */
     public string $searchMode = '';
 
+    /**
+     * Aggregated property portfolio for a person, joined across all owning
+     * companies. Loaded on demand via loadPersonProperties() so the initial
+     * person search stays fast.
+     */
+    public ?array $personProperties = null;
+
+    public bool $loadingPersonProperties = false;
+
     public function setSearchMode(string $mode): void
     {
         if (! in_array($mode, ['', 'person', 'company', 'address'], true)) {
@@ -116,7 +125,7 @@ class Search extends Component
         // sees an old "best fuzzy match" while typing a new query, e.g.
         // searching "christian ø" returned Christian Øster Due, then user
         // continued typing "hlers" and the old result lingered.
-        $this->reset(['result', 'resultType', 'error', 'errorMessage']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'personProperties']);
 
         if (strlen($q) < 3) {
             return;
@@ -194,7 +203,7 @@ class Search extends Component
         $previousSuggestions = $this->suggestions;
         $previousSuggestionType = $this->suggestionType;
         $this->suggestions = [];
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties']);
         $this->retryCount = 0;
 
         $query = trim($this->query);
@@ -290,9 +299,25 @@ class Search extends Component
 
     public function clearSearch(): void
     {
-        $this->reset(['query', 'result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->reset(['query', 'result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties']);
         $this->dispatch('scroll-top');
         $this->js("history.pushState(null, '', '/'); document.title = 'Metis';");
+    }
+
+    /**
+     * Fetch aggregated property portfolio for the current person result.
+     * Triggered by user clicking "Vis alle X ejendomme" button.
+     */
+    public function loadPersonProperties(): void
+    {
+        if ($this->resultType !== 'name' || empty($this->result['persons'][0]['name'] ?? null)) {
+            return;
+        }
+
+        $this->loadingPersonProperties = true;
+        $this->personProperties = app(RegistryApi::class)
+            ->fetchPersonPropertyPortfolio($this->result['persons'][0]['name']);
+        $this->loadingPersonProperties = false;
     }
 
     public function fillChip(string $chip): void
