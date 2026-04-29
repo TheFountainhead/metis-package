@@ -16,6 +16,9 @@
             </div>
         @endif
         @if($portfolio && count($portfolio['properties'] ?? []) > 0)
+            @php
+                $loadedDebt = collect($portfolio['properties'] ?? [])->sum(fn ($p) => $p['total_debt'] ?? 0);
+            @endphp
             <div class="mb-3 flex flex-wrap gap-4 text-sm">
                 <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $portfolio['total_count'] ?? $portfolio['property_count'] ?? 0 }}</span></span>
                 @if(($portfolio['total_valuation'] ?? 0) > 0)
@@ -23,6 +26,9 @@
                 @endif
                 @if(($portfolio['total_area'] ?? 0) > 0)
                     <span class="text-zinc-500">{{ __('Total area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_area'], 0, ',', '.') }} m²</span></span>
+                @endif
+                @if($loadedDebt > 0)
+                    <span class="text-zinc-500" title="{{ __('Sum af tinglyst gæld for de viste ejendomme — yderligere gæld kan være på endnu-ikke-loadede sider') }}">{{ __('Tinglyst gæld') }} ({{ count($portfolio['properties']) }}/{{ $portfolio['total_count'] }}): <span class="font-medium text-red-700 dark:text-red-400">{{ number_format($loadedDebt, 0, ',', '.') }} kr.</span></span>
                 @endif
             </div>
 
@@ -42,7 +48,9 @@
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Units') }}</th>
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Area') }}</th>
                             <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Year') }}</th>
-                            <th class="text-right py-2 font-medium text-zinc-500">{{ __('Valuation') }}</th>
+                            <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Offentlig ejendomsvurdering (VUR)') }}">{{ __('Off. vurdering') }}</th>
+                            <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Seneste handelspris (tinglysning)') }}">{{ __('Seneste handel') }}</th>
+                            <th class="text-right py-2 font-medium text-zinc-500" title="{{ __('Tinglyst gæld i alt — sum af aktive pantebreve') }}">{{ __('Tinglyst gæld') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -50,10 +58,13 @@
                             @php
                                 $totalArea = $units->sum(fn ($u) => $u['total_area'] ?? 0);
                                 $totalVal = $units->sum(fn ($u) => $u['valuation'] ?? 0);
+                                $totalDebt = $units->sum(fn ($u) => $u['total_debt'] ?? 0);
                                 $year = $units->pluck('building_year')->filter()->first();
                                 $first = $units->first();
                                 $addr = trim(($first['address'] ?? '') . ', ' . ($first['postal_code'] ?? '') . ' ' . ($first['city'] ?? ''), ', ');
                                 $bfe = $first['matrikel_id'] ?? null;
+                                // Latest sale across grouped units (max by date)
+                                $latestSale = $units->pluck('latest_sale')->filter()->sortByDesc('date')->first();
                             @endphp
                             <tr class="border-b border-zinc-100 dark:border-zinc-800">
                                 <td class="py-2 pr-4">
@@ -74,7 +85,20 @@
                                 </td>
                                 <td class="py-2 pr-4 text-right">{{ $totalArea ? number_format($totalArea, 0, ',', '.') . ' m²' : '-' }}</td>
                                 <td class="py-2 pr-4">{{ $year ?? '-' }}</td>
-                                <td class="py-2 text-right">{{ $totalVal ? number_format($totalVal, 0, ',', '.') . ' kr.' : '-' }}</td>
+                                <td class="py-2 pr-4 text-right">{{ $totalVal ? number_format($totalVal, 0, ',', '.') . ' kr.' : '-' }}</td>
+                                <td class="py-2 pr-4 text-right">
+                                    @if($latestSale && ($latestSale['price'] ?? 0) > 0)
+                                        <span class="text-zinc-700 dark:text-zinc-200">{{ number_format($latestSale['price'], 0, ',', '.') }} kr.</span>
+                                        @if($latestSale['date'] ?? null)
+                                            <span class="text-xs text-zinc-400 block">{{ \Carbon\Carbon::parse($latestSale['date'])->format('M Y') }}</span>
+                                        @endif
+                                    @else
+                                        <span class="text-zinc-300">-</span>
+                                    @endif
+                                </td>
+                                <td class="py-2 text-right {{ $totalDebt > 0 ? 'text-red-700 dark:text-red-400' : 'text-zinc-300' }}">
+                                    {{ $totalDebt > 0 ? number_format($totalDebt, 0, ',', '.') . ' kr.' : '-' }}
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>
