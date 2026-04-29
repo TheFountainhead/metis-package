@@ -304,6 +304,24 @@ class RegistryApi
         return $this->post('/v1/cvr/person-roles', ['name' => $query]);
     }
 
+    /**
+     * Aggregated property portfolio joined across all companies where this
+     * person is Reelle ejere / EJERREGISTER. Server-side cached 6h per name.
+     * Slow on first call (5-15s for ~10 companies), instant after cache.
+     */
+    public function fetchPersonPropertyPortfolio(string $name): ?array
+    {
+        try {
+            return $this->client()
+                ->timeout(60)
+                ->post('/v1/cvr/person-property-portfolio', ['name' => $name])
+                ->throw()
+                ->json('data');
+        } catch (RequestException $e) {
+            return null;
+        }
+    }
+
     public function fetchPersonPropertyPortfolioByCpr(string $cpr): ?array
     {
         return $this->post('/v1/person/property-portfolio', ['cpr' => $cpr]);

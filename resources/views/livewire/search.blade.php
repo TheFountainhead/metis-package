@@ -231,12 +231,20 @@
 
                     @if($owned = $person['owned_companies'] ?? [])
                     <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
-                        <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">
-                            Ejer
-                            @if($person['total_properties'] ?? 0)
-                                <span class="text-sand-300 font-normal normal-case ml-2">{{ $person['total_properties'] }} {{ __('properties') }}</span>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest">
+                                Ejer
+                                @if($person['total_properties'] ?? 0)
+                                    <span class="text-sand-300 font-normal normal-case ml-2">{{ $person['total_properties'] }} {{ __('ejendomme') }} via {{ count($owned) }} {{ __('selskaber') }}</span>
+                                @endif
+                            </h3>
+                            @if(($person['total_properties'] ?? 0) > 0 && empty($personProperties) && ! $loadingPersonProperties)
+                                <button wire:click="loadPersonProperties"
+                                        class="text-xs px-3 py-1 bg-warm-500 text-white rounded hover:bg-warm-600 transition-colors">
+                                    {{ __('Vis alle ejendomme') }} →
+                                </button>
                             @endif
-                        </h3>
+                        </div>
                         @foreach($owned as $company)
                         <div class="flex justify-between items-center py-2 {{ !$loop->last ? 'border-b border-sand-100' : '' }}">
                             <span class="text-[14px]">
@@ -252,6 +260,67 @@
                         </div>
                         @endforeach
                     </div>
+                    @endif
+
+                    {{-- Loading indicator while aggregated portfolio fetches --}}
+                    @if($loadingPersonProperties)
+                        <div class="bg-white rounded-2xl p-8 border border-sand-200/60 text-center">
+                            <div class="inline-block w-6 h-6 border-2 border-zinc-300 border-t-zinc-600 rounded-full animate-spin"></div>
+                            <p class="mt-2 text-sm text-sand-300">{{ __('Henter ejendomsportefølje på tværs af selskaber...') }}</p>
+                            <p class="text-xs text-sand-300 mt-1">{{ __('Kan tage 5-15 sekunder første gang.') }}</p>
+                        </div>
+                    @endif
+
+                    {{-- Aggregated property portfolio across all owned companies --}}
+                    @if($personProperties && ! empty($personProperties['companies'] ?? []))
+                        <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
+                            <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-4">
+                                {{ __('Alle ejendomme') }}
+                                <span class="text-sand-300 font-normal normal-case ml-2">
+                                    {{ $personProperties['summary']['total_properties'] ?? 0 }} {{ __('ejendomme') }}
+                                    @if(($personProperties['summary']['total_valuation'] ?? 0) > 0)
+                                        · {{ __('vurdering') }} {{ number_format($personProperties['summary']['total_valuation'] / 1_000_000, 1, ',', '.') }} {{ __('mio. kr.') }}
+                                    @endif
+                                </span>
+                            </h3>
+
+                            @foreach($personProperties['companies'] as $company)
+                                @php $properties = $company['portfolio']['properties'] ?? []; @endphp
+                                @if(! empty($properties))
+                                    <div class="mb-5 last:mb-0">
+                                        <div class="flex items-center gap-2 mb-2 pb-1 border-b border-sand-100">
+                                            <span class="text-[13px] font-semibold text-ink-800">{{ $company['name'] }}</span>
+                                            <span class="text-xs text-sand-300">{{ count($properties) }} {{ __('ejendomme') }}</span>
+                                            @if($company['ownership_share'] ?? null)
+                                                <span class="text-xs text-warm-500">{{ number_format($company['ownership_share'], 0) }}%</span>
+                                            @endif
+                                            <button wire:click="crossReference('cvr', @js($company['cvr']))" class="ml-auto text-warm-500 text-xs hover:text-warm-600">{{ __('Selskab') }} →</button>
+                                        </div>
+                                        @foreach($properties as $prop)
+                                            <div class="flex justify-between items-start py-1.5 text-[13px]">
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="text-ink-800 truncate">{{ $prop['address'] ?? $prop['matrikel_id'] ?? '—' }}</div>
+                                                    <div class="text-xs text-sand-300">
+                                                        @if($prop['building_year'] ?? null)
+                                                            {{ __('opført') }} {{ $prop['building_year'] }}
+                                                        @endif
+                                                        @if($prop['building_area'] ?? null)
+                                                            · {{ $prop['building_area'] }} m²
+                                                        @endif
+                                                        @if($prop['valuation'] ?? null)
+                                                            · {{ __('vurdering') }} {{ number_format($prop['valuation'] / 1000, 0, ',', '.') }} t.kr.
+                                                        @endif
+                                                    </div>
+                                                </div>
+                                                @if($prop['address'] ?? null)
+                                                    <button wire:click="crossReference('address', @js($prop['address']))" class="text-warm-500 text-xs hover:text-warm-600 shrink-0 ml-2">{{ __('Slå op') }}</button>
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            @endforeach
+                        </div>
                     @endif
                 </div>
                 @endforeach
