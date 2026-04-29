@@ -23,9 +23,39 @@ class AlertsInbox extends Component
     public bool $loading = false;
     public ?string $error = null;
 
+    public string $tokenInput = '';
+    public bool $tokenError = false;
+
     public function mount(): void
     {
+        if ($this->hasUserToken()) {
+            $this->fetch();
+        }
+    }
+
+    public function hasUserToken(): bool
+    {
+        return ! empty(session('metis_user_token'));
+    }
+
+    public function setToken(): void
+    {
+        $token = trim($this->tokenInput);
+        if (! preg_match('/^\d+\|[A-Za-z0-9]+$/', $token)) {
+            $this->tokenError = true;
+            return;
+        }
+
+        session(['metis_user_token' => $token]);
+        $this->tokenInput = '';
+        $this->tokenError = false;
         $this->fetch();
+    }
+
+    public function clearToken(): void
+    {
+        session()->forget('metis_user_token');
+        $this->response = null;
     }
 
     public function updated(string $name): void
