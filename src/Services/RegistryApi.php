@@ -419,4 +419,72 @@ class RegistryApi
             return ['error' => $e->getMessage(), 'status' => $e->getCode()];
         }
     }
+
+    // F1 Debt Alerts — watchlists + alerts endpoints
+
+    public function listWatchlists(): array
+    {
+        try {
+            return $this->client()->get('/v1/watchlists')->throw()->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
+    public function checkBatch(array $items): array
+    {
+        try {
+            return $this->client()
+                ->post('/v1/watchlists/check-batch', ['items' => $items])
+                ->throw()
+                ->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
+    public function createWatchlist(string $type, string $value, ?string $label, array $alertTypes): array
+    {
+        try {
+            return $this->client()->post('/v1/watchlists', [
+                'watch_type' => $type,
+                'watch_value' => $value,
+                'display_label' => $label,
+                'alert_types' => $alertTypes,
+            ])->throw()->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
+    public function deleteWatchlist(int $id): array
+    {
+        try {
+            return $this->client()->delete("/v1/watchlists/{$id}")->throw()->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
+    public function listAlerts(bool $unreadOnly = false, ?string $priority = null, int $page = 1): array
+    {
+        try {
+            return $this->client()->get('/v1/alerts', array_filter([
+                'unread_only' => $unreadOnly ? 1 : 0,
+                'priority' => $priority,
+                'page' => $page,
+            ], fn ($v) => $v !== null))->throw()->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
+    public function markAlertRead(int $alertId): array
+    {
+        try {
+            return $this->client()->patch("/v1/alerts/{$alertId}/read")->throw()->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
 }

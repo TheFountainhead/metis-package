@@ -7,6 +7,7 @@ use TheFountainhead\Metis\Http\Middleware\MetisAdminAuth;
 use TheFountainhead\Metis\Livewire\Admin\Dashboard;
 use TheFountainhead\Metis\Livewire\Admin\Leads;
 use TheFountainhead\Metis\Livewire\Admin\Logs;
+use TheFountainhead\Metis\Livewire\AlertsInbox;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 use TheFountainhead\Metis\Livewire\Lookup;
 use TheFountainhead\Metis\Livewire\Search;
@@ -15,6 +16,7 @@ use TheFountainhead\Metis\Livewire\Search;
 Route::get('/', Search::class)->name('metis.home')->middleware('throttle:20,1');
 Route::get('/lookup/{type}/{query}', Lookup::class)->name('metis.lookup')->where('query', '.*')->middleware('throttle:20,1');
 Route::get('/soeg', DebtSearch::class)->name('metis.debt-search')->middleware('throttle:20,1');
+Route::get('/alerts', AlertsInbox::class)->name('metis.alerts')->middleware('throttle:60,1');
 Route::get('/robots.txt', fn () => response("User-agent: *\nDisallow: /admin\n", 200, ['Content-Type' => 'text/plain']));
 
 // Admin routes
