@@ -67,8 +67,20 @@
             @if($error)
             <div class="bg-white rounded-2xl p-6 border border-sand-200/60 text-center">
                 @if($errorMessage === 'no_results')
-                    <p class="text-ink-800 mb-1">Ingen resultater for "{{ $query }}"</p>
-                    <p class="text-sand-300 text-sm">Prøv et andet søgeord.</p>
+                    @if(count($suggestions ?? []) > 0)
+                        <p class="text-ink-800 mb-3">Mente du:</p>
+                        <div class="space-y-2 max-w-md mx-auto">
+                            @foreach($suggestions as $suggestion)
+                                <button wire:click="selectSuggestion(@js($suggestion['tekst'] ?? ''))"
+                                        class="block w-full text-left px-3 py-2 bg-sand-50 hover:bg-sand-100 rounded-lg border border-sand-200 transition">
+                                    <span class="text-sm text-ink-800">{{ $suggestion['tekst'] ?? '' }}</span>
+                                </button>
+                            @endforeach
+                        </div>
+                    @else
+                        <p class="text-ink-800 mb-1">Ingen resultater for "{{ $query }}"</p>
+                        <p class="text-sand-300 text-sm">Prøv et andet søgeord.</p>
+                    @endif
                 @elseif($errorMessage === 'permanent')
                     <p class="text-ink-800 mb-1">Vi kan ikke hente data lige nu.</p>
                     <p class="text-sand-300 text-sm">Prøv igen senere.</p>

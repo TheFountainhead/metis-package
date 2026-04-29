@@ -131,6 +131,11 @@ class Search extends Component
 
     public function search(): void
     {
+        // Preserve suggestions until search succeeds — keep autocomplete-list
+        // visible as fallback if Enter-search returns empty (UX: don't strand
+        // user with "no results" when we already showed them 5 matches).
+        $previousSuggestions = $this->suggestions;
+        $previousSuggestionType = $this->suggestionType;
         $this->suggestions = [];
         $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
         $this->retryCount = 0;
@@ -195,6 +200,10 @@ class Search extends Component
             $this->logLookup($type, $query, isCrossReference: false);
             $this->dispatch('update-url', query: $query, type: $type);
             $this->dispatchSearchCompleted();
+        } elseif ($this->error && $this->errorMessage === 'no_results' && ! empty($previousSuggestions)) {
+            // Restore autocomplete-suggestions so user has clickable fallback
+            $this->suggestions = $previousSuggestions;
+            $this->suggestionType = $previousSuggestionType;
         }
     }
 
