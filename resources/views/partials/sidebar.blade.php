@@ -24,15 +24,15 @@
 
 <aside x-cloak
        :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
-       class="fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-sand-200/60 flex flex-col transition-transform duration-200 lg:translate-x-0">
+       class="fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-zinc-200 flex flex-col transition-transform duration-200 lg:translate-x-0">
 
-    <div class="px-5 py-4 border-b border-sand-200/60 flex items-center justify-between">
+    <div class="px-5 py-4 border-b border-zinc-200 flex items-center justify-between">
         <a href="{{ Route::has('metis.home') ? route('metis.home') : '/' }}"
-           class="text-2xl font-serif text-ink-800 tracking-tight">
+           class="text-2xl font-serif text-zinc-900 tracking-tight">
             Metis
         </a>
         <button @click="sidebarOpen = false"
-                class="lg:hidden p-1 hover:bg-sand-100 rounded">
+                class="lg:hidden p-1 hover:bg-zinc-100 rounded">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -43,7 +43,7 @@
         @foreach($navSections as $section)
             <div>
                 @if($section['label'])
-                    <h3 class="px-3 mb-2 text-[11px] font-medium text-sand-400 uppercase tracking-wider">
+                    <h3 class="px-3 mb-2 text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
                         {{ $section['label'] }}
                     </h3>
                 @endif
@@ -64,10 +64,10 @@
                                @if($isDisabled) onclick="alert('{{ __('Indtast din personal token først via Mine alerts.') }}'); return false;" @endif
                                class="flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors
                                       {{ $isCurrent
-                                         ? 'bg-warm-100 text-warm-700 font-medium'
-                                         : 'text-ink-700 hover:bg-sand-50' }}
+                                         ? 'bg-blue-100 text-blue-700 font-medium'
+                                         : 'text-zinc-700 hover:bg-zinc-50' }}
                                       {{ $isDisabled ? 'opacity-50 cursor-not-allowed' : '' }}">
-                                <span class="w-5 h-5 inline-flex items-center justify-center text-sand-400">
+                                <span class="w-5 h-5 inline-flex items-center justify-center text-zinc-400">
                                     @switch($item['icon'])
                                         @case('home')
                                             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
@@ -98,7 +98,7 @@
         @endforeach
     </nav>
 
-    <div class="px-3 py-3 border-t border-sand-200/60 text-xs text-sand-400 space-y-1">
+    <div class="px-3 py-3 border-t border-zinc-200 text-xs text-zinc-400 space-y-1">
         @if($hasUserToken)
             <div class="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-blue-700">
                 ✓ {{ __('Personal token aktiv') }}
