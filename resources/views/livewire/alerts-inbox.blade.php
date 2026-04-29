@@ -7,13 +7,56 @@
         @php
             $backRoute = Route::has('metis.index') ? 'metis.index' : (Route::has('metis.home') ? 'metis.home' : null);
         @endphp
-        @if($backRoute)
-            <a href="{{ route($backRoute) }}"
-               class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
-                ← {{ __('Tilbage') }}
-            </a>
-        @endif
+        <div class="flex items-center gap-2">
+            @if($this->hasUserToken())
+                <button wire:click="clearToken"
+                        class="text-xs px-2 py-1 border border-zinc-300 rounded hover:bg-zinc-50">
+                    {{ __('Log ud') }}
+                </button>
+            @endif
+            @if($backRoute)
+                <a href="{{ route($backRoute) }}"
+                   class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
+                    ← {{ __('Tilbage') }}
+                </a>
+            @endif
+        </div>
     </div>
+
+    @if(! $this->hasUserToken())
+        <div class="max-w-xl mx-auto p-8 bg-white border rounded-lg">
+            <h2 class="text-lg font-semibold mb-2">{{ __('Indtast din personal token') }}</h2>
+            <p class="text-sm text-zinc-600 mb-4">
+                {{ __('Pilot-bruger? Indtast den token du har modtaget for at se dine alerts og fulgte entiteter. Tokenen gemmes kun i din session.') }}
+            </p>
+
+            <form wire:submit.prevent="setToken">
+                <div class="mb-3">
+                    <input type="password"
+                           wire:model.defer="tokenInput"
+                           placeholder="13|abc123..."
+                           autocomplete="off"
+                           autofocus
+                           class="w-full px-3 py-2 border rounded font-mono text-sm
+                                  {{ $tokenError ? 'border-red-300' : 'border-zinc-300' }}">
+                    @if($tokenError)
+                        <p class="text-xs text-red-600 mt-1">
+                            {{ __('Ugyldigt token-format. Forventer fx 13|abc123...') }}
+                        </p>
+                    @endif
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
+                        {{ __('Aktivér') }}
+                    </button>
+                </div>
+            </form>
+
+            <p class="text-xs text-zinc-400 mt-4">
+                {{ __('Tokenen tilhører dig personligt og må ikke deles. Logger automatisk ud når sessionen lukker.') }}
+            </p>
+        </div>
+    @else
 
     <div class="flex items-center gap-3 mb-4">
         <label class="flex items-center gap-1 text-sm">
@@ -130,5 +173,7 @@
                 @endif
             </div>
         @endif
+    @endif
+
     @endif
 </div>

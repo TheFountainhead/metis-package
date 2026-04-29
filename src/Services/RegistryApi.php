@@ -10,7 +10,13 @@ class RegistryApi
 {
     protected function client()
     {
-        return Http::withToken(config('metis.registry_api.key'))
+        // F1 pilot — if user has set personal token in session (via /alerts
+        // token-input form), use it. Otherwise fall back to shared tenant key.
+        // Session token enables per-user data (watchlists, alerts) on a
+        // standalone Metis without full sign-up/login plumbing.
+        $token = session('metis_user_token') ?: config('metis.registry_api.key');
+
+        return Http::withToken($token)
             ->acceptJson()
             ->timeout(30)
             ->baseUrl(config('metis.registry_api.url'));
