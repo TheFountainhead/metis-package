@@ -59,18 +59,25 @@ class CompanyProperties extends MetisSection
 
     public function loadMore(): void
     {
+        if (! $this->portfolio) {
+            return;
+        }
+
         $current = count($this->portfolio['properties'] ?? []);
         $result = rescue(fn () => app(RegistryApi::class)
             ->fetchCompanyPropertyPortfolio($this->query, limit: 50, offset: $current));
         $more = $result['portfolio']['properties'] ?? [];
 
-        if ($more && $this->portfolio) {
-            $this->portfolio['properties'] = array_merge(
-                $this->portfolio['properties'],
-                $more
-            );
-            $this->portfolio['property_count'] = count($this->portfolio['properties']);
+        if (empty($more)) {
+            return;
         }
+
+        // Reassign whole array — Livewire 3 doesn't always detect nested
+        // array mutations like $this->portfolio['properties'] = ....
+        $portfolio = $this->portfolio;
+        $portfolio['properties'] = array_merge($portfolio['properties'] ?? [], $more);
+        $portfolio['property_count'] = count($portfolio['properties']);
+        $this->portfolio = $portfolio;
     }
 
     public function render()
