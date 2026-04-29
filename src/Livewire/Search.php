@@ -114,18 +114,34 @@ class Search extends Component
             return;
         }
 
-        // Type-first mode: bypass SearchDetector, use locked mode
-        if ($this->searchMode !== '') {
-            $type = match ($this->searchMode) {
-                'person' => 'name',
-                'company' => 'company_name',
-                'address' => 'address',
-                default => null,
-            };
-        } else {
-            $detector = new SearchDetector;
-            $type = $detector->detect($q);
+        // Type-first mode: locked autocomplete behaviour
+        if ($this->searchMode === 'address') {
+            $this->suggestionType = 'address';
+            $this->suggestions = rescue(fn () => app(RegistryApi::class)->addressAutocomplete($q, 5), []) ?? [];
+            return;
         }
+
+        if ($this->searchMode === 'company' && strlen($q) >= 4) {
+            $results = rescue(fn () => app(RegistryApi::class)->searchByName($q), []) ?? [];
+            if (! empty($results)) {
+                $this->suggestionType = 'company';
+                $this->suggestions = collect($results)->take(5)->map(fn ($c) => [
+                    'tekst' => ($c['name'] ?? '').' · CVR '.($c['cvr'] ?? ''),
+                    'cvr' => $c['cvr'] ?? '',
+                    'name' => $c['name'] ?? '',
+                ])->all();
+            }
+            return;
+        }
+
+        if ($this->searchMode === 'person') {
+            // No person-autocomplete API. User types full name + presses Enter.
+            return;
+        }
+
+        // Free-text mode (no locked type) — use detector
+        $detector = new SearchDetector;
+        $type = $detector->detect($q);
 
         if ($type === 'address') {
             $this->suggestionType = 'address';
@@ -415,13 +431,23 @@ class Search extends Component
     {
         $api = app(RegistryApi::class);
 
-        $result = match ($type) {
-            'cvr' => $api->fetchCompany($query),
-            'company_name' => ['companies' => $api->searchByName($query)],
-            'name' => ['persons' => $api->searchPersonByName($query), 'companies' => $api->searchByName($query)],
-            'address' => $api->fetchPropertyByAddress($query),
-            default => null,
-        };
+        // Type-first lock: when user picked a mode, only search that type.
+        // Eliminates 'name'-fallback that returns BOTH persons + companies.
+        if ($this->searchMode === 'person') {
+            $result = ['persons' => $api->searchPersonByName($query)];
+        } elseif ($this->searchMode === 'company') {
+            $result = ['companies' => $api->searchByName($query)];
+        } elseif ($this->searchMode === 'address') {
+            $result = $api->fetchPropertyByAddress($query);
+        } else {
+            $result = match ($type) {
+                'cvr' => $api->fetchCompany($query),
+                'company_name' => ['companies' => $api->searchByName($query)],
+                'name' => ['persons' => $api->searchPersonByName($query), 'companies' => $api->searchByName($query)],
+                'address' => $api->fetchPropertyByAddress($query),
+                default => null,
+            };
+        }
 
         if ($result === null || isset($result['error'])) {
             $this->error = true;
