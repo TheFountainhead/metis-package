@@ -389,4 +389,34 @@ class RegistryApi
             return ['error' => $e->getMessage(), 'status' => $e->getCode()];
         }
     }
+
+    /**
+     * Debt-search endpoint returns the response shape at the root (not under 'data'),
+     * so we bypass the get()/post() helpers which extract that key.
+     */
+    public function debtSearch(array $filters, ?string $source = null): array
+    {
+        $request = $this->client();
+        if ($source !== null) {
+            $request = $request->withHeaders(['X-Search-Source' => $source]);
+        }
+
+        try {
+            return $request->get('/v1/debt-search', $filters)->throw()->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
+    public function createDebtSearchCsvLink(array $filters): array
+    {
+        try {
+            return $this->client()
+                ->post('/v1/debt-search/export-link', $filters)
+                ->throw()
+                ->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
 }
