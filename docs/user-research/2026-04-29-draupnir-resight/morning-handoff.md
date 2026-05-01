@@ -24,6 +24,52 @@
 
 ---
 
+## 8 Beslutninger jeg har brug for fra dig (prioriteret)
+
+Disse 8 spørgsmål skal afklares før Sprint 0 kan startes mandag morgen. De er prioriteret, så A1-A3 er først: hvis du ikke godkender den strategiske positionering, ændres B og C også.
+
+### A. Strategisk (skal besluttes inden Sprint 0 kick-off)
+
+1. **Godkend "Kreditorernes Resight" som primær positionering?**
+   *Argument PRO:* Resight har det åbne segment, matcher Frankston-edges (AVM, credit, AIS, eSkat), undgår bias-mur. *Argument MOD:* Mindre TAM end bredt investor-segment (300-400 vs 1.300+ orgs). **Min anbefaling: JA — positionér først, udvid efter pilot-cases.**
+
+2. **Pricing-tier-struktur: Pro 18K / Creditor 30K / Enterprise 25K (volumen-rabat)?**
+   Pro 18K matcher Resights basis +3K. Creditor 30K er for differentiator-features (mortgage-delta, omvendt søgning, AVM, credit). Enterprise 25K ved volumen. **Min anbefaling: JA som start; juster efter første 3 pilot-deals.**
+
+3. **9-måneders struktureret pilot-aftale med Rasmus (kvartalsvise feedback-checkpoints)?**
+   Mitigerer "kun supplement"-mønsteret (T:766) ved at kræve månedlig feedback-session + skifte-tærskel-aftale. **Min anbefaling: JA.**
+
+### B. Sprint-foundation (skal besluttes denne uge)
+
+4. **Backend rebrand: `/v2/*` eller Sunset-headers?**
+   Architecture-reviewer flagged at 1-uges-alias er for risikabelt — vi har ikke auditeret Frankston-master/Trust/Faktorkredit-konsumenter. **Min anbefaling: bump til `/v2/*` (canonical) — men det kræver Sprint 0a dag 1: `grep -r "v1/monitoring" Frankston-master/ Trust-platform/ faktorkredit/` på tværs af alle Frankston repos.**
+
+5. **Reduce alert-types fra 5 til 3?**
+   Code-simplicity-reviewer fandt at `creditor_change` + `principal_change` + `mortgage_change` overlapper. Tre typer: `new_lien`, `mortgage_change`, `ownership_change` dækker. **Min anbefaling: JA — description-feltet bærer detaljen.**
+
+6. **Cut F-NEW2 Hjem-dashboard + F8 kilde-mærkning, defer F9 hierarkisk + F-NEW3 Lister?**
+   Code-simplicity-reviewer cut'er disse for at frigøre 15-20 dage. Begrundelse: F-NEW2 driver ikke retention, F8 er marketing-spil ingen kreditor har bedt om, F9 har Resight-spider som fallback, F-NEW3 spørg Rasmus først om det er deal-breaker. **Min anbefaling: JA — det giver Sprint 4 til Rasmus-feedback-iteration i stedet for paritet-features.**
+
+### C. Eksekvering (kan vente til efter A+B er besluttet)
+
+7. **Hvordan håndteres Frederik-sales-bottleneck?**
+   50-person prospect-outreach + sprint-koordinering kan ikke parallelliseres. Tre options:
+   - (a) Hire 1 sales-person når 3 pilots er signed (Q4 2026)
+   - (b) Delegér outreach til Kristian/Jens i stille perioder
+   - (c) Gennemfør sales i koncentrerede 2-uger sprint efter hver feature-LIVE
+
+   **Min anbefaling: (c) først, så (a) når MRR er der.**
+
+8. **Hvilken pilot-prospect efter Rasmus?**
+   Tre realistiske kandidater:
+   - **Faktorkredit** — eksisterende Frankston-relation, lav friktion, men lille org
+   - **Bech-Bruun insolvens** — høj smerte → høj betalingsvilje, men længere sales-cycle
+   - **Realkredit-institut via Mastercard-partner-channel** — størst impact hvis det lykkes, men kompleks decision-tree
+
+   **Min anbefaling: Faktorkredit som pilot 2 (hurtig validering), Bech-Bruun som pilot 3 (advokat-segment-bevisning), realkredit som pilot 4 (skala-bevisning).**
+
+---
+
 ## Læse-rækkefølge (90 min for fuld review)
 
 ### 🔴 Kritisk (læs først, 25 min)

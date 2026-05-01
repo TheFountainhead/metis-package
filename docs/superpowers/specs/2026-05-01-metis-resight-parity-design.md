@@ -808,3 +808,57 @@ Samlet spec-confidence stiger fra 82 til **88** efter review-input. De resterend
 ---
 
 **Ende på design-dokument (v1.1, post-review).**
+
+---
+
+## Addendum 2: Korrektioner efter Frederik-feedback (v1.2, 1. maj 2026 23:30)
+
+Frederik gennemgik handoff'en sent natten 1. maj og rejste 2 vigtige fejlrettelser plus en clarifying:
+
+### F1.2.A — Lejedata: F8 er IKKE et stort projekt
+
+**Tidligere antagelse (forkert):** F8 lejedata kræver 10-15 dage MVP eller "bevidst skip".
+
+**Reality:** Frankston har **allerede** EjendomstorvetClient + ImportCommercialRentsCommand + commercial_rents-tabel + BoligaListing-pipeline i `registry-api`. Spec'en glemte dette.
+
+**Genbrug-status:**
+- `registry-api/app/Services/Scraping/EjendomstorvetClient.php:1-53` — fetcher erhvervsleje (kontor/butik/lager/produktion) via deres v2-API
+- `registry-api/app/Console/Commands/ImportCommercialRentsCommand.php` — Artisan-cmd med presets `copenhagen` (29 postnumre) og `major` (~50 erhvervsbyer)
+- `registry-api/database/migrations/2026_03_01_300001_create_commercial_rents_table.php` — schema klar
+- `registry-api/database/migrations/2026_03_26_100001_create_boliga_listings_table.php` + `BoligaSyncListingsCommand` — boligleje pipeline
+
+**Rasmus' indsigt (T:281):** Resight's leje-data er **udbudspriser** (annoncer), ikke faktiske indberettede lejekontrakter. Det betyder:
+- Det er en **scraping-pipeline-feature**, ikke en data-moat
+- Vi har samme data tilgængelig fra samme + andre kilder
+- Vores edge er **transparent kilde-mærkning** ("Annonce-pris fra Ejendomstorvet, ikke faktisk lejekontrakt")
+
+**Revideret F8-omfang (revurderet til P2 = 3-5 dage, ikke skip):**
+1. Verificér om commercial-rents:import + Boliga sync kører som cron i prod (Sprint 0a, ½ dag)
+2. Hvis ikke: aktivér jobs + backfill (Sprint 0a, ½ dag)
+3. Eksponér aggregat-endpoint i registry-api: `GET /v1/rent-levels/{postal_code}?type=kontor` (Sprint 4, 1 dag)
+4. UI-komponent på adresse-/postnummer-side (Sprint 4, 1 dag)
+5. Kilde-badge på hver leje-værdi (Sprint 4, 1 dag)
+
+**Yderligere kilder vi kan tilføje senere (Q3+ 2026, hvis kreditor-pilots beder):**
+- Boligportal.dk (~80% af danske private boligudlejere)
+- Findbolig.nu (almene boliger — DAB, KAB, fsb, Lejerbo)
+- Lejebolig.dk + bolig-online.dk (privat-udlejere "long tail")
+
+### F1.2.B — Resight HAR offentlige priser (correcting confabulation)
+
+Tidligere claim "Resight er kontakt-sales (modsat ReData som er offentlig)" var en konfabulation efter WebFetch returnerede 451 (Cloudflare WAF). 451 betyder kun "kunne ikke nå siden", ikke "siden findes ikke / er ikke offentlig". Frederik bekræfter Resight har offentlige priser på resights.dk/priser/.
+
+**Konsekvens for spec/GTM:**
+- Open question #6 i spec ("offentlig vs kontakt-sales pricing-MVP") er **løst: offentlig pricing**, da det er industri-norm i segmentet
+- Vores pricing-side på metis.frankston.io kan have public "Sammenlign med Resight"-tabel — gennemsigtighed som differentiator
+- Faktiske Resight-priser skal verificeres af Frederik mandag (firecrawl med JS-rendering eller besøg af siden) til endeligt benchmark
+
+**Saved as memory:** `~/.claude/projects/-Users-Frederik/memory/feedback_dont_confabulate_when_fetch_fails.md` — for at undgå gentagelse.
+
+### F1.2.C — Kreditor-positionering bekræftet af Frederik
+
+Frederik: *"kreditor-positioneringen lyder interessant som indgangsvinkel"*. Det fjerner åbent spørgsmål A1 fra morning-handoff'en. Sprint-prioritering kan låses som beskrevet.
+
+---
+
+**Ende på design-dokument (v1.2, post-Frederik-feedback).**
