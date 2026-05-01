@@ -1,6 +1,6 @@
 # Metis Resight-parity & Creditor-edge — Design (1. maj 2026)
 
-**Status:** Design — godkendelse afventer (skal præsenteres for Frederik morgen efter natten 30/4 → 1/5).
+**Status:** Design — kreditor-positionering bekræftet af Frederik 1. maj 23:00. /plan kører efter denne spec mod feature-branches. **Læs spec v1.0 først som baseline + Addendum 1 (v1.1 review-feedback) + Addendum 2 (v1.2 Frederik-feedback) for de seneste justeringer** — de overrider eksempelvis sprint-tabellen i Executive Summary nedenfor (12 uger → 10 uger med Sprint 0a+0b split).
 
 **Brainstorm-input:**
 - Draupnir-mødetranscript 29. apr (`Draupnir 2026.04.29.txt`, 840 linjer)
