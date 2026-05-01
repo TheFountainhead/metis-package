@@ -732,4 +732,79 @@ Markedsmessig vinkel mod Resight (T:281 antagelses-svaghed).
 4. Pilot-token til Rasmus med `mortgage_change` alert-type fra dag 7
 5. Compound entry når sprint 0 er done — capture læringerne om route-rebrand vs alias
 
-**Ende på design-dokument.**
+**Ende på design-dokument (v1).**
+
+---
+
+## Addendum: Review-feedback (v1.1, 1. maj 2026)
+
+Tre uafhængige review-agenter analyserede spec v1. Deres samlede feedback (detaljer i `docs/user-research/2026-04-29-draupnir-resight/morning-handoff.md` sektion "Review-agent fund") gav følgende rettelser til spec v1.1:
+
+### A. Scope-cuts (frigør 15-20 dage)
+
+- **Cut F-NEW2 Hjem-dashboard** fra 12-uger-scope. Visuel paritet driver ikke retention; Rasmus kommer ind via /alerts eller direkte søgning.
+- **Cut F8 kilde-mærkning** fra 12-uger-scope. Marketing-spil; ingen kreditor har efterspurgt det.
+- **Defer F9 hierarkisk ejer-vis** til post-pilot. Resight-spider er stadig fallback.
+- **Defer F-NEW3 Lister** indtil Rasmus eksplicit beder om det.
+- **Trim F3 selskabsforside** fra 5 widgets til 3 (cut map med pins + pie chart).
+
+### B. Sprint-plan revision
+
+Sprint 0 splittes til **0a + 0b** for at undgå over-loading:
+
+| Sprint | Uger | Outcome |
+|---|---|---|
+| **0a. Backend-foundation** | uge 1 | Route-rebrand + validators + audit alle Frankston repos for monitoring/* consumers |
+| **0b. Mortgage-delta engine** | uge 2 | checkMortgageDelta + snapshot+events hybrid + tests + smoke-test |
+| **1. F2-paritet** | uge 3 | owner_type + debt_type + CSV-eksport |
+| **2. F1+F5 dybde** | uge 4-5 | Email-digest (Horizon queue + Rappasoft pattern), person-watch_type, alert-detalje-side |
+| **3. P1 paritet** | uge 6-8 | F3 trimmed (3 widgets), F-NEW Portfolio-Tinglysning, F10 LTV, F6 lignende handler |
+| **4. Rasmus-iteration** | uge 9-10 | Pilot-feedback indsamling + UX-tweaks + buffer |
+| **5. Pilot lock-in** | uge 11-12 | 2-3 ekstra kreditor-piloter, case-historie |
+
+Reduktion: 12 uger → realistisk 10 uger plus større buffer.
+
+### C. Arkitektur-rettelser
+
+1. **Backend-rebrand**: Drop 1-uges-alias. **Bump til `/v2/*` eller brug Sunset/Deprecation HTTP headers (RFC 8594/9745) med 30-dages audit.** Sprint 0a dag 1: `grep -r "v1/monitoring" Frankston-master/ Trust-platform/ faktorkredit/` på alle Frankston repos før delete.
+
+2. **Mortgage-delta engine: hybrid snapshot+events**:
+   - Behold `mortgage_snapshots` table (current state cache for hurtig diff)
+   - Tilføj `row_hash` kolonne (sha256 af significant cols) for 100x hurtigere diff
+   - Idempotency: `(property_id, snapshot_date)` UNIQUE + `ON CONFLICT DO NOTHING`
+   - Missed-day recovery: diff vs `last_available_snapshot`, ikke `today - 1`
+   - Partition `mortgage_snapshots` by month (Postgres native)
+   - **Tilføj `mortgage_events` table** parallelt (event-log appended ved hver detected delta) — løser audit + historic-backfill use cases architecture-reviewer rejste
+
+3. **F-NEW Portfolio-Tinglysning backend-first**: definér `GET /v1/companies/{cvr}/portfolio-mortgages?per_page=50&sort=principal_desc` med aggregate-envelope FØR UI. Server-side paginering fra row 1, ikke ved >100. `POST /v1/watchlists/bulk` for "Følg alle 18"-knap.
+
+4. **Email-digest pattern**:
+   - Hourly cron `digests:send-due` (Rappasoft pattern) — per-user local-hour match (default Europe/Copenhagen / 08:00)
+   - Per-user `BuildDigestJob` på Horizon `digests`-queue
+   - `digest_runs` table med UNIQUE `(user_id, digest_date)` for idempotency
+   - SchedulerFailureNotifier convention (memory: project_scheduled_command_monitoring.md)
+   - Empty-state gate før queue-dispatch
+   - Brug Laravel Notifications + ShouldQueue, ikke raw Mailable
+
+5. **Embedded-vs-standalone abstraction**: Long-term post-Sprint-5 — ekstrahér `MetisRegistryClient`-interface i package med `RegistryApiAdapter` + `FrankstonApiAdapter`-implementeringer. Eliminerer duplicerede Livewire-komponenter i Frankston-master.
+
+### D. Alert-type granularitet
+
+Reduktion fra 5 typer til 3:
+- `new_lien` (udlæg / retsanmærkning — high priority)
+- `mortgage_change` (alle øvrige pant-events: ny, fjernet, principal-change, creditor-change — beskrives i description-felt)
+- `ownership_change` (ejer-skift — eksisterende)
+
+Saves validator-kompleksitet, UI-filter-states, email-template-branches.
+
+### E. Konfidens-justering efter review
+
+Samlet spec-confidence stiger fra 82 til **88** efter review-input. De resterende 12 point afventer:
+- Verifikation af owner_type datakilde (Sprint 0a dag 2)
+- Audit af monitoring/* consumers (Sprint 0a dag 1)
+- Pilot-acquisition realisme (afhænger af outreach-arbejde fra Frederik)
+- GDPR-clearance på person-watching (Sprint 2 blocker)
+
+---
+
+**Ende på design-dokument (v1.1, post-review).**
