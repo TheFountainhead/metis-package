@@ -9,7 +9,7 @@ use TheFountainhead\Metis\Services\RegistryApi;
  * Toggle follow-state for a property (matrikel_id) or company (CVR).
  *
  * Mounts by checking watch-state via batch API call. Click toggles
- * follow → POST /v1/watchlists or DELETE /v1/watchlists/{id}.
+ * follow → POST /v2/watchlists or DELETE /v2/watchlists/{id}.
  *
  * Embeds in /lookup/address/* (property) and /lookup/cvr/* (company).
  */

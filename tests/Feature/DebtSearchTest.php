@@ -42,7 +42,7 @@ it('mounts without firing API call when filters are at defaults', function () {
 });
 
 it('mounts with non-default filters fires search', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v2/debt-search*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::withQueryParams(['rate_min' => 10.0])
         ->test(DebtSearch::class)
@@ -50,12 +50,12 @@ it('mounts with non-default filters fires search', function () {
         ->assertSet('minRate', 10.0)
         ->assertSee('Tonsbakken 14A');
 
-    Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/debt-search')
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/v2/debt-search')
         && $r->data()['min_rate'] == 10.0);
 });
 
 it('updating a filter triggers search and resets cursor + history', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v2/debt-search*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('cursor', 'previous-page-cursor')
@@ -67,43 +67,43 @@ it('updating a filter triggers search and resets cursor + history', function () 
 });
 
 it('postalCodeFrom + postalCodeTo are sent as separate filters', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v2/debt-search*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '9000')
         ->set('postalCodeTo', '9499');
 
-    Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/debt-search')
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/v2/debt-search')
         && ($r->data()['postal_code_from'] ?? null) === '9000'
         && ($r->data()['postal_code_to'] ?? null) === '9499');
 });
 
 it('strips partial postal codes (1-3 digits) from API call', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v2/debt-search*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '1');
 
     Http::assertSent(fn ($r) =>
-        str_contains($r->url(), '/v1/debt-search')
+        str_contains($r->url(), '/v2/debt-search')
         && ! isset($r->data()['postal_code_from'])
     );
 });
 
 it('strips creditor_contains shorter than 3 chars', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v2/debt-search*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('creditorContains', 'ab');
 
     Http::assertSent(fn ($r) =>
-        str_contains($r->url(), '/v1/debt-search')
+        str_contains($r->url(), '/v2/debt-search')
         && ! isset($r->data()['creditor_contains'])
     );
 });
 
 it('422 from server does not surface as service-unavailable error', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(['error' => 'invalid filter'], 422)]);
+    Http::fake(['*/v2/debt-search*' => Http::response(['error' => 'invalid filter'], 422)]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '9000')
@@ -112,7 +112,7 @@ it('422 from server does not surface as service-unavailable error', function () 
 });
 
 it('previousPage pops cursorHistory and re-searches', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse([
+    Http::fake(['*/v2/debt-search*' => Http::response(fakeDebtSearchResponse([
         'pagination' => ['next_cursor' => 'page-2-cursor', 'limit' => 25, 'has_more' => true],
     ]))]);
 
@@ -127,7 +127,7 @@ it('previousPage pops cursorHistory and re-searches', function () {
 });
 
 it('previousPage does nothing when cursorHistory is empty', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v2/debt-search*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '2000')
@@ -137,7 +137,7 @@ it('previousPage does nothing when cursorHistory is empty', function () {
 
 it('renders empty state when API returns zero loans', function () {
     Http::fake([
-        '*/v1/debt-search*' => Http::response(fakeDebtSearchResponse(['summary' => [
+        '*/v2/debt-search*' => Http::response(fakeDebtSearchResponse(['summary' => [
             'n_loans' => 0, 'n_properties' => 0, 'n_companies' => 0, 'n_creditors' => 0,
             'total_principal_kr' => 0, 'avg_rate' => 0,
         ]])),
@@ -149,7 +149,7 @@ it('renders empty state when API returns zero loans', function () {
 });
 
 it('renders error state on API failure', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response([], 500)]);
+    Http::fake(['*/v2/debt-search*' => Http::response([], 500)]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '2000')
@@ -158,7 +158,7 @@ it('renders error state on API failure', function () {
 });
 
 it('renders quota-exceeded state on 429', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(['error' => 'daily_quota_exceeded'], 429)]);
+    Http::fake(['*/v2/debt-search*' => Http::response(['error' => 'daily_quota_exceeded'], 429)]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '2000')
@@ -168,7 +168,7 @@ it('renders quota-exceeded state on 429', function () {
 
 it('downloadCsv dispatches event with signed URL on success', function () {
     Http::fake([
-        '*/v1/debt-search/export-link' => Http::response(['url' => 'https://api.test/csv?signature=abc', 'expires_at' => '2026-04-29T12:00:00Z']),
+        '*/v2/debt-search/export-link' => Http::response(['url' => 'https://api.test/csv?signature=abc', 'expires_at' => '2026-04-29T12:00:00Z']),
     ]);
 
     Livewire::test(DebtSearch::class)
@@ -177,7 +177,7 @@ it('downloadCsv dispatches event with signed URL on success', function () {
 });
 
 it('downloadCsv shows error when export ability missing', function () {
-    Http::fake(['*/v1/debt-search/export-link' => Http::response(['error' => 'forbidden'], 403)]);
+    Http::fake(['*/v2/debt-search/export-link' => Http::response(['error' => 'forbidden'], 403)]);
 
     Livewire::test(DebtSearch::class)
         ->call('downloadCsv')
@@ -201,7 +201,7 @@ it('resetFilters clears state to defaults', function () {
 });
 
 it('nextPage uses next_cursor and pushes current cursor onto history', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse([
+    Http::fake(['*/v2/debt-search*' => Http::response(fakeDebtSearchResponse([
         'pagination' => ['next_cursor' => 'page-2-cursor.signature', 'limit' => 25, 'has_more' => true],
     ]))]);
 

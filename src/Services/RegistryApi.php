@@ -426,7 +426,7 @@ class RegistryApi
         }
 
         try {
-            return $request->get('/v1/debt-search', $filters)->throw()->json();
+            return $request->get('/v2/debt-search', $filters)->throw()->json();
         } catch (RequestException $e) {
             return ['error' => $e->getMessage(), 'status' => $e->getCode()];
         }
@@ -436,7 +436,7 @@ class RegistryApi
     {
         try {
             return $this->client()
-                ->post('/v1/debt-search/export-link', $filters)
+                ->post('/v2/debt-search/export-link', $filters)
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
@@ -449,7 +449,7 @@ class RegistryApi
     public function listWatchlists(): array
     {
         try {
-            return $this->client()->get('/v1/watchlists')->throw()->json();
+            return $this->client()->get('/v2/watchlists')->throw()->json();
         } catch (RequestException $e) {
             return ['error' => $e->getMessage(), 'status' => $e->getCode()];
         }
@@ -459,7 +459,7 @@ class RegistryApi
     {
         try {
             return $this->client()
-                ->post('/v1/watchlists/check-batch', ['items' => $items])
+                ->post('/v2/watchlists/check-batch', ['items' => $items])
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
@@ -470,7 +470,7 @@ class RegistryApi
     public function createWatchlist(string $type, string $value, ?string $label, array $alertTypes): array
     {
         try {
-            return $this->client()->post('/v1/watchlists', [
+            return $this->client()->post('/v2/watchlists', [
                 'watch_type' => $type,
                 'watch_value' => $value,
                 'display_label' => $label,
@@ -484,7 +484,7 @@ class RegistryApi
     public function deleteWatchlist(int $id): array
     {
         try {
-            return $this->client()->delete("/v1/watchlists/{$id}")->throw()->json();
+            return $this->client()->delete("/v2/watchlists/{$id}")->throw()->json();
         } catch (RequestException $e) {
             return ['error' => $e->getMessage(), 'status' => $e->getCode()];
         }
@@ -493,7 +493,7 @@ class RegistryApi
     public function listAlerts(bool $unreadOnly = false, ?string $priority = null, int $page = 1): array
     {
         try {
-            return $this->client()->get('/v1/alerts', array_filter([
+            return $this->client()->get('/v2/alerts', array_filter([
                 'unread_only' => $unreadOnly ? 1 : 0,
                 'priority' => $priority,
                 'page' => $page,
@@ -506,7 +506,7 @@ class RegistryApi
     public function markAlertRead(int $alertId): array
     {
         try {
-            return $this->client()->patch("/v1/alerts/{$alertId}/read")->throw()->json();
+            return $this->client()->patch("/v2/alerts/{$alertId}/read")->throw()->json();
         } catch (RequestException $e) {
             return ['error' => $e->getMessage(), 'status' => $e->getCode()];
         }
