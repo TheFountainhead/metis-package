@@ -103,11 +103,21 @@
                     </div>
                 </div>
 
-                <div class="flex items-end">
+                <div class="flex items-end gap-2">
                     <button type="button"
                             wire:click="clearFilters"
-                            class="w-full px-3 py-1.5 text-xs border rounded hover:bg-white dark:hover:bg-zinc-700 border-zinc-200 dark:border-zinc-700">
+                            class="flex-1 px-3 py-1.5 text-xs border rounded hover:bg-white dark:hover:bg-zinc-700 border-zinc-200 dark:border-zinc-700">
                         {{ __('Nulstil filtre') }}
+                    </button>
+                    <button type="button"
+                            wire:click="exportXlsx"
+                            wire:loading.attr="disabled"
+                            wire:target="exportXlsx"
+                            @if(! $treeMeta) disabled @endif
+                            class="flex-1 px-3 py-1.5 text-xs border rounded bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 border-zinc-300 dark:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="{{ __('Eksportér til XLSX (Oversigt + Tier-breakdown + Pantebreve)') }}">
+                        <span wire:loading.remove wire:target="exportXlsx">{{ __('Eksportér XLSX') }}</span>
+                        <span wire:loading wire:target="exportXlsx">{{ __('Eksporterer…') }}</span>
                     </button>
                 </div>
             </div>

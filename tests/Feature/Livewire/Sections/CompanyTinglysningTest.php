@@ -374,3 +374,135 @@ it('sends mortgage_types and amount range as ører to registry-api', function ()
             && str_contains($url, 'max_amount=100000000'); // 1M DKK × 100
     });
 });
+
+// === Task 13: XLSX export ===
+
+it('exportXlsx returns a streamed XLSX response with correct content-type and filename', function () {
+    Http::fake([
+        '*tinglysning-overview*' => Http::response(fakeTinglysningOverview()),
+    ]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->call('exportXlsx')
+        ->assertFileDownloaded(contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+});
+
+it('exportXlsx filename embeds CVR + ISO date', function () {
+    Http::fake([
+        '*tinglysning-overview*' => Http::response(fakeTinglysningOverview()),
+    ]);
+
+    $component = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->call('exportXlsx');
+
+    $download = $component->effects['download'] ?? null;
+    expect($download)->not->toBeNull();
+    expect($download['name'])
+        ->toStartWith('tinglysning-28963610-')
+        ->toEndWith('.xlsx');
+});
+
+it('exportXlsx XLSX summary total matches frontend-computed totals from mortgages (consistency assertion)', function () {
+    // Build a fixture where tree_meta matches the mortgages list (no sampant)
+    // so that frontend-computed total == tree_meta total. This is the killer-feature
+    // consistency property: XLSX never disagrees with the UI.
+    $consistentFixture = fakeTinglysningOverview([
+        'mortgages_added' => [
+            [
+                'id' => 1,
+                'tinglysning_right_id' => 'uuid-1',
+                'address' => 'Vej 1',
+                'mortgage_type' => 'realkreditpantebrev',
+                'creditor' => 'X',
+                'principal_amount' => 1_000_000_00, // 1M DKK
+                'is_sampant' => false,
+            ],
+            [
+                'id' => 2,
+                'tinglysning_right_id' => 'uuid-2',
+                'address' => 'Vej 2',
+                'mortgage_type' => 'realkreditpantebrev',
+                'creditor' => 'Y',
+                'principal_amount' => 2_500_000_00, // 2.5M DKK
+                'is_sampant' => false,
+            ],
+        ],
+        'tree_meta' => [
+            'total_descendant_companies' => 1,
+            'total_properties' => 2,
+            'total_mortgages' => 2,
+            'total_principal_amount' => 3_500_000_00, // 3.5M DKK in ører
+            'weighted_ltv' => 0.6,
+        ],
+    ]);
+
+    Http::fake([
+        '*tinglysning-overview*' => Http::response($consistentFixture),
+    ]);
+
+    $component = Livewire::test(CompanyTinglysning::class, ['query' => '28963610']);
+
+    $treeMetaTotalOere = $component->get('treeMeta')['total_principal_amount'];
+    $mortgages = $component->get('mortgages');
+
+    // Frontend-computed totals (DISTINCT on UUID) — must match tree_meta when no sampant
+    $totals = \TheFountainhead\Metis\Exports\PortfolioTinglysningExport::computeTotalsFromMortgages($mortgages);
+    expect($totals['total_principal_amount_oere'])->toBe($treeMetaTotalOere);
+
+    // Now invoke export and verify the XLSX cell B3 value matches
+    $component->call('exportXlsx');
+
+    $download = $component->effects['download'] ?? null;
+    expect($download)->not->toBeNull();
+
+    $tmp = tempnam(sys_get_temp_dir(), 'export-test-') . '.xlsx';
+    file_put_contents($tmp, base64_decode($download['content']));
+    $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($tmp);
+    @unlink($tmp);
+
+    $expectedDkk = $treeMetaTotalOere / 100;
+    expect((float) $spreadsheet->getSheetByName('Oversigt')->getCell('B3')->getValue())
+        ->toBe((float) $expectedDkk);
+});
+
+it('exportXlsx Pantebreve sheet has one row per mortgage with sampant flag preserved', function () {
+    // 3 mortgages, 2 share UUID (sampant), 1 unique → all 3 rendered as rows,
+    // but Oversigt total counts the sampant-pair once.
+    $sampantFixture = fakeTinglysningOverview([
+        'mortgages_added' => [
+            ['id' => 1, 'tinglysning_right_id' => 'uuid-shared', 'address' => 'A', 'mortgage_type' => 'realkreditpantebrev', 'principal_amount' => 1_000_000_00, 'is_sampant' => true],
+            ['id' => 2, 'tinglysning_right_id' => 'uuid-shared', 'address' => 'B', 'mortgage_type' => 'realkreditpantebrev', 'principal_amount' => 1_000_000_00, 'is_sampant' => true],
+            ['id' => 3, 'tinglysning_right_id' => 'uuid-solo', 'address' => 'C', 'mortgage_type' => 'ejerpantebrev', 'principal_amount' => 500_000_00, 'is_sampant' => false],
+        ],
+    ]);
+
+    Http::fake([
+        '*tinglysning-overview*' => Http::response($sampantFixture),
+    ]);
+
+    $component = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->call('exportXlsx');
+
+    $download = $component->effects['download'];
+    $tmp = tempnam(sys_get_temp_dir(), 'export-test-') . '.xlsx';
+    file_put_contents($tmp, base64_decode($download['content']));
+    $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($tmp);
+    @unlink($tmp);
+
+    // Pantebreve sheet: 1 header + 3 data rows
+    $pantebreve = $spreadsheet->getSheetByName('Pantebreve');
+    expect($pantebreve->getHighestDataRow())->toBe(4);
+
+    // Sampant flag in column J (4th column from end of 12: J=10)
+    expect($pantebreve->getCell('J2')->getValue())->toBe('Ja');
+    expect($pantebreve->getCell('J3')->getValue())->toBe('Ja');
+    expect($pantebreve->getCell('J4')->getValue())->toBe('Nej');
+
+    // Oversigt: total = 1.5M DKK (uuid-shared counted ONCE + uuid-solo)
+    $oversigt = $spreadsheet->getSheetByName('Oversigt');
+    expect((float) $oversigt->getCell('B3')->getValue())->toBe(1_500_000.0);
+
+    // Unique mortgages = 2; sampant-count = 1
+    expect((int) $oversigt->getCell('B4')->getValue())->toBe(2);
+    expect((int) $oversigt->getCell('B8')->getValue())->toBe(1);
+});

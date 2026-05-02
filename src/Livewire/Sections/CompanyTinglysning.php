@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Livewire\Sections;
 
 use Livewire\Attributes\Url;
+use TheFountainhead\Metis\Exports\PortfolioTinglysningExport;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 class CompanyTinglysning extends MetisSection
@@ -271,6 +272,39 @@ class CompanyTinglysning extends MetisSection
         $this->cursor = $streamingMeta['cursor'] ?? null;
         $this->totalExpected = (int) ($streamingMeta['total_expected'] ?? count($this->mortgages));
         $this->deliveredSoFar = (int) ($streamingMeta['delivered_so_far'] ?? count($this->mortgages));
+    }
+
+    /**
+     * Stream a XLSX export of the current view (tree_meta + tier_breakdown +
+     * mortgages + filters). Totals computed via centralised
+     * `PortfolioTinglysningExport::computeTotalsFromMortgages()` so XLSX
+     * matches the UI numbers (DISTINCT on `tinglysning_right_id` UUID with
+     * mortgage_id fallback for pre-2009 pantebreve).
+     */
+    public function exportXlsx()
+    {
+        $export = new PortfolioTinglysningExport(
+            company: $this->company ?? [],
+            treeMeta: $this->treeMeta ?? [],
+            tierBreakdown: $this->tierBreakdown,
+            mortgages: $this->mortgages,
+            filters: $this->filters(),
+        );
+
+        $cvr = $this->company['cvr'] ?? 'export';
+        $filename = "tinglysning-{$cvr}-" . now()->format('Y-m-d') . '.xlsx';
+
+        return response()->streamDownload(
+            function () use ($export) {
+                $stream = fopen('php://output', 'wb');
+                $export->writeTo($stream);
+                fclose($stream);
+            },
+            $filename,
+            [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ],
+        );
     }
 
     public function render()
