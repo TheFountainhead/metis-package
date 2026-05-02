@@ -1,9 +1,25 @@
 # Portfolio-Tinglysning-tab Implementation Design
 
-**Status:** Draft v1.2 (2026-05-02) — pre-/plan blockers resolved
+**Status:** Draft v1.3 (2026-05-02) — v1.2 verifikations-findings resolved, /plan-ready
 **Trigger:** Rasmus Hornhaver demo at Draupnir Invest 2026-04-29 + Rasmus' bug-feedback 2026-05-02
 **Owner:** Frederik
 **Estimat:** 11-13 dage Sprint 1 (median 12,0)
+
+---
+
+## v1.3 Changelog (v1.2 verification fixes)
+
+3rd review-iteration (data-integrity + architecture) flaggede 3 critical + B4 partial + minor polish. v1.3 lukker disse:
+
+- **Q4 BLOCKING — Cache invalidation multi-parent CVR**: `MortgageObserver::saved()` flusher nu ALLE ancestor `root_cvr`-værdier via tree-index, ikke kun direkte-ejer. Forhindrer silent stale tree_meta i diamond-path holdings. Se ny "Cache invalidation"-sektion.
+- **HIGH — SQL-injection-shaped VALUES list**: `DetectMortgageChange::resolveWatchlists` Path 3 erstattet med direct INNER JOIN mod `company_property_tree_index`. Ingen string-interpolation. Alle parametre bound. Pattern er future-proof mod refactors.
+- **MEDIUM-HIGH — GIN→B-tree + CONCURRENTLY**: Index-migration på 787K-row mortgages-tabel skiftet fra GIN til B-tree (hurtigere for scalar UUID-equality), tilføjet `CREATE INDEX CONCURRENTLY` + `$withinTransaction = false` for at undgå 3-10 min ACCESS EXCLUSIVE-lock på prod. Plus partial-index `WHERE is_active = true` for ~30% disk-besparelse.
+- **B4 PARTIAL → FIXED — afterCommit() 3 edge cases dokumenteret**: (a) outside-transaction synchronous, (b) nested-transaction defers til outermost commit, (c) try-catch+Flare-error-log rundt om TreeIndexMaintenance-body for at undgå silent index-drift.
+- **B1 LOW edge cases**: Re-tinglyst pantebrev (transient overcounting i overlap-vindue) + pre-2009 missing UUID (NULL-coalesce til mortgage_id) tilføjet til Edge Cases.
+- **Q1 PARTIAL → FIXED**: `TreeIndexMaintenance` interface-surface specificeret eksplicit (4 metoder + ancestorCvrsForProperty primitive).
+- **Q2 PARTIAL → FIXED**: Shadow-swap split i to-fase: rename inde i transaction, DROP gammel-tabel som separat command efter 5-min grace.
+- **Q3 PARTIAL → FIXED**: Controller composition pseudo-code tilføjet — viser hvordan `BuildTinglysningOverview` + `StreamTinglysningMortgages` orkestreres uden at det ene kalder det andet.
+- **Pest arch-test mod `::upsert()`**: Future-trap protection — Laravel 12's `Model::upsert()` fyrer ikke observers. Pest arch-rule fejler PR hvis nogen introducerer `PropertyOwner::upsert(` eller `CompanyRole::upsert(`.
 
 ---
 
@@ -11,7 +27,7 @@
 
 Applied 4 pre-implementation blockers from the v1.1 follow-up review:
 
-- **B1 RESOLVED — `is_sampant` detection convention**: Verified on prod that `tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'` is the canonical pantebrev-UUID. Same UUID across multiple property-rows = sampant (top sample: 135 ejendomme på samme pantebrev). NO new `mortgage_property_links` table needed. `computeTotals()` DISTINCT'es på denne UUID, ikke på `mortgage_id` (siden samme pantebrev har separate mortgage-rows per property). Performance: tilføj GIN-index på JSON-pathen + Eloquent accessor `tinglysning_right_id` for type-safety.
+- **B1 RESOLVED — `is_sampant` detection convention**: Verified on prod that `tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'` is the canonical pantebrev-UUID. Same UUID across multiple property-rows = sampant (top sample: 135 ejendomme på samme pantebrev). NO new `mortgage_property_links` table needed. `computeTotals()` DISTINCT'es på denne UUID, ikke på `mortgage_id` (siden samme pantebrev har separate mortgage-rows per property). Performance: tilføj **B-tree partial-index** (v1.3-korrektion fra GIN per data-integrity-review — B-tree er hurtigere for scalar UUID-equality) på JSON-pathen via `CREATE INDEX CONCURRENTLY` + Eloquent accessor `tinglysning_right_id` for type-safety.
 - **B2 RESOLVED — Crawler-ingestion observer-bypass audit**: Greppet alle `PropertyOwner` + `CompanyRole`-writers i `app/`. **Alle 6 brugte Eloquent** (`updateOrCreate`/`firstOrCreate`) — INGEN raw `DB::insert`. Observers fyrer pålideligt på alle write-paths. Risiko-eliminering: konfirmeret, ingen workaround nødvendig.
 - **B3 FIXED — Backfill migration race**: Splittet i to migrations. Migration A tilføjer `expanded_to_ancestors_at` med `DEFAULT NOW()`; rows insertet under deploy-vinduet får automatisk default. Migration B (efterfølgende deploy eller samme deploy med separat fil) drop'er default. Eliminerer race-vinduet hvor jobs kunne lande mellem ALTER + UPDATE.
 - **B4 FIXED — Observer transaction-rollback semantic**: Eksplicit `\DB::afterCommit()`-wrapping kræves i alle observer-handlers der skriver til tree-index. Alternativ: Laravel 11+ `transaction_committed`-event. Spec viser nu konkret kode-eksempel + test der verificerer at rollback rolder tree-index-write tilbage.
@@ -72,7 +88,7 @@ Backend: registry-api gets a new `/api/v1/companies/{cvr}/tinglysning-overview` 
 - **Streaming UX**: Livewire `wire:poll.2s` (sløvere end CompanyProperties' default for at undgå polling-overhead på 100+ samtidige brugere)
 - **API shape**: Eloquent API Resources (`TinglysningOverviewResource`) for stabil contract
 - **Tests**: Pest (matcher eksisterende registry-api konvention — verificeret via `tests/Feature/Observers/MortgageObserverHistoricalBackfillTest.php`)
-- **Cache**: Redis med `Cache::tags(['tree_meta', "cvr:{$cvr}"])` for event-baseret invalidation; `MortgageObserver::saved()` invaliderer tree_meta-cachen for berørte CVR'er
+- **Cache**: Redis med `Cache::tags(['tree_meta', "cvr:{$cvr}"])` for event-baseret invalidation. **v1.3 fix**: `MortgageObserver::saved()` flusher ikke kun direkte-CVR men ALLE ancestor `root_cvr`-værdier fra `company_property_tree_index` for at undgå silent staleness i diamond-path holdings. Se "Cache Invalidation"-sektion nedenfor.
 
 ---
 
@@ -92,9 +108,38 @@ Backend: registry-api gets a new `/api/v1/companies/{cvr}/tinglysning-overview` 
 - `database/migrations/2026_05_02_*_create_company_property_tree_index.php`
 - `database/migrations/2026_05_02_*_add_expanded_to_ancestors_at_to_watchlists.php` — Migration A (column med DEFAULT NOW())
 - `database/migrations/2026_05_02_*_drop_default_from_watchlists_expanded_to_ancestors_at.php` — Migration B (drop default efter A er kørt)
-- `database/migrations/2026_05_02_*_add_tinglysning_right_id_index_on_mortgages.php` — GIN-index på `tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'` for sampant-detection
-- `app/Actions/Companies/BuildTinglysningOverview.php` — main Action (synchronous: tree_meta + tier_breakdown)
-- `app/Actions/Companies/StreamTinglysningMortgages.php` — cursor-based delta-query (factor ud af BuildTinglysningOverview per architecture-review)
+- `database/migrations/2026_05_02_*_add_tinglysning_right_id_index_on_mortgages.php` — **B-tree** index (ikke GIN) på `tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'` for sampant-detection. **MUST** bruge `CREATE INDEX CONCURRENTLY` + `$withinTransaction = false` på 787K-row prod-tabel — ellers ACCESS EXCLUSIVE lock 3-10 min. B-tree er hurtigere end GIN for scalar UUID-equality-lookup. Eksempel:
+  ```php
+  public $withinTransaction = false;
+  public function up(): void {
+      DB::statement("CREATE INDEX CONCURRENTLY IF NOT EXISTS
+          idx_mortgages_tinglysning_right_id
+          ON mortgages ((tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'))
+          WHERE is_active = true");  // partial index — sparer ~30% disk
+  }
+  ```
+- `app/Actions/Companies/BuildTinglysningOverview.php` — synchronous Action: returnerer `[tree_meta, tier_breakdown]` for given CVR + filters. Kalder ALDRIG StreamTinglysningMortgages.
+- `app/Actions/Companies/StreamTinglysningMortgages.php` — cursor-based delta-Action: returnerer `[mortgages_added, streaming_meta]` for (cvr, filters, cursor). Kalder ALDRIG BuildTinglysningOverview. Begge implementerer simpel `execute()`-metode for testbarhed; controller orkestrerer.
+
+**Controller composition (v1.3 — Q3 explicit)**:
+```php
+// app/Http/Controllers/Api/V1/CompanyController.php::tinglysningOverview()
+public function tinglysningOverview(string $cvr, Request $request): JsonResponse
+{
+    $filters = $request->validated();
+    $cursor = $request->input('cursor');
+
+    $overview = app(BuildTinglysningOverview::class)->execute($cvr, $filters);
+    $delta = app(StreamTinglysningMortgages::class)->execute($cvr, $filters, $cursor);
+
+    return new TinglysningOverviewResource([
+        ...$overview,    // tree_meta + tier_breakdown
+        ...$delta,       // mortgages_added + streaming meta
+        'company' => Company::firstWhere('cvr', $cvr)->only(['cvr', 'name']),
+    ]);
+}
+```
+Begge Actions kører på samme request — `BuildTinglysningOverview` rammer `Cache::remember` på `tree_meta`-cachen (hit på subsequente polls), mens `StreamTinglysningMortgages` altid laver fresh delta-query.
 - `app/Services/CompanyPortfolio/PropertyValueResolver.php` — 3-trins LTV fallback med `resolveBatch()` + Boligsiden-indeks som intern metode
 - `app/Services/CompanyPortfolio/CompanyPropertyTreeBuilder.php` — recursive CTE wrapper (genbrug fra `deep_enrichment_pipeline` hvis muligt)
 - `app/Services/CompanyPortfolio/TreeIndexMaintenance.php` — observers delegerer ind hertil (undgå fat observers)
@@ -186,40 +231,110 @@ Schema::create('company_property_tree_index', function (Blueprint $table) {
 **Vedligeholdelses-strategi (KRITISK ÆNDRING fra v1.0):**
 
 - **Source-of-truth**: Observers på `PropertyOwner` og `CompanyRole` delegerer til en fælles `TreeIndexMaintenance`-service for at undgå fat-observer-pattern. Ved enhver ownership-/koncern-ændring opdateres tree-index inden for samme transaction. Det betyder F1-alerts på nye koncern-kanter virker øjeblikkeligt, ikke 24h forsinket.
+
+  **TreeIndexMaintenance interface (v1.3 — Q1 explicit)**:
+  ```php
+  interface TreeIndexMaintenance
+  {
+      // Fra PropertyOwnerObserver
+      public function onOwnershipAdded(PropertyOwner $owner): void;
+      public function onOwnershipRemoved(PropertyOwner $owner): void;
+
+      // Fra CompanyRoleObserver
+      public function onCompanyRoleAdded(CompanyRole $role): void;
+      public function onCompanyRoleRemoved(CompanyRole $role): void;
+
+      // Shared primitive — bruges også af MortgageObserver til cache-flush
+      public function ancestorCvrsForProperty(int $propertyId): Collection;
+
+      // Reconciliation safety-net hooks
+      public function recomputePathsForCompany(int $companyId): void;
+      public function recomputePathsForProperty(int $propertyId): void;
+  }
+  ```
+  Alle implementations er idempotente — gentagne kald med samme input giver samme tree-index state.
 - **B2-AUDIT BEKRÆFTET (2026-05-02)**: Greppet alle 6 PropertyOwner/CompanyRole-writers i app/. Alle bruger Eloquent (`updateOrCreate`/`firstOrCreate`). INGEN raw `DB::insert`. Observers vil fyre pålideligt på alle write-paths — ingen workaround i crawler-pathen nødvendig.
-- **B4 — Transaction-rollback safety**: Observer-handlers MÅ IKKE skrive direkte til tree-index. De wrapper deres write i `\DB::afterCommit()` (Laravel 8+) ELLER bruger `transaction_committed`-event (Laravel 11+). Hvis parent-transaction rolder tilbage, fyrer afterCommit-callback ikke. Test verificerer dette eksplicit.
+- **B4 — Transaction-rollback safety + 3 edge cases (v1.3)**:
+
+  Observer-handlers MÅ IKKE skrive direkte til tree-index. De wrapper deres write i `\DB::afterCommit()` (Laravel 8+) ELLER bruger `transaction_committed`-event (Laravel 11+). Test verificerer dette eksplicit.
+
+  **3 dokumenterede semantiske edge cases:**
+  
+  1. **Insert OUTSIDE transaction**: Når `PropertyOwner::create()` kaldes uden aktiv transaction (ad-hoc tinker, admin actions), fyrer `afterCommit` **synkront** — samme effekt som direkte kald. Dette er Laravel-default, intentional.
+  
+  2. **Nested transactions** (Postgres savepoints): Hvis observer fyrer indeni `DB::transaction(fn () => DB::transaction(fn () => $owner->save()))`, fyrer afterCommit-callback først ved **outermost** commit. Konsekvens: I batch-jobs som `CrawlCompanyProperties` der wrapper hele crawl i én transaction, lagger tree-index opdatering til batch-end — F1-watchere får ikke alerts før hele crawl er færdig (typisk 5-30 min). **Acceptabelt**: alternativt ville være ingen alerts for nye koncern-kanter overhovedet (v1.0 nightly rebuild). Telemetry måler batch-duration så vi opdager hvis det bliver >1 time.
+  
+  3. **`TreeIndexMaintenance` exception inside afterCommit**: Parent transaction er allerede committed når callback fyrer. Hvis maintenance-service throws, swallowes exception default af Laravel (logget men ikke propageret). Resultat: silent index-drift som reconciliation kun fanger nightly hvis under threshold. **MITIGATION**: Wrap maintenance-body i try-catch der rapporterer til Flare med `level=error` + correlation-id, så individuelle failures er synlige inden for minutter.
 
   ```php
   // app/Observers/PropertyOwnerObserver.php
   use Illuminate\Support\Facades\DB;
+  use Illuminate\Support\Facades\Log;
 
   public function created(PropertyOwner $owner): void
   {
-      DB::afterCommit(fn () => app(TreeIndexMaintenance::class)
-          ->onOwnershipAdded($owner));
+      DB::afterCommit(fn () => $this->safeMaintenance(
+          fn () => app(TreeIndexMaintenance::class)->onOwnershipAdded($owner),
+          context: ['owner_id' => $owner->id, 'op' => 'added'],
+      ));
   }
 
   public function deleted(PropertyOwner $owner): void
   {
-      DB::afterCommit(fn () => app(TreeIndexMaintenance::class)
-          ->onOwnershipRemoved($owner));
+      DB::afterCommit(fn () => $this->safeMaintenance(
+          fn () => app(TreeIndexMaintenance::class)->onOwnershipRemoved($owner),
+          context: ['owner_id' => $owner->id, 'op' => 'removed'],
+      ));
+  }
+
+  private function safeMaintenance(callable $fn, array $context): void
+  {
+      try {
+          $fn();
+      } catch (\Throwable $e) {
+          // Flare auto-fanger Log::error pga. registry-api Flare-integration
+          Log::error('tree-index maintenance failed', [
+              ...$context,
+              'error' => $e->getMessage(),
+              'trace' => $e->getTraceAsString(),
+          ]);
+      }
   }
   ```
 
 - **Safety-net**: Nightly `ReconcileCompanyPropertyTreeIndex`-command kører kl. 03:30 UTC med `withoutOverlapping()` + `onOneServer()`. Den bygger til shadow-tabel (`company_property_tree_index_new`), sammenligner med live-table per `root_cvr` (relativ diff per CVR, ikke global), logger diff til Flare. Threshold er `config('tinglysning.reconciliation_diff_threshold', 0.001)` — kalibrérbart uden deploy. Ved diff under threshold: atomic swap. Over threshold: alerter via Flare, swapper IKKE.
 
-- **Shadow-swap algoritme (eksplicit, B4-related fix)**:
+- **Shadow-swap algoritme (v1.3 — to-fase, undgår reader-fail)**:
+
+  **Fase 1 — Atomic rename (i `ReconcileCompanyPropertyTreeIndex`)**:
   ```php
-  // ReconcileCompanyPropertyTreeIndex::performSwap()
   DB::transaction(function () {
       DB::statement('LOCK TABLE company_property_tree_index IN ACCESS EXCLUSIVE MODE');
-      DB::statement('ALTER TABLE company_property_tree_index RENAME TO company_property_tree_index_old');
+      DB::statement('ALTER TABLE company_property_tree_index RENAME TO company_property_tree_index_pending_drop');
       DB::statement('ALTER TABLE company_property_tree_index_new RENAME TO company_property_tree_index');
-      DB::statement('DROP TABLE company_property_tree_index_old');
-      // FK constraints follow tabel-renames automatisk i Postgres
+      // INGEN DROP her — gamle tabel forbliver indtil næste fase.
+      // Lock-vinduet er ms (kun catalog-rename).
   });
   ```
-  Lock-vinduet er ms (kun catalog-rename), ikke minutter. Observer-writes der lander indenfor swap-vinduet blokerer ~10-50ms, ikke en bekymring.
+
+  **Fase 2 — Drop efter grace-periode (separate `DropOldTreeIndex` command, 5 min senere)**:
+  ```php
+  // app/Console/Commands/DropOldTreeIndex.php — schedules på reconciliation+5min
+  public function handle(): void {
+      // Long-running readers fra før rename kan have nået completion på 5 min
+      DB::statement('DROP TABLE IF EXISTS company_property_tree_index_pending_drop');
+  }
+  ```
+
+  Schedule-registration:
+  ```php
+  Schedule::command('tree-index:reconcile')->dailyAt('03:30')->onOneServer();
+  Schedule::command('tree-index:drop-old')->dailyAt('03:35')->onOneServer();
+  ```
+
+  **Hvorfor to faser**: Hvis DROP er inde i samme transaction som rename, holdes ACCESS EXCLUSIVE indtil DROP-disk-flush er færdig (potentielt hundreder af ms). Plus: long-running readers der startede SELECT mod gamle table-OID *før* lock acquisition får relation-not-found ved deres næste SELECT. To-fase-pattern giver dem 5 min til at færdiggøre.
+
+  **Note**: Tabellen har ingen FK-constraints fra andre tables (kun OUTGOING FK til companies + properties). Rename rolder dem automatisk i Postgres uden DROP+RECREATE.
 
 - **Schedule registration**:
   ```php
@@ -232,34 +347,23 @@ Schema::create('company_property_tree_index', function (Blueprint $table) {
 
 ### 3. DetectMortgageChange resolver — ancestor + closest-ancestor-wins dedup (SQL-native)
 
-**v1.2 ændringer fra v1.1:**
-- Closest-ancestor-wins (`depth ASC, created_at ASC`) i stedet for eldest-watchlist-wins. Hvis bruger følger BÅDE root-CVR og direkte sub-CVR, vinder den mere-specifikke (matcher Linear/Notion notification-UX).
-- Dedup gjort SQL-native via `DISTINCT ON (user_id)` i én query. Ingen O(n log n) PHP-collection-sort per mortgage event.
-- `tree-index` query inkluderer `MIN(depth)` per root_cvr så closest-ancestor-tie-break er muligt.
+**v1.3 ændring**: Path 3 bruger nu direkte JOIN mod `company_property_tree_index` i stedet for VALUES-list konstrueret via PHP string-interpolation. Eliminerer SQL-injection-pattern (selv om values var server-controlled, var pattern fragilt). Også performance-forbedring: ÉN query i alt, ikke 1 SELECT for ancestor-rows + 1 stor UNION-query.
 
 ```php
 private function resolveWatchlists(Mortgage $mortgage): Collection
 {
     $dispatchedAt = Carbon::parse($this->dispatchedAt);
 
-    // Path 1+2: direct property + direct CVR matches (depth=0 ved CVR-match, sentinel for property-match)
     $directCvrs = $mortgage->property->owners
         ->where('owner_type', Company::class)
-        ->pluck('owner.cvr')->filter()->unique();
+        ->pluck('owner.cvr')->filter()->unique()->values()->all();
 
-    // Path 3: ancestor CVRs med MIN(depth) for closest-ancestor-wins
-    $ancestorRows = DB::table('company_property_tree_index')
-        ->where('property_id', $mortgage->property_id)
-        ->select('root_cvr', DB::raw('MIN(depth) as min_depth'))
-        ->groupBy('root_cvr')
-        ->get();
-
-    // Single SQL query med DISTINCT ON for SQL-native user-level dedup
-    // Tie-break order: depth ASC (closest-ancestor wins), created_at ASC (oldest watchlist if same depth)
+    // Single SQL query — alle 3 paths + dedup i én roundtrip
+    // Tie-break: depth ASC (closest-ancestor wins, -1 = property match beats CVR), created_at ASC
     $matches = DB::select("
         SELECT DISTINCT ON (w.user_id) w.*, match_type, depth
         FROM (
-            -- Path 1: property match (depth -1 sentinel, beats any CVR-match)
+            -- Path 1: direct property match (sentinel depth=-1, beats any CVR-match)
             SELECT id, user_id, watch_type, watch_value, alert_types, display_label,
                    'property' AS match_type, -1 AS depth
             FROM watchlists
@@ -270,7 +374,7 @@ private function resolveWatchlists(Mortgage $mortgage): Collection
 
             UNION ALL
 
-            -- Path 2: direct CVR match (depth 0)
+            -- Path 2: direct CVR match (depth=0)
             SELECT id, user_id, watch_type, watch_value, alert_types, display_label,
                    'direct_cvr' AS match_type, 0 AS depth
             FROM watchlists
@@ -281,12 +385,16 @@ private function resolveWatchlists(Mortgage $mortgage): Collection
 
             UNION ALL
 
-            -- Path 3: ancestor CVR match (depth = MIN(depth) fra tree-index)
+            -- Path 3: ancestor CVR via direct JOIN mod tree-index — INGEN string-interpolation
             SELECT w.id, w.user_id, w.watch_type, w.watch_value, w.alert_types, w.display_label,
                    'ancestor_cvr' AS match_type, ar.min_depth AS depth
             FROM watchlists w
-            JOIN (VALUES " . $ancestorRows->map(fn($r) => "('{$r->root_cvr}', {$r->min_depth})")->implode(',') . ")
-                 AS ar(cvr, min_depth) ON w.watch_value = ar.cvr
+            INNER JOIN (
+                SELECT root_cvr, MIN(depth) AS min_depth
+                FROM company_property_tree_index
+                WHERE property_id = ?
+                GROUP BY root_cvr
+            ) ar ON w.watch_value = ar.root_cvr
             WHERE w.is_active = true
               AND w.watch_type = 'company'
               AND w.created_at < ?
@@ -296,8 +404,8 @@ private function resolveWatchlists(Mortgage $mortgage): Collection
         ORDER BY w.user_id, w.depth ASC, w.created_at ASC
     ", [
         $mortgage->property->matrikel_id, $dispatchedAt,
-        $directCvrs->all(), $dispatchedAt,
-        $dispatchedAt, $dispatchedAt,
+        $directCvrs, $dispatchedAt,
+        $mortgage->property_id, $dispatchedAt, $dispatchedAt,
     ]);
 
     return Watchlist::hydrate($matches);
@@ -305,6 +413,42 @@ private function resolveWatchlists(Mortgage $mortgage): Collection
 ```
 
 **Closest-ancestor-wins rationale**: Hvis Rasmus følger Mimo-koncernen (depth=2 fra et sub-sub-datterselskabs ejendom) OG senere tilføjer en specifik watch på Mimo Hotel ApS (depth=0 direkte ejer), skal alerts bruge den mere-specifikke watchlist's `display_label` ("Mimo Hotel ApS" ikke "Mimo Invest"). Det matcher hvordan Linear/Notion håndterer notification-routes.
+
+**Sikkerhed (v1.3)**: Alle parametre er bound (`?`-placeholders), inkl. `property_id` der er internt kontrolleret men nu også korrekt parameteriseret. Pattern er future-proof mod refactors der introducerer user-input til tree-index queries.
+
+### 4. Cache invalidation — multi-parent CVR ancestor flush (v1.3 — Q4 fix)
+
+`MortgageObserver::saved()` skal invalidate `tree_meta`-cache for **ALLE ancestor-CVR'er** der har den berørte property i deres koncerntræ — ikke kun direkte-ejer-CVR. Ellers får diamond-path holdings (property D ejes 50/50 af B og C, begge under root A) silent stale tree_meta indtil 60s TTL udløber.
+
+```php
+// app/Observers/MortgageObserver.php — UDVIDELSE af eksisterende observer (PR #31)
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+
+public function saved(Mortgage $mortgage): void
+{
+    // Eksisterende F1 alert-dispatch logik bevares uændret (PR #31).
+    // Tilføj cache-invalidation efter alert-dispatch:
+
+    DB::afterCommit(function () use ($mortgage) {
+        // Find ALLE ancestor-CVR'er via tree-index (multi-parent + diamond-path safe)
+        $ancestorCvrs = DB::table('company_property_tree_index')
+            ->where('property_id', $mortgage->property_id)
+            ->distinct()
+            ->pluck('root_cvr');
+
+        foreach ($ancestorCvrs as $cvr) {
+            Cache::tags(['tree_meta', "cvr:{$cvr}"])->flush();
+        }
+    });
+}
+```
+
+**Hvorfor `afterCommit`**: Cache-invalidation må ikke fire hvis mortgage-update bliver rolled back (vil cause spurious cache-rebuilds + UX-flicker for brugere der kigger på koncernen i samme øjeblik).
+
+**Hvorfor `tree-index` queries i stedet for direkte ejer-CVR**: I diamond-paths (A→B,A→C, B→D, C→D), ejer property D af både B og C men ALLE tre (A, B, C) skal flushe deres tree_meta. Direkte-ejer-flush ville ramme B+C men miss A.
+
+**Performance**: For typisk 1-3 ancestor-CVR'er pr. property, kun millisekunder tilføjet til mortgage-write. For mega-koncern (Mærsk-skala, 7+ ancestors), op til 7 cache-flushes — stadig <50ms.
 
 ---
 
@@ -545,7 +689,9 @@ private function buildLtvInfo(...): array
 |------|----------|
 | Selskab uden ejendomme (direkte) | Tab vises med "Selskabet ejer ikke ejendomme direkte. Tjek datterselskaber via Selskabsstruktur-tab." Link til Selskabsstruktur. |
 | Selskab uden pantebreve men med ejendomme | Vis ejendomsliste + samlet vurdering. Tom mortgages-array, banner "Ingen tinglyste pantebreve". |
-| Sampant (én pantebrev → flere ejendomme i koncernen) | Detection via `tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'` (UUID) — verificeret på prod 2026-05-02 (top-sample: 135 ejendomme på samme pantebrev). Vises som én række pr. (mortgage_id, property_id) med `is_sampant: true` badge når UUID gentager sig på flere properties i query-resultatet. **Centraliseret `computeTotals()`** DISTINCT'er på UUID (ikke `mortgage_id`, siden samme pantebrev har separate mortgage-rows per property i schema). |
+| Sampant (én pantebrev → flere ejendomme i koncernen) | Detection via `tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'` (UUID) — verificeret på prod 2026-05-02 (top-sample: 135 ejendomme på samme pantebrev). Vises som én række pr. (mortgage_id, property_id) med `is_sampant: true` badge når UUID gentager sig på flere properties i query-resultatet. **Centraliseret `computeTotals()`** DISTINCT'er på UUID med fallback `COALESCE(uuid, mortgage_id::text)` for pre-2009 pantebreve uden UUID. |
+| Pre-2009 pantebreve uden `RettighedIdentifikator` (v1.3 edge) | UUID kolonnen blev introduceret af Tinglysningsretten ved deres 2.0-system 2009. Ældre pantebreve kan mangle den. `computeTotals()` `COALESCE`'er til `mortgage_id::text` — sikrer at gamle pantebreve ikke silently droppes fra totaler. Logges som data-gap til Flare ved første detection. |
+| Re-tinglyst pantebrev (v1.3 edge, ny UUID, samme økonomi) | Når kreditor skifter (overdragelse) eller pantebrev refinancieres, får det ny `RettighedIdentifikator`. Begge er teknisk separate enforcerable claims indtil aflysning af gamle. **Acceptabelt**: `antal pantebreve` kan transient øges +1-2 i overlap-vinduet (få dage). Dokumenteret tooltip: "Antal kan kortvarigt øges når et pantebrev refinancieres". |
 | Multi-parent CVR (50/50-ejerskab eller diamond-path) | Tree-index gemmer multiple paths via `(root_cvr, descendant_company_id, property_id)`-UNIQUE. Resolver bruger `DISTINCT root_cvr` for at sikre én row per ancestor i UI. Tier-breakdown viser begge paths separat. |
 | Koncern-cykler (A → B → A) | `CompanyPropertyTreeBuilder` bruger visited-set i recursive CTE. Test-fixture covers cykel og diamond. |
 | Mega-koncerner (≥200 datterselskaber) | `tree_depth=1` default. CTA "Vis hele træet" loader resten. Hard cap depth=7. |
@@ -600,6 +746,12 @@ private function buildLtvInfo(...): array
 - Forwards-only filter (`created_at < dispatchedAt`) bevares for alle 3 paths
 - **v1.2 transaction-rollback**: PropertyOwner insert i en rolled-back transaction → tree-index har ingen tilsvarende row (afterCommit-callback fyrede ikke)
 
+**Architecture tests** (Pest arch-rules — `tests/Architecture/TreeIndexBypassTest.php`):
+- Fail PR hvis nogen introducerer `PropertyOwner::upsert(` (Laravel 12 fyrer ikke observers på upsert)
+- Fail PR hvis nogen introducerer `CompanyRole::upsert(`
+- Fail PR hvis nogen bruger raw `DB::table('property_owners')->insert(`
+- Fail PR hvis nogen bruger raw `DB::table('company_roles')->insert(`
+
 **Tree-index maintenance tests** (`CompanyPropertyTreeIndexMaintenanceTest`):
 - `PropertyOwnerObserver`: ny ownership-row trigger tree-index insert (efter commit)
 - `PropertyOwnerObserver`: deleted ownership-row trigger tree-index delete (efter commit)
@@ -607,7 +759,9 @@ private function buildLtvInfo(...): array
 - `CompanyRoleObserver`: removed parent-relation trigger ancestor-paths cleanup (efter commit)
 - **v1.2 rollback test**: Insert PropertyOwner inde i `DB::transaction()`-callback der throw'er exception → tree-index har ingen tilsvarende row (afterCommit fyrede ikke)
 - **v1.2 sampant detection test**: Indsæt 3 mortgage-rows med samme `Pantrettighed.RettighedIdentifikator` på 3 forskellige properties → API returnerer `is_sampant: true` for alle, `computeTotals()` tæller hovedstol én gang
-- **v1.2 tagged cache invalidation**: `MortgageObserver::saved()` på Mimo-koncernen invaliderer `Cache::tags(["tree_meta", "cvr:28963610"])` — næste API-call rebuild'er tree_meta
+- **v1.3 multi-parent cache invalidation (Q4)**: Property D ejet 50/50 af B og C, begge under root A. Mortgage-update på D → cache flushes for `cvr:A`, `cvr:B`, `cvr:C` (alle 3 ancestor-CVR'er). Ingen silent staleness for diamond-paths.
+- **v1.3 afterCommit rollback**: Mortgage-update inde i transaction der throws → cache forbliver intakt (afterCommit fyrede ikke).
+- **v1.3 maintenance exception logging**: TreeIndexMaintenance throws under afterCommit → Flare log entry med correlation-id, transaction-status forbliver committed.
 - Reconciliation-command: bygger shadow-tabel + sammenligner med live per `root_cvr` + alerter ved diff > config-threshold
 - Reconciliation-command: ingen swap hvis diff for stor (manuel review)
 - **v1.2 atomic swap test**: simuleret concurrent observer-write under swap-vinduet → write blokerer ~10-50ms, lander efter swap, ingen data-loss
@@ -714,7 +868,7 @@ private function buildLtvInfo(...): array
 (Flagget under implementation hvis opdaget)
 
 1. **Boligsiden-indeks API/feed** — `boligsiden.dk/api/prisindeks` eller Danmarks Statistik? Verify med Frederik før integration.
-2. ~~**`is_sampant` detection**~~ — **RESOLVED v1.2 (2026-05-02)**: `tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'` UUID. Verificeret på prod. Tilføj GIN-index på JSON-pathen + Eloquent accessor `tinglysning_right_id` på Mortgage-modellen.
+2. ~~**`is_sampant` detection**~~ — **RESOLVED v1.2/v1.3**: `tinglysning_data->'Pantrettighed'->>'RettighedIdentifikator'` UUID. Verificeret på prod. **B-tree partial index** via `CREATE INDEX CONCURRENTLY` + Eloquent accessor `tinglysning_right_id`. Se File Structure-sektion.
 3. **Reconciliation-diff threshold** — `config('tinglysning.reconciliation_diff_threshold', 0.001)` default 0,1% per `root_cvr` (relativ, ikke global). Kalibrér efter første runs uden deploy-cykus.
 
 ---
