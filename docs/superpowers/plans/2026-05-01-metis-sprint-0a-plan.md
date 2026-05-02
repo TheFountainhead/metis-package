@@ -1,4 +1,17 @@
-# Metis Sprint 0a — Backend Foundation Implementation Plan
+# ⚠️ DEPRECATED 2. maj 2026 — DO NOT EXECUTE
+
+> **Eksekver IKKE denne plan.** Sprint 0a-projektet var bygget på ufuldstændig Phase A-research. F1+F2 backend var allerede LIVE i registry-api siden 29. april via PR #13 + #14. Eksekvering ville:
+> - Skabe duplicate alerts pr. mortgage-save (observer + cron-snapshot pipelines)
+> - Forårsage enum-domæne-konflikt på `alerts.priority` (low|high vs low|medium|high)
+> - Brække live metis.frankston.io med /v2/* paths der ikke eksisterer
+>
+> Se `../../user-research/2026-04-29-draupnir-resight/morning-handoff-v3.md` for ærlig retraction.
+>
+> Compound-learning: `~/.claude/projects/-Users-Frederik/memory/compound_phase_a_research_methodically_failed_2026_05_02.md`
+
+---
+
+# Metis Sprint 0a — Backend Foundation Implementation Plan (DEPRECATED)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

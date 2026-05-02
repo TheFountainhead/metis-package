@@ -1,4 +1,10 @@
-# Morgen-handoff (1. maj 2026, 22:00 → 08:00 natte-arbejde)
+# ⚠️ DEPRECATED 2. maj 2026 — erstattet af morning-handoff-v3.md
+
+> Dette dokument beskriver "Sprint 0a foundation" som et stort-arbejde-projekt. Det var det IKKE — F1+F2 backend var allerede LIVE i registry-api siden 29. april. Se `morning-handoff-v3.md` for ærlig retraction og faktisk live-state.
+
+---
+
+# Morgen-handoff (1. maj 2026, 22:00 → 08:00 natte-arbejde) — DEPRECATED
 
 **Til:** Frederik
 **Fra:** Claude (Opus 4.7, autonom natte-session)

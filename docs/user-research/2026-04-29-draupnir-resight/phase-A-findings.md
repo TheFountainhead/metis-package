@@ -1,4 +1,16 @@
-# Phase A: Verificeret status pr. 1. maj 2026
+# ⚠️ DEPRECATED 2. maj 2026 — bygget på ufuldstændig research
+
+> **Læs IKKE som ground truth.** Dette dokument's "kritiske finding" om route-mismatch mellem metis-package og registry-api var FORKERT. F1+F2 backend var allerede LIVE i registry-api/main siden 29. april kl 15:28 via PR #13 + #14. Phase A research missede `app/Observers/MortgageObserver.php`, `app/Jobs/DetectMortgageChange.php`, `migration 2026_04_29_000001`, og 4 nye controllers under `Api\V1\Alerts\*` + `Api\V1\Search\*`.
+>
+> **Korrekt status pr. 2. maj 2026:** Se `morning-handoff-v3.md` (samme mappe) — den retraktterer dette dokuments fund og dokumenterer faktisk live-state.
+>
+> **Compound-learning fra denne fejl:** `~/.claude/projects/-Users-Frederik/memory/compound_phase_a_research_methodically_failed_2026_05_02.md`
+>
+> Dokumentet beholdes som historisk artefakt for at vise hvordan Phase A-fejlen så ud i sin "polerede form" — ikke som retning for fremtidigt arbejde.
+
+---
+
+# Phase A: Verificeret status pr. 1. maj 2026 (ORIGINALT INDHOLD — DEPRECATED)
 
 **Formål:** Faktuel "hvad er bygget vs. hvad mangler" pr. F1-F11. Hver påstand citerer kilde (`file:line` / `T:linje` / `Registry-API GET /v1/...`). Ingen kilde = item ikke baked-in.
 

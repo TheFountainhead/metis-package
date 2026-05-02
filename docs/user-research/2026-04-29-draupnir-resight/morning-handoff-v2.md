@@ -1,4 +1,10 @@
-# Morgen-handoff v2 (2. maj 2026)
+# ⚠️ DEPRECATED 2. maj 2026 — erstattet af morning-handoff-v3.md
+
+> Status-claim "Sprint 0a foundation færdigt + 2 draft-PRs åbne" var bygget på falsk Phase A. Begge PRs er lukket. F1+F2 var allerede LIVE. Se `morning-handoff-v3.md` for ærlig retraction.
+
+---
+
+# Morgen-handoff v2 (2. maj 2026) — DEPRECATED
 
 **Til:** Frederik
 **Fra:** Claude (Opus 4.7, autonom natte-session 2)
