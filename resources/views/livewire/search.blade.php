@@ -168,6 +168,7 @@
                 <livewire:metis-company-roles :query="$query" lazy :key="'cr-'.$query" />
                 <livewire:metis-company-structure :query="$query" lazy :key="'cs-'.$query" />
                 <livewire:metis-company-properties :query="$query" lazy :key="'cp-'.$query" />
+                <livewire:metis-company-tinglysning :query="$query" lazy :key="'ctg-'.$query" />
                 <livewire:metis-company-tax :query="$query" lazy :key="'ct-'.$query" />
             </div>
             @endif

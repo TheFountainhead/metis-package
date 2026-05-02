@@ -260,6 +260,44 @@ class RegistryApi
         });
     }
 
+    /**
+     * Fetch tinglysning-overview for a company (root + descendant koncerntræ).
+     *
+     * Returns the raw API shape per spec:
+     * [
+     *   'company' => ['cvr' => '...', 'name' => '...'],
+     *   'tree_meta' => [...],
+     *   'tier_breakdown' => [...],
+     *   'mortgages_added' => [...],
+     *   'streaming' => ['complete' => bool, 'cursor' => '...', 'total_expected' => N, 'delivered_so_far' => M],
+     * ]
+     *
+     * Returns null on transport/HTTP failure (caller renders error-state).
+     *
+     * @param  array<string,mixed>  $filters  status, mortgage_types[], min_amount, max_amount, sort, tree_depth
+     * @param  string|null  $cursor  Opaque cursor for delta-streaming continuation
+     */
+    public function fetchCompanyTinglysningOverview(
+        string $cvr,
+        array $filters = [],
+        ?string $cursor = null,
+    ): ?array {
+        $query = array_filter([
+            ...$filters,
+            'cursor' => $cursor,
+        ], fn ($v) => $v !== null && $v !== '');
+
+        try {
+            return $this->client()
+                ->timeout(15)
+                ->get("/v1/companies/{$cvr}/tinglysning-overview", $query)
+                ->throw()
+                ->json();
+        } catch (RequestException $e) {
+            return null;
+        }
+    }
+
     public function getEnrichmentStatus(string $cvr): ?array
     {
         try {
