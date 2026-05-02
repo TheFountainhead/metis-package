@@ -191,3 +191,186 @@ it('retry clears error-state and re-fetches', function () {
         ->assertSet('hasError', false)
         ->assertSet('treeMeta.total_mortgages', 24);
 });
+
+// === Task 12: filter UX, polling-cursor refinement, drawer URL-binding ===
+
+it('changing status filter resets cursor + mortgages and triggers fresh fetch', function () {
+    Http::fake([
+        '*tinglysning-overview*' => Http::sequence()
+            ->push(fakeTinglysningOverview([
+                'streaming' => [
+                    'complete' => false,
+                    'cursor' => 'cursor-A',
+                    'total_expected' => 10,
+                    'delivered_so_far' => 1,
+                ],
+            ]))
+            ->push(fakeTinglysningOverview([
+                'mortgages_added' => [], // inactive returns no rows
+                'streaming' => [
+                    'complete' => true,
+                    'cursor' => null,
+                    'total_expected' => 0,
+                    'delivered_so_far' => 0,
+                ],
+            ])),
+    ]);
+
+    $component = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->assertSet('streaming', true)
+        ->assertSet('cursor', 'cursor-A')
+        ->assertCount('mortgages', 1);
+
+    $component->set('status', 'inactive')
+        ->assertSet('cursor', null)
+        ->assertSet('streaming', false)
+        ->assertCount('mortgages', 0);
+
+    // Second request should include status=inactive
+    Http::assertSent(function ($request) {
+        return str_contains((string) $request->url(), 'tinglysning-overview')
+            && str_contains((string) $request->url(), 'status=inactive');
+    });
+});
+
+it('polling continues when streaming.complete=false and stops when true', function () {
+    Http::fake([
+        '*tinglysning-overview*' => Http::sequence()
+            ->push(fakeTinglysningOverview([
+                'streaming' => [
+                    'complete' => false,
+                    'cursor' => 'c1',
+                    'total_expected' => 3,
+                    'delivered_so_far' => 1,
+                ],
+            ]))
+            ->push(fakeTinglysningOverview([
+                'mortgages_added' => [[
+                    'id' => 10001,
+                    'address' => 'Andengade 5',
+                    'mortgage_type' => 'realkreditpantebrev',
+                    'creditor' => 'X',
+                    'principal_amount' => 100_000_00,
+                    'is_sampant' => false,
+                ]],
+                'streaming' => [
+                    'complete' => false,
+                    'cursor' => 'c2',
+                    'total_expected' => 3,
+                    'delivered_so_far' => 2,
+                ],
+            ]))
+            ->push(fakeTinglysningOverview([
+                'mortgages_added' => [[
+                    'id' => 10002,
+                    'address' => 'Tredjevej 7',
+                    'mortgage_type' => 'ejerpantebrev',
+                    'creditor' => 'Y',
+                    'principal_amount' => 200_000_00,
+                    'is_sampant' => false,
+                ]],
+                'streaming' => [
+                    'complete' => true,
+                    'cursor' => null,
+                    'total_expected' => 3,
+                    'delivered_so_far' => 3,
+                ],
+            ])),
+    ]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->assertSet('streaming', true)
+        ->assertSet('cursor', 'c1')
+        ->call('pollForUpdates')
+        ->assertSet('streaming', true)
+        ->assertSet('cursor', 'c2')
+        ->assertCount('mortgages', 2)
+        ->call('pollForUpdates')
+        ->assertSet('streaming', false)
+        ->assertSet('cursor', null)
+        ->assertCount('mortgages', 3);
+});
+
+it('openMortgageId is URL-bound and triggers loadChangeHistory on open', function () {
+    Http::fake([
+        '*tinglysning-overview*' => Http::response(fakeTinglysningOverview()),
+    ]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->assertSet('openMortgageId', null)
+        ->assertSet('changeHistory', null)
+        ->set('openMortgageId', 9999)
+        ->assertSet('openMortgageId', 9999)
+        ->assertSet('changeHistory', []) // stub returns empty array
+        ->set('openMortgageId', null)
+        ->assertSet('changeHistory', null);
+});
+
+it('navigateDrawer next/prev advances and clamps at boundaries', function () {
+    Http::fake([
+        '*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+            'mortgages_added' => [
+                ['id' => 100, 'address' => 'A', 'mortgage_type' => 'ejerpantebrev', 'is_sampant' => false],
+                ['id' => 200, 'address' => 'B', 'mortgage_type' => 'ejerpantebrev', 'is_sampant' => false],
+                ['id' => 300, 'address' => 'C', 'mortgage_type' => 'ejerpantebrev', 'is_sampant' => false],
+            ],
+            'streaming' => ['complete' => true, 'cursor' => null, 'total_expected' => 3, 'delivered_so_far' => 3],
+        ])),
+    ]);
+
+    $component = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->set('openMortgageId', 200);
+
+    // Next
+    $component->call('navigateDrawer', 'next')
+        ->assertSet('openMortgageId', 300);
+
+    // Boundary: at last, should NOT wrap around
+    $component->call('navigateDrawer', 'next')
+        ->assertSet('openMortgageId', 300);
+
+    // Prev twice
+    $component->call('navigateDrawer', 'prev')
+        ->assertSet('openMortgageId', 200)
+        ->call('navigateDrawer', 'prev')
+        ->assertSet('openMortgageId', 100);
+
+    // Boundary: at first, should NOT go below
+    $component->call('navigateDrawer', 'prev')
+        ->assertSet('openMortgageId', 100);
+});
+
+it('clearFilters resets all filter state and re-fetches', function () {
+    Http::fake([
+        '*tinglysning-overview*' => Http::response(fakeTinglysningOverview()),
+    ]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->set('status', 'inactive')
+        ->set('mortgageTypeFilter', ['ejerpantebrev'])
+        ->set('minAmount', 1000000)
+        ->set('sortBy', 'tinglysning_date_desc')
+        ->call('clearFilters')
+        ->assertSet('status', 'active')
+        ->assertSet('mortgageTypeFilter', [])
+        ->assertSet('minAmount', null)
+        ->assertSet('sortBy', 'principal_amount_desc');
+});
+
+it('sends mortgage_types and amount range as ører to registry-api', function () {
+    Http::fake([
+        '*tinglysning-overview*' => Http::response(fakeTinglysningOverview()),
+    ]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->set('mortgageTypeFilter', ['privatpantebrev', 'realkreditpantebrev'])
+        ->set('minAmount', 5000) // 5000 DKK
+        ->set('maxAmount', 1000000); // 1M DKK
+
+    Http::assertSent(function ($request) {
+        $url = (string) $request->url();
+        return str_contains($url, 'mortgage_types')
+            && str_contains($url, 'min_amount=500000')   // 5000 DKK × 100 = 500000 ører
+            && str_contains($url, 'max_amount=100000000'); // 1M DKK × 100
+    });
+});
