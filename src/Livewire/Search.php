@@ -226,6 +226,12 @@ class Search extends Component
                 'address' => 'address',
                 default => 'name',
             };
+            // Upgrade til 'cvr' når company-mode-input er 8 cifre — så inline-render
+            // pathen (linje 261) fyrer og navigerer til CVR-detail-siden i stedet for
+            // at vise tomt company_name-resultat-liste.
+            if ($this->searchMode === 'company' && preg_match('/^\d{8}$/', $query)) {
+                $type = 'cvr';
+            }
         } else {
             $detector = new SearchDetector;
             $type = $detector->detect($query);

@@ -4,27 +4,21 @@ use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\Search;
 
-it('routes 8-digit CVR to fetchCompany when searchMode=company (regression)', function () {
-    // Stub registry-api endpoints. fetchCompany($cvr) hits /v1/cvr/{cvr},
-    // searchByName($q) hits /v1/cvr/search?q=...
+it('upgrades type=company_name to type=cvr when input is 8-digit (regression)', function () {
     Http::fake([
-        '*/v1/cvr/company/28963610' => Http::response([
-            'data' => ['company' => ['cvr' => '28963610', 'name' => 'Mimo Invest ApS']],
-        ], 200),
-        // Autocomplete (updatedQuery lifecycle) may also fire searchByName when
-        // user-typing crosses 4-char threshold. That's separate from search() bug.
         '*/v1/cvr/search-by-name' => Http::response(['data' => ['companies' => []]], 200),
     ]);
 
+    // CVR-flow: search() detects 8-digit → upgrades type to 'cvr' → inline-render
+    // path fires (resultType=cvr) + update-url dispatched → returns early before
+    // performSearch. Actual CVR-data is fetched by /lookup/cvr/{cvr} sections.
     Livewire::test(Search::class)
         ->set('searchMode', 'company')
         ->set('query', '28963610')
         ->call('search')
-        ->assertSet('error', false);
-
-    // KEY assertion: fetchCompany was called for the CVR (the bug-fix).
-    // Pre-fix, only searchByName was called → no match → "Ingen resultater".
-    Http::assertSent(fn ($req) => str_contains($req->url(), '/v1/cvr/company/28963610'));
+        ->assertSet('resultType', 'cvr')
+        ->assertSet('error', false)
+        ->assertDispatched('update-url', query: '28963610', type: 'cvr');
 });
 
 it('routes non-CVR query to searchByName when searchMode=company', function () {
