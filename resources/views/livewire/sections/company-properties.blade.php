@@ -147,6 +147,59 @@
                     </button>
                 </div>
             @endif
+
+            {{-- Frasolgte ejendomme (EJF stadig viser dem, men Tinglysning bekræfter salg) --}}
+            @if(($portfolio['sold_count'] ?? 0) > 0)
+                <div x-data="{ open: false }" class="mt-6 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                    <button type="button" @click="open = !open" class="text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 inline-flex items-center gap-1.5">
+                        <svg x-show="!open" class="size-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                        <svg x-show="open" x-cloak class="size-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        <span>{{ $portfolio['sold_count'] }} {{ __('frasolgte ejendomme') }}</span>
+                        <span class="text-xs text-zinc-400">— {{ __('iflg. EJF, men solgt iflg. Tinglysning') }}</span>
+                    </button>
+                    <div x-show="open" x-cloak class="mt-3 overflow-x-auto">
+                        <table class="w-full text-sm opacity-75">
+                            <thead>
+                                <tr class="border-b border-zinc-200 dark:border-zinc-700">
+                                    <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Address') }}</th>
+                                    <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Areal') }}</th>
+                                    <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Solgt dato') }}</th>
+                                    <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Salgspris') }}</th>
+                                    <th class="text-right py-2 font-medium text-zinc-500">{{ __('Køber') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($portfolio['sold_properties'] ?? [] as $sold)
+                                    @php
+                                        $addr = trim(($sold['address'] ?? '') . ', ' . ($sold['postal_code'] ?? '') . ' ' . ($sold['city'] ?? ''), ', ');
+                                    @endphp
+                                    <tr class="border-b border-zinc-100 dark:border-zinc-800">
+                                        <td class="py-2 pr-4">
+                                            @if($addr)
+                                                <x-metis-link type="address" :query="$addr" />
+                                            @else
+                                                <span class="text-zinc-400 text-xs">BFE {{ $sold['matrikel_id'] }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="py-2 pr-4 text-right">{{ $sold['total_area'] ? number_format($sold['total_area'], 0, ',', '.') . ' m²' : '-' }}</td>
+                                        <td class="py-2 pr-4 text-right">{{ $sold['sold_date'] ?? '-' }}</td>
+                                        <td class="py-2 pr-4 text-right">
+                                            @if($sold['latest_sale']['price'] ?? null)
+                                                {{ number_format($sold['latest_sale']['price'], 0, ',', '.') }} kr.
+                                            @else
+                                                -
+                                            @endif
+                                        </td>
+                                        <td class="py-2 text-right text-zinc-500 text-xs">
+                                            {{ __('Se ejendom for køber') }}
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
         @elseif(! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No properties found for this company.') }}</p>
         @endif
