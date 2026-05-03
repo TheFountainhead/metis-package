@@ -40,6 +40,10 @@
                                             <flux:badge size="sm" color="emerald">{{ number_format($u['ownership_share'], 0) }}%</flux:badge>
                                         @endif
                                     </div>
+                                    <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => $u['person_name'] ?? '-']) }}" class="org-drilldown">
+                                        <span>{{ __('Se alle selskaber') }}</span>
+                                        <svg class="size-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                                    </a>
                                 </div>
                             </div>
                         @endforeach
@@ -79,6 +83,17 @@
                                             <flux:badge size="sm" color="sky">{{ number_format($owner['ownership_share'], 0) }}%</flux:badge>
                                         @endif
                                     </div>
+                                    @php
+                                        $drilldownType = ($owner['is_company'] ?? false) ? 'cvr' : 'person';
+                                        $drilldownQuery = ($owner['is_company'] ?? false) ? ($owner['cvr'] ?? '') : ($owner['person_name'] ?? '');
+                                        $drilldownLabel = ($owner['is_company'] ?? false) ? __('Se selskab') : __('Se alle selskaber');
+                                    @endphp
+                                    @if($drilldownQuery)
+                                        <a href="{{ route('metis.lookup', ['type' => $drilldownType, 'query' => $drilldownQuery]) }}" class="org-drilldown">
+                                            <span>{{ $drilldownLabel }}</span>
+                                            <svg class="size-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                                        </a>
+                                    @endif
                                     @if(! empty($owner['parent_owners']))
                                         <div class="org-grandparents">
                                             <div class="text-[10px] text-zinc-400 uppercase tracking-wide mb-1">{{ __('Owned by') }}</div>
@@ -288,6 +303,27 @@
         gap: 0.25rem;
         justify-content: center;
         flex-wrap: wrap;
+    }
+
+    .metis-org-chart .org-drilldown {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid rgb(228 228 231);
+        font-size: 0.6875rem;
+        color: rgb(37 99 235); /* blue-600 */
+        text-decoration: none;
+    }
+
+    .dark .metis-org-chart .org-drilldown {
+        border-top-color: rgb(63 63 70);
+        color: rgb(96 165 250); /* blue-400 */
+    }
+
+    .metis-org-chart .org-drilldown:hover {
+        text-decoration: underline;
     }
 
     .metis-org-chart .org-grandparents {
