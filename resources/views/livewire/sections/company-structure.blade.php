@@ -9,7 +9,7 @@
 
                 @if(count($owners) > 0)
                     {{-- Owners row (above searched company) --}}
-                    <ul class="org-row {{ count($owners) > 1 ? 'multi' : '' }}" style="--node-count: {{ count($owners) }}">
+                    <ul class="org-row owners {{ count($owners) > 1 ? 'multi' : '' }}" style="--node-count: {{ count($owners) }}">
                         @foreach($owners as $owner)
                             <li>
                                 <div class="org-node {{ ! ($owner['is_current'] ?? true) ? 'historical' : '' }}">
@@ -106,11 +106,16 @@
      Pure CSS tree connectors via pseudo-elements. No JS dependency. --}}
 <style>
     .metis-org-chart {
+        --org-line: rgb(113 113 122); /* zinc-500 — visible on white + dark */
+        --org-gap: 1.75rem;
         display: flex;
         flex-direction: column;
         align-items: center;
         padding: 0.5rem 0;
-        gap: 0;
+    }
+
+    .dark .metis-org-chart {
+        --org-line: rgb(161 161 170); /* zinc-400 in dark mode */
     }
 
     .metis-org-chart .org-row {
@@ -123,11 +128,6 @@
         justify-content: center;
         position: relative;
         width: 100%;
-    }
-
-    /* Multi-row: equal-width slots so up-stems and horizontal bridge align */
-    .metis-org-chart .org-row.multi {
-        justify-content: space-around;
     }
 
     .metis-org-chart .org-row.multi > li {
@@ -143,7 +143,7 @@
 
     .metis-org-chart .org-node {
         background: white;
-        border: 1px solid rgb(228 228 231); /* zinc-200 */
+        border: 1px solid rgb(228 228 231);
         border-radius: 0.5rem;
         padding: 0.5rem 0.75rem;
         min-width: 10rem;
@@ -151,6 +151,8 @@
         text-align: center;
         font-size: 0.875rem;
         box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        position: relative;
+        z-index: 1;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -166,14 +168,14 @@
     }
 
     .metis-org-chart .org-node.primary {
-        background: rgb(254 243 199); /* amber-100 */
-        border: 2px solid rgb(252 211 77); /* amber-300 */
+        background: rgb(254 243 199);
+        border: 2px solid rgb(252 211 77);
         font-weight: 500;
     }
 
     .dark .metis-org-chart .org-node.primary {
-        background: rgba(120, 53, 15, 0.2); /* amber-900/20 */
-        border-color: rgb(180 83 9); /* amber-700 */
+        background: rgba(120, 53, 15, 0.2);
+        border-color: rgb(180 83 9);
     }
 
     .metis-org-chart .org-node.historical {
@@ -195,69 +197,78 @@
         text-align: left;
     }
 
-    /* Trunk: vertical line connecting layers */
+    /* Trunk: vertical line linking layers (owners-row → self → subs-row) */
     .metis-org-chart .org-trunk {
         width: 2px;
-        height: 1.5rem;
-        background: rgb(161 161 170); /* zinc-400 */
+        height: var(--org-gap);
+        background: var(--org-line);
     }
 
-    /* Multi-node rows: each li gets a vertical line going UP (connecting to trunk above) */
-    .metis-org-chart .org-row.multi > li::before {
+    /*
+     * OWNERS row: bridge BELOW the row + stems going DOWN from each li
+     * (connectors point toward the trunk and searched-self below)
+     */
+    .metis-org-chart .org-row.owners > li::after {
         content: '';
         position: absolute;
-        top: -1.5rem;
+        bottom: calc(var(--org-gap) * -1);
         left: 50%;
         transform: translateX(-50%);
         width: 2px;
-        height: 1.5rem;
-        background: rgb(161 161 170);
+        height: var(--org-gap);
+        background: var(--org-line);
     }
 
-    /* Multi-node rows: pseudo-bridge spanning between FIRST li's center and LAST li's center,
-       creating the horizontal "T" connector visual. Uses li::after with full-width
-       absolute positioning + clip via the row's overflow. */
-    .metis-org-chart .org-row.multi {
-        /* Horizontal bridge: drawn as a thin element on the row that visually connects
-           all up-stems. Implemented via gradient on the row's ::before to span across. */
-    }
-
-    /* Horizontal bridge: span from first li's center to last li's center.
-       With justify-content: space-around + flex:1, each li occupies 100%/N width
-       and is centered. Bridge insets by half-slot on each end to match. */
-    .metis-org-chart .org-row.multi::before {
+    .metis-org-chart .org-row.owners.multi::after {
         content: '';
         position: absolute;
-        top: -1.5rem;
+        bottom: calc(var(--org-gap) * -1);
         left: calc(100% / var(--node-count, 1) / 2);
         right: calc(100% / var(--node-count, 1) / 2);
         height: 2px;
-        background: rgb(161 161 170);
+        background: var(--org-line);
     }
 
-    /* Single-node rows: just one vertical up-stem aligned with trunk above */
-    .metis-org-chart .org-row:not(.multi) > li::before {
+    /*
+     * SUBS row: bridge ABOVE the row + stems going UP from each li
+     * (connectors point toward the trunk and searched-self above)
+     */
+    .metis-org-chart .org-row.subs > li::before {
         content: '';
         position: absolute;
-        top: -1.5rem;
+        top: calc(var(--org-gap) * -1);
         left: 50%;
         transform: translateX(-50%);
         width: 2px;
-        height: 1.5rem;
-        background: rgb(161 161 170);
+        height: var(--org-gap);
+        background: var(--org-line);
     }
 
-    /* Hide the up-stem on the FIRST row (no parent above it) */
-    .metis-org-chart > .org-row:first-child > li::before {
-        display: none;
+    .metis-org-chart .org-row.subs.multi::before {
+        content: '';
+        position: absolute;
+        top: calc(var(--org-gap) * -1);
+        left: calc(100% / var(--node-count, 1) / 2);
+        right: calc(100% / var(--node-count, 1) / 2);
+        height: 2px;
+        background: var(--org-line);
     }
-    .metis-org-chart > .org-row:first-child::before {
+
+    /* Hide the trunk-divs — connectors are now drawn via pseudo-elements on the rows themselves */
+    .metis-org-chart .org-trunk {
         display: none;
     }
 
-    /* Subsidiary row: stems go UP toward the trunk above (which connects to searched-self) */
-    .metis-org-chart .org-row.subs > li::before {
-        top: -1.5rem;
+    /* Add vertical spacing between rows so the connector pseudo-elements have room */
+    .metis-org-chart .org-row.owners {
+        margin-bottom: var(--org-gap);
+    }
+    .metis-org-chart .org-self {
+        margin-bottom: var(--org-gap);
+    }
+    .metis-org-chart .org-row.owners + .org-self,
+    .metis-org-chart .org-self + .org-row.subs {
+        /* gap is already on the previous element's margin-bottom */
     }
 </style>
 </div>
