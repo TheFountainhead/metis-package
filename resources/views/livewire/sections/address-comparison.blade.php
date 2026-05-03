@@ -166,62 +166,119 @@
             @endif
         @endif
 
-        @if ($rentalEstimate)
-            <div class="{{ $comparison ? 'mt-6 pt-4 border-t border-zinc-200 dark:border-zinc-700' : '' }}">
-                <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Lejeestimat') }}</div>
-                <div class="grid grid-cols-3 gap-3">
-                    <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
-                        <div class="font-bold">{{ number_format($rentalEstimate['avg_rent_per_sqm'] ?? 0, 0, ',', '.') }}</div>
-                        <div class="text-xs text-zinc-400">{{ __('Kr/m²/år') }}</div>
-                    </div>
-                    <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
-                        <div class="font-bold">{{ number_format($rentalEstimate['estimated_annual_rent'] ?? 0, 0, ',', '.') }}</div>
-                        <div class="text-xs text-zinc-400">{{ __('Årlig leje') }}</div>
-                    </div>
-                    <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
-                        <div class="font-bold">{{ $rentalEstimate['sample_count'] ?? '-' }}</div>
-                        <div class="text-xs text-zinc-400">{{ __('Datapunkter') }}</div>
-                    </div>
-                </div>
-                <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
-                    {{ __('Kilde:') }} <a href="https://www.ejendomstorvet.dk" target="_blank" rel="noopener" class="hover:underline">ejendomstorvet.dk</a> —
-                    {{ __('median pr. m²/år ud fra :count aktuelle udlejnings-listings i postnummerområdet', ['count' => $rentalEstimate['sample_count'] ?? '?']) }}@if($rentalEstimate['property_type'] ?? null), {{ __('filtreret på type :type', ['type' => $rentalEstimate['property_type']]) }}@endif.
-                </div>
-            </div>
-        @endif
+        @if ($rentalEstimate || $profitability)
+            @php
+                $baseRentPerSqm = $rentalEstimate['avg_rent_per_sqm'] ?? 0;
+                $baseAnnualRent = $rentalEstimate['estimated_annual_rent'] ?? 0;
+                $baseGrossYield = $profitability['gross_yield'] ?? 0;
+                $baseDscr = $profitability['estimated_dscr'] ?? 0;
+                $rentSource = $profitability['rent_source'] ?? null;
+                $isMarketEstimate = $rentSource === 'market_estimate';
+            @endphp
 
-        @if ($profitability)
-            <div class="mt-4">
-                <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Rentabilitet') }}</div>
-                <div class="grid grid-cols-3 gap-3">
-                    @if ($profitability['gross_yield'] ?? null)
-                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('Årlig leje / handelspris') }}">
-                            <div class="font-bold">{{ $profitability['gross_yield'] }}%</div>
-                            <div class="text-xs text-zinc-400">{{ __('Bruttoafkast') }}</div>
+            <div x-data="{
+                    factor: 1.0,
+                    factorLabel: '{{ __('Marked') }}',
+                    setScenario(name, f, label) { this.factor = f; this.factorLabel = label; },
+                    fmt(n) { return new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 }).format(Math.round(n)); },
+                    fmtPct(n) { return new Intl.NumberFormat('da-DK', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n); },
+                 }"
+                 class="{{ $comparison ? 'mt-6 pt-4 border-t border-zinc-200 dark:border-zinc-700' : '' }}">
+
+                @if($isMarketEstimate)
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="text-xs text-zinc-500">{{ __('Scenario:') }}</span>
+                        <button type="button" @click="setScenario('conservative', 0.90, '{{ __('Konservativt') }}')"
+                                :class="factor === 0.90 ? 'bg-zinc-200 dark:bg-zinc-700 font-medium' : 'bg-transparent'"
+                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                            {{ __('Konservativt') }} <span class="text-zinc-400">−10%</span>
+                        </button>
+                        <button type="button" @click="setScenario('market', 1.00, '{{ __('Marked') }}')"
+                                :class="factor === 1.00 ? 'bg-zinc-200 dark:bg-zinc-700 font-medium' : 'bg-transparent'"
+                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                            {{ __('Marked') }}
+                        </button>
+                        <button type="button" @click="setScenario('aggressive', 1.05, '{{ __('Aggressivt') }}')"
+                                :class="factor === 1.05 ? 'bg-zinc-200 dark:bg-zinc-700 font-medium' : 'bg-transparent'"
+                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                            {{ __('Aggressivt') }} <span class="text-zinc-400">+5%</span>
+                        </button>
+                    </div>
+                @endif
+
+                @if($rentalEstimate)
+                    <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Lejeestimat') }}</div>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
+                            <div class="font-bold" x-text="fmt({{ $baseRentPerSqm }} * factor)">{{ number_format($baseRentPerSqm, 0, ',', '.') }}</div>
+                            <div class="text-xs text-zinc-400">{{ __('Kr/m²/år') }}</div>
                         </div>
-                    @endif
-                    @if ($profitability['ltv'] ?? null)
-                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('Sum af aktive pantebreve / handelspris') }}">
-                            <div class="font-bold">{{ $profitability['ltv'] }}%</div>
-                            <div class="text-xs text-zinc-400">{{ __('LTV') }}</div>
+                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
+                            <div class="font-bold" x-text="fmt({{ $baseAnnualRent }} * factor)">{{ number_format($baseAnnualRent, 0, ',', '.') }}</div>
+                            <div class="text-xs text-zinc-400">{{ __('Årlig leje') }}</div>
                         </div>
-                    @endif
-                    @if ($profitability['estimated_dscr'] ?? null)
-                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('NOI / årlig gældsbetjening (estimat)') }}">
-                            <div class="font-bold">{{ $profitability['estimated_dscr'] }}</div>
-                            <div class="text-xs text-zinc-400">{{ __('DSCR') }}</div>
+                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
+                            <div class="font-bold">{{ $rentalEstimate['sample_count'] ?? '-' }}</div>
+                            <div class="text-xs text-zinc-400">{{ __('Datapunkter') }}</div>
                         </div>
-                    @endif
-                </div>
-                <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
-                    {{ __('Kilde:') }}
-                    @if($profitability['gross_yield'] ?? null)
-                        <span title="{{ __('Årlig leje / handelspris') }}">{{ __('Bruttoafkast') }} = {{ ($profitability['rent_source'] ?? null) === 'market_estimate' ? __('lejeestimat (ejendomstorvet.dk)') : __('faktisk årlig leje') }} / {{ __('handelspris (Tinglysning)') }}</span>.
-                    @endif
-                    @if($profitability['ltv'] ?? null)
-                        {{ __('LTV') }} = {{ __('aktive pantebreve (Tinglysning)') }} / {{ __('handelspris') }}.
-                    @endif
-                </div>
+                    </div>
+                    <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
+                        {{ __('Kilde:') }} <a href="https://www.ejendomstorvet.dk" target="_blank" rel="noopener" class="hover:underline">ejendomstorvet.dk</a> —
+                        {{ __('median pr. m²/år ud fra :count aktuelle udlejnings-listings i postnummerområdet', ['count' => $rentalEstimate['sample_count'] ?? '?']) }}@if($rentalEstimate['property_type'] ?? null), {{ __('filtreret på type :type', ['type' => $rentalEstimate['property_type']]) }}@endif.
+                        @if($isMarketEstimate)
+                            <span x-show="factor !== 1.0" x-cloak>
+                                {{ __('Justeret til scenario:') }} <span x-text="factorLabel" class="font-medium"></span>.
+                            </span>
+                        @endif
+                    </div>
+                @endif
+
+                @if ($profitability)
+                    <div class="mt-4">
+                        <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Rentabilitet') }}</div>
+                        <div class="grid grid-cols-3 gap-3">
+                            @if ($profitability['gross_yield'] ?? null)
+                                <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('Årlig leje / handelspris') }}">
+                                    <div class="font-bold">
+                                        @if($isMarketEstimate)
+                                            <span x-text="fmtPct({{ $baseGrossYield }} * factor) + '%'">{{ $baseGrossYield }}%</span>
+                                        @else
+                                            {{ $baseGrossYield }}%
+                                        @endif
+                                    </div>
+                                    <div class="text-xs text-zinc-400">{{ __('Bruttoafkast') }}</div>
+                                </div>
+                            @endif
+                            @if ($profitability['ltv'] ?? null)
+                                <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('Sum af aktive pantebreve / handelspris') }}">
+                                    <div class="font-bold">{{ $profitability['ltv'] }}%</div>
+                                    <div class="text-xs text-zinc-400">{{ __('LTV') }}</div>
+                                </div>
+                            @endif
+                            @if ($profitability['estimated_dscr'] ?? null)
+                                <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('NOI / årlig gældsbetjening (estimat)') }}">
+                                    <div class="font-bold">
+                                        @if($isMarketEstimate)
+                                            <span x-text="(({{ $baseDscr }} * factor)).toLocaleString('da-DK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })">{{ $baseDscr }}</span>
+                                        @else
+                                            {{ $baseDscr }}
+                                        @endif
+                                    </div>
+                                    <div class="text-xs text-zinc-400">{{ __('DSCR') }}</div>
+                                </div>
+                            @endif
+                        </div>
+                        <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
+                            {{ __('Kilde:') }}
+                            @if($profitability['gross_yield'] ?? null)
+                                <span title="{{ __('Årlig leje / handelspris') }}">{{ __('Bruttoafkast') }} = {{ $isMarketEstimate ? __('lejeestimat (ejendomstorvet.dk)') : __('faktisk årlig leje') }} / {{ __('handelspris (Tinglysning)') }}</span>.
+                            @endif
+                            @if($profitability['ltv'] ?? null)
+                                {{ __('LTV') }} = {{ __('aktive pantebreve (Tinglysning)') }} / {{ __('handelspris') }}.
+                            @endif
+                        </div>
+                    </div>
+                @endif
             </div>
         @endif
 
