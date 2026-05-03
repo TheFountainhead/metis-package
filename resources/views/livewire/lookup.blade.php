@@ -1,18 +1,11 @@
 <div>
-    <div class="flex items-center justify-between py-2 mb-4 border-b">
-        <div class="flex items-center gap-3">
-            <h1 class="text-xl font-bold">{{ __('Metis') }}</h1>
-            <span class="px-2 py-0.5 text-xs rounded-full bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 uppercase">
-                {{ match($type) { 'address' => __('Address'), 'person' => __('Person'), default => strtoupper($type) } }}
-            </span>
-            <span class="text-sm text-zinc-500">{{ $query }}</span>
-        </div>
-        <div class="flex space-x-3">
-            <a href="{{ route(Route::has('metis.index') ? 'metis.index' : 'metis.home') }}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                {{ __('New lookup') }}
-            </a>
-        </div>
+    {{-- Minimal header: "Nyt opslag" back-button only. Selskabs-CVR + navn vises
+         allerede i CompanyInfo-kortet nedenfor. Global Metis-logo er i app-layout. --}}
+    <div class="flex justify-end mb-4">
+        <a href="{{ route(Route::has('metis.index') ? 'metis.index' : 'metis.home') }}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:border-zinc-700 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            {{ __('New lookup') }}
+        </a>
     </div>
 
     <div class="max-w-7xl space-y-6">

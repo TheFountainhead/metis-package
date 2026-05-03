@@ -10,6 +10,7 @@ class CompanyStructure extends MetisSection
     public array $subsidiaries = [];
     public bool $enriching = false;
     public int $companiesFound = 0;
+    public ?string $companyName = null;
 
     protected function sectionTitle(): string
     {
@@ -25,11 +26,15 @@ class CompanyStructure extends MetisSection
         $result = rescue(fn () => $api->fetchCompanyStructure($query), []);
         $this->owners = $result['owners'] ?? [];
         $this->subsidiaries = $result['subsidiaries'] ?? [];
+        $this->companyName = $result['name'] ?? null;
 
-        // Fallback: fetch owners from CVR Elasticsearch
-        if (empty($this->owners)) {
+        // Fallback: fetch owners + name from CVR Elasticsearch
+        if (empty($this->owners) || ! $this->companyName) {
             $company = rescue(fn () => $api->fetchCompanyInfo($query));
-            $this->owners = $company['owners'] ?? [];
+            if (empty($this->owners)) {
+                $this->owners = $company['owners'] ?? [];
+            }
+            $this->companyName = $this->companyName ?? ($company['name'] ?? null);
         }
 
         // For each company owner, fetch their owners too (one level deep)
