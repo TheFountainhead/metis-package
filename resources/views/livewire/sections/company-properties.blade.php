@@ -63,6 +63,9 @@
                                 $first = $units->first();
                                 $addr = trim(($first['address'] ?? '') . ', ' . ($first['postal_code'] ?? '') . ' ' . ($first['city'] ?? ''), ', ');
                                 $bfe = $first['matrikel_id'] ?? null;
+                                $matrikelnr = $first['matrikelnr'] ?? null;
+                                $ejerlav = $first['ejerlav'] ?? null;
+                                $matrikelLabel = $matrikelnr ? trim('Matr. nr. ' . $matrikelnr . ($ejerlav ? ', ' . $ejerlav : '')) : null;
                                 // Latest sale across grouped units (max by date)
                                 $latestSale = $units->pluck('latest_sale')->filter()->sortByDesc('date')->first();
                             @endphp
@@ -70,6 +73,13 @@
                                 <td class="py-2 pr-4">
                                     @if($addr)
                                         <x-metis-link type="address" :query="$addr" />
+                                    @elseif($matrikelLabel)
+                                        <div>
+                                            <span class="text-zinc-700 dark:text-zinc-300">{{ $matrikelLabel }}</span>
+                                            @if($bfe)
+                                                <div class="text-zinc-400 text-xs">BFE {{ $bfe }} · {{ __('Unbuilt parcel') }}</div>
+                                            @endif
+                                        </div>
                                     @elseif($bfe)
                                         <span class="text-zinc-400 text-xs">BFE {{ $bfe }}</span>
                                     @else
