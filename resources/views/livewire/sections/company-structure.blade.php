@@ -4,7 +4,10 @@
 
         @if(count($owners) > 0)
             <div class="mb-4">
-                <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">{{ __('Owners') }}</h4>
+                <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                    {{ __('Owned by') }}
+                </h4>
                 <div class="space-y-1">
                     @foreach($owners as $owner)
                         <div>
@@ -47,9 +50,29 @@
             </div>
         @endif
 
+        {{-- Central fokus-kort: det søgte selskab. Brugeren skal kunne se "her er jeg
+             i strukturen" — owners ovenover, subsidiaries nedenunder. --}}
+        @if($companyName || $query)
+            <div class="my-4 -mx-2 px-3 py-2.5 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-700 rounded-lg">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="size-4 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                    <div>
+                        <div class="font-semibold text-zinc-800 dark:text-zinc-100">
+                            {{ $companyName ?? '—' }}
+                        </div>
+                        <div class="text-xs text-zinc-500 font-mono">CVR {{ $query }}</div>
+                    </div>
+                    <span class="ml-auto text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300 font-medium">{{ __('Searched company') }}</span>
+                </div>
+            </div>
+        @endif
+
         @if(count($subsidiaries) > 0)
             <div>
-                <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">{{ __('Subsidiaries') }}</h4>
+                <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    {{ __('Owns these subsidiaries') }}
+                </h4>
                 <div class="space-y-1">
                     @foreach($subsidiaries as $sub)
                         <div class="flex items-center justify-between text-sm py-1">
