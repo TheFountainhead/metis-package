@@ -5,14 +5,24 @@
         @if(count($owners) === 0 && count($subsidiaries) === 0 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
+            @php
+                $currentOwners = collect($owners)->filter(fn ($o) => $o['is_current'] ?? true)->values();
+                $historicalOwners = collect($owners)->reject(fn ($o) => $o['is_current'] ?? true)->values();
+            @endphp
+
             <div class="metis-org-chart">
 
+                {{-- "Ejere" header --}}
                 @if(count($owners) > 0)
-                    {{-- Owners (above searched company) --}}
-                    <div class="org-row {{ count($owners) > 1 ? 'multi' : '' }}">
-                        @foreach($owners as $owner)
+                    <div class="org-section-label">{{ __('Owners') }}</div>
+                @endif
+
+                {{-- Current owners with connectors --}}
+                @if($currentOwners->count() > 0)
+                    <div class="org-row {{ $currentOwners->count() > 1 ? 'multi' : '' }}">
+                        @foreach($currentOwners as $owner)
                             <div class="org-cell">
-                                <div class="org-node {{ ! ($owner['is_current'] ?? true) ? 'historical' : '' }}">
+                                <div class="org-node">
                                     @if($owner['is_company'] ?? false)
                                         <x-metis-link type="cvr" :query="$owner['cvr'] ?? ''" :label="$owner['person_name'] ?? '-'" />
                                     @else
@@ -21,9 +31,6 @@
                                     <div class="org-meta">
                                         @if($owner['ownership_share'] ?? null)
                                             <flux:badge size="sm" color="sky">{{ number_format($owner['ownership_share'], 0) }}%</flux:badge>
-                                        @endif
-                                        @if(! ($owner['is_current'] ?? true))
-                                            <flux:badge size="sm" color="zinc">{{ __('Historical') }}</flux:badge>
                                         @endif
                                     </div>
                                     @if(! empty($owner['parent_owners']))
@@ -48,18 +55,54 @@
                         @endforeach
                     </div>
 
-                    {{-- Connectors: stems-down from each owner + horizontal bridge (only for multi) + trunk to searched --}}
-                    @if(count($owners) > 1)
-                        <div class="org-stem-row" style="--node-count: {{ count($owners) }}">
-                            @foreach($owners as $owner)
+                    @if($currentOwners->count() > 1)
+                        <div class="org-stem-row">
+                            @foreach($currentOwners as $owner)
                                 <div class="org-stem-cell"><div class="org-stem-line"></div></div>
                             @endforeach
                         </div>
-                        <div class="org-bridge-row" style="--node-count: {{ count($owners) }}">
+                        <div class="org-bridge-row" style="--node-count: {{ $currentOwners->count() }}">
                             <div class="org-bridge-line"></div>
                         </div>
                     @endif
                     <div class="org-trunk"></div>
+                @endif
+
+                {{-- Historical owners (collapsed by default if there ARE current; expanded if not) --}}
+                @if($historicalOwners->count() > 0)
+                    <div class="org-historical-block" x-data="{ open: {{ $currentOwners->count() === 0 ? 'true' : 'false' }} }">
+                        <button type="button" @click="open = !open" class="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 inline-flex items-center gap-1 mb-2">
+                            <span x-show="!open" class="inline-flex items-center gap-1">
+                                <svg class="size-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                                {{ __('Show :count historical', ['count' => $historicalOwners->count()]) }}
+                            </span>
+                            <span x-show="open" x-cloak class="inline-flex items-center gap-1">
+                                <svg class="size-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                                {{ __('Hide historical') }}
+                            </span>
+                        </button>
+                        <div x-show="open" {!! $currentOwners->count() === 0 ? '' : 'x-cloak' !!}>
+                            <div class="org-row {{ $historicalOwners->count() > 1 ? 'multi' : '' }}">
+                                @foreach($historicalOwners as $owner)
+                                    <div class="org-cell">
+                                        <div class="org-node historical">
+                                            @if($owner['is_company'] ?? false)
+                                                <x-metis-link type="cvr" :query="$owner['cvr'] ?? ''" :label="$owner['person_name'] ?? '-'" />
+                                            @else
+                                                <x-metis-link type="person" :query="$owner['person_name'] ?? '-'" :label="$owner['person_name'] ?? '-'" />
+                                            @endif
+                                            <div class="org-meta">
+                                                @if($owner['ownership_share'] ?? null)
+                                                    <flux:badge size="sm" color="zinc">{{ number_format($owner['ownership_share'], 0) }}%</flux:badge>
+                                                @endif
+                                                <flux:badge size="sm" color="zinc">{{ __('Historical') }}</flux:badge>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
                 @endif
 
                 {{-- Searched company (highlighted center) --}}
@@ -74,13 +117,12 @@
                 </div>
 
                 @if(count($subsidiaries) > 0)
-                    {{-- Connectors: trunk down + horizontal bridge (only for multi) + stems-up to each subsidiary --}}
                     <div class="org-trunk"></div>
                     @if(count($subsidiaries) > 1)
                         <div class="org-bridge-row" style="--node-count: {{ count($subsidiaries) }}">
                             <div class="org-bridge-line"></div>
                         </div>
-                        <div class="org-stem-row" style="--node-count: {{ count($subsidiaries) }}">
+                        <div class="org-stem-row">
                             @foreach($subsidiaries as $sub)
                                 <div class="org-stem-cell"><div class="org-stem-line"></div></div>
                             @endforeach
@@ -101,6 +143,9 @@
                             </div>
                         @endforeach
                     </div>
+
+                    {{-- "Datterselskaber" header (under the row, since this row is below the searched company) --}}
+                    <div class="org-section-label">{{ __('Subsidiaries') }}</div>
                 @endif
 
             </div>
@@ -123,6 +168,8 @@
 {{-- Style INSIDE root-div for Livewire 3 morphdom-compatibility.
      All connectors are real divs (no pseudo-elements) so flux:card overflow can't hide them. --}}
 <style>
+    [x-cloak] { display: none !important; }
+
     .metis-org-chart {
         --org-line: rgb(113 113 122); /* zinc-500 */
     }
@@ -135,6 +182,20 @@
         flex-direction: column;
         align-items: center;
         padding: 0.5rem 0;
+    }
+
+    .metis-org-chart .org-section-label {
+        font-size: 0.6875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        color: rgb(113 113 122);
+        margin-bottom: 0.5rem;
+        margin-top: 0.5rem;
+    }
+
+    .dark .metis-org-chart .org-section-label {
+        color: rgb(161 161 170);
     }
 
     .metis-org-chart .org-row {
@@ -183,7 +244,8 @@
     }
 
     .metis-org-chart .org-node.historical {
-        opacity: 0.55;
+        opacity: 0.6;
+        border-style: dashed;
     }
 
     .metis-org-chart .org-meta {
@@ -201,14 +263,12 @@
         text-align: left;
     }
 
-    /* Trunk: vertical 2px line linking layers */
     .metis-org-chart .org-trunk {
         width: 2px;
         height: 1.25rem;
         background: var(--org-line);
     }
 
-    /* Stem-row: container that flexes its children evenly so each stem aligns with the cell-center above */
     .metis-org-chart .org-stem-row {
         display: flex;
         width: 100%;
@@ -226,8 +286,6 @@
         background: var(--org-line);
     }
 
-    /* Bridge-row: horizontal line spanning from first-cell-center to last-cell-center.
-       Each cell is 100%/N wide, so bridge width = 100% - 100%/N = (N-1) * (100%/N) */
     .metis-org-chart .org-bridge-row {
         width: 100%;
         display: flex;
@@ -238,6 +296,12 @@
         width: calc(100% - (100% / var(--node-count, 1)));
         height: 2px;
         background: var(--org-line);
+    }
+
+    .metis-org-chart .org-historical-block {
+        margin: 0.5rem 0;
+        text-align: center;
+        width: 100%;
     }
 </style>
 </div>
