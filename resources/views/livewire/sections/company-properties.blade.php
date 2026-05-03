@@ -25,7 +25,10 @@
                     <span class="text-zinc-500">{{ __('Total valuation') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_valuation'], 0, ',', '.') }} kr.</span></span>
                 @endif
                 @if(($portfolio['total_area'] ?? 0) > 0)
-                    <span class="text-zinc-500">{{ __('Total area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_area'], 0, ',', '.') }} m²</span></span>
+                    <span class="text-zinc-500">{{ __('Land area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_area'], 0, ',', '.') }} m²</span></span>
+                @endif
+                @if(($portfolio['total_building_area'] ?? 0) > 0)
+                    <span class="text-zinc-500">{{ __('Built area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_building_area'], 0, ',', '.') }} m²</span></span>
                 @endif
                 @if($loadedDebt > 0)
                     <span class="text-zinc-500" title="{{ __('Sum af tinglyst gæld for de viste ejendomme — yderligere gæld kan være på endnu-ikke-loadede sider') }}">{{ __('Tinglyst gæld') }} ({{ count($portfolio['properties']) }}/{{ $portfolio['total_count'] }}): <span class="font-medium text-red-700 dark:text-red-400">{{ number_format($loadedDebt, 0, ',', '.') }} kr.</span></span>
@@ -46,7 +49,7 @@
                         <tr class="border-b border-zinc-200 dark:border-zinc-700">
                             <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Address') }}</th>
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Units') }}</th>
-                            <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Area') }}</th>
+                            <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Land area / built area') }}">{{ __('Area') }}</th>
                             <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Year') }}</th>
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Offentlig ejendomsvurdering (VUR)') }}">{{ __('Off. vurdering') }}</th>
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Seneste handelspris (tinglysning)') }}">{{ __('Seneste handel') }}</th>
@@ -57,6 +60,7 @@
                         @foreach($grouped as $address => $units)
                             @php
                                 $totalArea = $units->sum(fn ($u) => $u['total_area'] ?? 0);
+                                $totalBuildingArea = $units->sum(fn ($u) => $u['total_building_area'] ?? 0);
                                 $totalVal = $units->sum(fn ($u) => $u['valuation'] ?? 0);
                                 $totalDebt = $units->sum(fn ($u) => $u['total_debt'] ?? 0);
                                 $year = $units->pluck('building_year')->filter()->first();
@@ -99,7 +103,16 @@
                                         <span class="text-zinc-300">1</span>
                                     @endif
                                 </td>
-                                <td class="py-2 pr-4 text-right">{{ $totalArea ? number_format($totalArea, 0, ',', '.') . ' m²' : '-' }}</td>
+                                <td class="py-2 pr-4 text-right">
+                                    @if($totalArea)
+                                        <div>{{ number_format($totalArea, 0, ',', '.') }} m² <span class="text-zinc-400 text-xs">{{ __('grund') }}</span></div>
+                                        @if($totalBuildingArea)
+                                            <div class="text-zinc-500 text-xs">{{ number_format($totalBuildingArea, 0, ',', '.') }} m² {{ __('bebygget') }}</div>
+                                        @endif
+                                    @else
+                                        -
+                                    @endif
+                                </td>
                                 <td class="py-2 pr-4">{{ $year ?? '-' }}</td>
                                 <td class="py-2 pr-4 text-right">{{ $totalVal ? number_format($totalVal, 0, ',', '.') . ' kr.' : '-' }}</td>
                                 <td class="py-2 pr-4 text-right">
