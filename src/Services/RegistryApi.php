@@ -282,20 +282,24 @@ class RegistryApi
         array $filters = [],
         ?string $cursor = null,
     ): ?array {
-        $query = array_filter([
-            ...$filters,
-            'cursor' => $cursor,
-        ], fn ($v) => $v !== null && $v !== '');
+        $cacheKey = "metis:tinglysning_overview:{$cvr}:" . md5(json_encode([$filters, $cursor]));
 
-        try {
-            return $this->client()
-                ->timeout(15)
-                ->get("/v1/companies/{$cvr}/tinglysning-overview", $query)
-                ->throw()
-                ->json();
-        } catch (RequestException $e) {
-            return null;
-        }
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($cvr, $filters, $cursor) {
+            $query = array_filter([
+                ...$filters,
+                'cursor' => $cursor,
+            ], fn ($v) => $v !== null && $v !== '');
+
+            try {
+                return $this->client()
+                    ->timeout(15)
+                    ->get("/v1/companies/{$cvr}/tinglysning-overview", $query)
+                    ->throw()
+                    ->json();
+            } catch (\Throwable $e) {
+                return null;
+            }
+        });
     }
 
     public function getEnrichmentStatus(string $cvr): ?array
