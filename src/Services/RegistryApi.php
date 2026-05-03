@@ -237,7 +237,7 @@ class RegistryApi
 
     public function fetchCompanyStructure(string $cvr): array
     {
-        return $this->post('/v1/cvr/company-structure', ['cvr_numbers' => [$cvr]]) ?? [];
+        return $this->post('/v1/cvr/company-structure', ['cvr' => $cvr]) ?? [];
     }
 
     public function fetchCompanyPropertyPortfolio(string $cvr, int $limit = 25, int $offset = 0): ?array
