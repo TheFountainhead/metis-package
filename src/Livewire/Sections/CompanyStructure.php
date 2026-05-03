@@ -7,11 +7,17 @@ use TheFountainhead\Metis\Services\RegistryApi;
 class CompanyStructure extends MetisSection
 {
     public array $owners = [];
-    public array $ultimateOwners = [];
     public array $subsidiaries = [];
     public bool $enriching = false;
     public int $companiesFound = 0;
     public ?string $companyName = null;
+
+    /**
+     * Per-owner expansion state for the inline "Udfold struktur"-toggle.
+     * Keyed by ownerKey() (cvr or person_name slug). Value: array of
+     * companies the owner is currently active in.
+     */
+    public array $expandedOwners = [];
 
     protected function sectionTitle(): string
     {
@@ -87,11 +93,9 @@ class CompanyStructure extends MetisSection
                     $this->owners[$i]['parent_owners'] = $parentInfo['owners'] ?? [];
                 }
 
-                // Also fetch subsidiaries of parent if we don't have them yet
                 if (empty($this->subsidiaries)) {
                     $parentStructure = rescue(fn () => $api->fetchCompanyStructure($owner['cvr']), []);
                     $parentSubs = $parentStructure['subsidiaries'] ?? [];
-                    // Filter: only show sibling companies (not the current company itself)
                     $this->subsidiaries = collect($parentSubs)
                         ->filter(fn ($sub) => ($sub['cvr'] ?? '') !== $query)
                         ->values()
@@ -100,102 +104,9 @@ class CompanyStructure extends MetisSection
             }
         }
 
-        $this->liftUltimateBeneficialOwners();
-        $this->reclassifySharelessOwnersAsHistorical();
-
         $status = rescue(fn () => app(RegistryApi::class)->getEnrichmentStatus($query));
         $this->enriching = in_array($status['status'] ?? '', ['pending', 'running']);
         $this->companiesFound = $status['companies_found'] ?? 0;
-    }
-
-    /**
-     * If a person-owner of the searched company is also listed as a parent-owner
-     * (grand-parent) of a company-owner on the same level, lift the person up to
-     * a separate "ultimate beneficial owners" row above the legal owners.
-     *
-     * Example: Jeannine 100% direct + Tonsbakken Holding 100% direct, where Jeannine
-     * is also listed as parent-owner of Tonsbakken Holding → Jeannine is the
-     * ultimate beneficial owner; Tonsbakken Holding is the legal owner.
-     */
-    protected function liftUltimateBeneficialOwners(): void
-    {
-        // Only consider CURRENT company-owners — if a holding company is historical,
-        // its UBO is already (or should be) the direct owner and doesn't need lifting.
-        $companyOwners = collect($this->owners)
-            ->filter(fn ($o) => $o['is_company'] ?? false)
-            ->filter(fn ($o) => $o['is_current'] ?? true);
-
-        $lifted = [];
-        $remaining = [];
-
-        foreach ($this->owners as $owner) {
-            if ($owner['is_company'] ?? false) {
-                $remaining[] = $owner;
-                continue;
-            }
-
-            $isUltimate = false;
-            foreach ($companyOwners as $company) {
-                foreach ($company['parent_owners'] ?? [] as $parentOwner) {
-                    if ($this->ownersMatch($owner, $parentOwner)) {
-                        $isUltimate = true;
-                        break 2;
-                    }
-                }
-            }
-
-            if ($isUltimate) {
-                $lifted[] = $owner;
-            } else {
-                $remaining[] = $owner;
-            }
-        }
-
-        $this->ultimateOwners = $lifted;
-        $this->owners = $remaining;
-    }
-
-    /**
-     * If at least one owner has a 100% share, any other owner with no share data
-     * is most likely a stale/historical record that CVR didn't flag as historical.
-     * Reclassify them so they show in the "tidligere ejere"-toggle instead of
-     * misleading the chart with phantom current-owner edges.
-     */
-    protected function reclassifySharelessOwnersAsHistorical(): void
-    {
-        $hasFullOwner = collect($this->owners)
-            ->contains(fn ($o) => ($o['ownership_share'] ?? null) >= 100);
-
-        if (! $hasFullOwner) {
-            return;
-        }
-
-        $this->owners = array_map(function ($owner) {
-            $share = $owner['ownership_share'] ?? null;
-            if ($share === null || $share <= 0) {
-                $owner['is_current'] = false;
-            }
-
-            return $owner;
-        }, $this->owners);
-    }
-
-    protected function ownersMatch(array $a, array $b): bool
-    {
-        $nameA = trim(strtolower($a['person_name'] ?? ''));
-        $nameB = trim(strtolower($b['person_name'] ?? ''));
-
-        if ($nameA !== '' && $nameA === $nameB) {
-            return true;
-        }
-
-        $cprA = $a['cpr'] ?? null;
-        $cprB = $b['cpr'] ?? null;
-        if ($cprA && $cprB && $cprA === $cprB) {
-            return true;
-        }
-
-        return false;
     }
 
     public function pollForUpdates(): void
@@ -214,6 +125,71 @@ class CompanyStructure extends MetisSection
             // Owners don't change during subsidiary-enrichment — preserve the lifted shape
             $this->subsidiaries = $result['subsidiaries'] ?? $this->subsidiaries;
         }
+    }
+
+    /**
+     * Lazy-load and cache the list of OTHER companies a given owner is active in.
+     * Triggered from Alpine.js click on the "Udfold struktur"-button per owner card.
+     */
+    public function toggleOwnerExpansion(string $ownerKey): void
+    {
+        if (isset($this->expandedOwners[$ownerKey])) {
+            unset($this->expandedOwners[$ownerKey]);
+
+            return;
+        }
+
+        $owner = collect($this->owners)->first(fn ($o) => $this->ownerKey($o) === $ownerKey);
+        if (! $owner) {
+            return;
+        }
+
+        $api = app(RegistryApi::class);
+        $companies = [];
+
+        if ($owner['is_company'] ?? false) {
+            // For company-owners: fetch their structure (subs) + parent_owners (already loaded)
+            if ($owner['cvr'] ?? null) {
+                $structure = rescue(fn () => $api->fetchCompanyStructure($owner['cvr']), []);
+                $companies = collect($structure['subsidiaries'] ?? [])
+                    ->map(fn ($s) => [
+                        'name' => $s['name'] ?? $s['cvr'],
+                        'cvr' => $s['cvr'],
+                        'role' => __('Subsidiary'),
+                        'share' => $s['ownership_share'] ?? null,
+                    ])
+                    ->values()
+                    ->toArray();
+            }
+        } else {
+            // For person-owners: fetch their roles across all companies
+            $rolesData = rescue(fn () => $api->fetchPersonRoles($owner['person_name'] ?? ''));
+            $allCompanies = collect($rolesData['data']['companies'] ?? $rolesData['companies'] ?? []);
+            $companies = $allCompanies
+                ->filter(fn ($c) => collect($c['roles'] ?? [])->contains('is_current', true))
+                ->filter(fn ($c) => ($c['cvr'] ?? '') !== $this->query) // exclude searched company
+                ->map(function ($c) {
+                    $activeRoles = collect($c['roles'] ?? [])->filter(fn ($r) => $r['is_current'] ?? false);
+
+                    return [
+                        'name' => $c['name'] ?? '',
+                        'cvr' => $c['cvr'] ?? '',
+                        'role' => $activeRoles->pluck('role_label')->unique()->implode(', '),
+                        'share' => null,
+                    ];
+                })
+                ->values()
+                ->toArray();
+        }
+
+        $this->expandedOwners[$ownerKey] = $companies;
+    }
+
+    public function ownerKey(array $owner): string
+    {
+        return ($owner['is_company'] ?? false)
+            ? 'cvr:'.($owner['cvr'] ?? '')
+            : 'person:'.md5($owner['person_name'] ?? '');
     }
 
     public function render()

@@ -16,120 +16,72 @@
             @endif
         </div>
 
-        @if(count($owners) === 0 && count($subsidiaries) === 0 && count($ultimateOwners ?? []) === 0 && ! $enriching)
+        @if(count($owners) === 0 && count($subsidiaries) === 0 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
             @php
-                $currentOwners = collect($owners)->filter(fn ($o) => $o['is_current'] ?? true)->values();
-                $historicalOwners = collect($owners)->reject(fn ($o) => $o['is_current'] ?? true)->values();
-                $ultimate = collect($ultimateOwners ?? []);
+                $allOwners = collect($owners);
+                $currentOwners = $allOwners->filter(fn ($o) => $o['is_current'] ?? true);
+                $historicalOwners = $allOwners->reject(fn ($o) => $o['is_current'] ?? true)->values();
+
+                $isReelEjer = fn ($o) => str_contains(mb_strtolower($o['role_label'] ?? ''), 'reelle ejere');
+                $isLegalEjer = fn ($o) => str_contains(mb_strtolower($o['role_label'] ?? ''), 'ejerregister');
+
+                $reelOwners = $currentOwners->filter($isReelEjer)->values();
+                $legalOwnersStrict = $currentOwners->filter($isLegalEjer)->values();
+                $unlabeled = $currentOwners->reject(fn ($o) => $isReelEjer($o) || $isLegalEjer($o))->values();
+
+                // Owners without an explicit role_label are treated as legal by default
+                $legalOwners = $legalOwnersStrict->merge($unlabeled)->values();
             @endphp
 
             <div class="metis-org-chart">
 
-                {{-- Ultimate beneficial owners (lifted above legal owners) --}}
-                @if($ultimate->count() > 0)
+                {{-- Reel ejer row (Reelle ejere = UBO via koncernkæde) --}}
+                @if($reelOwners->count() > 0)
                     <div class="org-section-label">{{ __('Ultimate beneficial owner') }}</div>
-                    <div class="org-row {{ $ultimate->count() > 1 ? 'multi' : '' }}">
-                        @foreach($ultimate as $u)
-                            <div class="org-cell">
-                                <div class="org-node">
-                                    <x-metis-link type="person" :query="$u['person_name'] ?? '-'" :label="$u['person_name'] ?? '-'" />
-                                    <div class="org-meta">
-                                        @if($u['ownership_share'] ?? null)
-                                            <flux:badge size="sm" color="emerald">{{ number_format($u['ownership_share'], 0) }}%</flux:badge>
-                                        @endif
-                                    </div>
-                                    <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => $u['person_name'] ?? '-']) }}" class="org-drilldown">
-                                        <span>{{ __('Se alle selskaber') }}</span>
-                                        <svg class="size-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                                    </a>
-                                </div>
-                            </div>
+                    <div class="org-row {{ $reelOwners->count() > 1 ? 'multi' : '' }}">
+                        @foreach($reelOwners as $owner)
+                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'emerald', 'expandedOwners' => $expandedOwners])
                         @endforeach
                     </div>
 
-                    @if($ultimate->count() > 1)
+                    @if($reelOwners->count() > 1)
                         <div class="org-stem-row">
-                            @foreach($ultimate as $u)
+                            @foreach($reelOwners as $owner)
                                 <div class="org-stem-cell"><div class="org-stem-line"></div></div>
                             @endforeach
                         </div>
-                        <div class="org-bridge-row" style="--node-count: {{ $ultimate->count() }}">
+                        <div class="org-bridge-row" style="--node-count: {{ $reelOwners->count() }}">
                             <div class="org-bridge-line"></div>
                         </div>
                     @endif
                     <div class="org-trunk"></div>
                 @endif
 
-                {{-- "Ejere" header (or "Legal owner" if we have ultimate beneficial above) --}}
-                @if(count($owners) > 0)
-                    <div class="org-section-label">{{ $ultimate->count() > 0 ? __('Legal owner') : __('Owners') }}</div>
-                @endif
-
-                {{-- Current owners with connectors --}}
-                @if($currentOwners->count() > 0)
-                    <div class="org-row {{ $currentOwners->count() > 1 ? 'multi' : '' }}">
-                        @foreach($currentOwners as $owner)
-                            <div class="org-cell">
-                                <div class="org-node">
-                                    @if($owner['is_company'] ?? false)
-                                        <x-metis-link type="cvr" :query="$owner['cvr'] ?? ''" :label="$owner['person_name'] ?? '-'" />
-                                    @else
-                                        <x-metis-link type="person" :query="$owner['person_name'] ?? '-'" :label="$owner['person_name'] ?? '-'" />
-                                    @endif
-                                    <div class="org-meta">
-                                        @if($owner['ownership_share'] ?? null)
-                                            <flux:badge size="sm" color="sky">{{ number_format($owner['ownership_share'], 0) }}%</flux:badge>
-                                        @endif
-                                    </div>
-                                    @php
-                                        $drilldownType = ($owner['is_company'] ?? false) ? 'cvr' : 'person';
-                                        $drilldownQuery = ($owner['is_company'] ?? false) ? ($owner['cvr'] ?? '') : ($owner['person_name'] ?? '');
-                                        $drilldownLabel = ($owner['is_company'] ?? false) ? __('Se selskab') : __('Se alle selskaber');
-                                    @endphp
-                                    @if($drilldownQuery)
-                                        <a href="{{ route('metis.lookup', ['type' => $drilldownType, 'query' => $drilldownQuery]) }}" class="org-drilldown">
-                                            <span>{{ $drilldownLabel }}</span>
-                                            <svg class="size-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                                        </a>
-                                    @endif
-                                    @if(! empty($owner['parent_owners']))
-                                        <div class="org-grandparents">
-                                            <div class="text-[10px] text-zinc-400 uppercase tracking-wide mb-1">{{ __('Owned by') }}</div>
-                                            @foreach($owner['parent_owners'] as $parentOwner)
-                                                <div class="text-xs">
-                                                    @if($parentOwner['is_company'] ?? false)
-                                                        <x-metis-link type="cvr" :query="$parentOwner['cvr'] ?? ''" :label="$parentOwner['person_name'] ?? '-'" />
-                                                    @else
-                                                        <x-metis-link type="person" :query="$parentOwner['person_name'] ?? '-'" :label="$parentOwner['person_name'] ?? '-'" />
-                                                    @endif
-                                                    @if($parentOwner['ownership_share'] ?? null)
-                                                        <span class="text-zinc-400 ml-1">{{ number_format($parentOwner['ownership_share'], 0) }}%</span>
-                                                    @endif
-                                                </div>
-                                            @endforeach
-                                        </div>
-                                    @endif
-                                </div>
-                            </div>
+                {{-- Legal ejer row (EJERREGISTER = direct legal shareholders) --}}
+                @if($legalOwners->count() > 0)
+                    <div class="org-section-label">{{ $reelOwners->count() > 0 ? __('Legal owner') : __('Owners') }}</div>
+                    <div class="org-row {{ $legalOwners->count() > 1 ? 'multi' : '' }}">
+                        @foreach($legalOwners as $owner)
+                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'sky', 'expandedOwners' => $expandedOwners])
                         @endforeach
                     </div>
 
-                    @if($currentOwners->count() > 1)
+                    @if($legalOwners->count() > 1)
                         <div class="org-stem-row">
-                            @foreach($currentOwners as $owner)
+                            @foreach($legalOwners as $owner)
                                 <div class="org-stem-cell"><div class="org-stem-line"></div></div>
                             @endforeach
                         </div>
-                        <div class="org-bridge-row" style="--node-count: {{ $currentOwners->count() }}">
+                        <div class="org-bridge-row" style="--node-count: {{ $legalOwners->count() }}">
                             <div class="org-bridge-line"></div>
                         </div>
                     @endif
                     <div class="org-trunk"></div>
                 @endif
 
-                {{-- Historical owners (collapsed by default if there ARE current; expanded if not) --}}
+                {{-- Historical owners (collapsible) --}}
                 @if($historicalOwners->count() > 0)
                     <div class="org-historical-block" x-data="{ open: {{ $currentOwners->count() === 0 ? 'true' : 'false' }} }">
                         <button type="button" @click="open = !open" class="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 inline-flex items-center gap-1 mb-2">
@@ -205,25 +157,21 @@
                         @endforeach
                     </div>
 
-                    {{-- "Datterselskaber" header (under the row, since this row is below the searched company) --}}
                     <div class="org-section-label">{{ __('Subsidiaries') }}</div>
                 @endif
 
             </div>
         @endif
-
     </flux:card>
 
-{{-- Style INSIDE root-div for Livewire 3 morphdom-compatibility.
-     All connectors are real divs (no pseudo-elements) so flux:card overflow can't hide them. --}}
 <style>
     [x-cloak] { display: none !important; }
 
     .metis-org-chart {
-        --org-line: rgb(113 113 122); /* zinc-500 */
+        --org-line: rgb(113 113 122);
     }
     .dark .metis-org-chart {
-        --org-line: rgb(161 161 170); /* zinc-400 */
+        --org-line: rgb(161 161 170);
     }
 
     .metis-org-chart {
@@ -313,24 +261,59 @@
         padding-top: 0.5rem;
         border-top: 1px solid rgb(228 228 231);
         font-size: 0.6875rem;
-        color: rgb(37 99 235); /* blue-600 */
+        color: rgb(37 99 235);
         text-decoration: none;
     }
 
     .dark .metis-org-chart .org-drilldown {
         border-top-color: rgb(63 63 70);
-        color: rgb(96 165 250); /* blue-400 */
+        color: rgb(96 165 250);
     }
 
     .metis-org-chart .org-drilldown:hover {
         text-decoration: underline;
     }
 
-    .metis-org-chart .org-grandparents {
+    .metis-org-chart .org-expand-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-top: 0.25rem;
+        font-size: 0.6875rem;
+        color: rgb(82 82 91);
+        background: none;
+        border: 0;
+        cursor: pointer;
+        padding: 0.125rem 0.25rem;
+    }
+
+    .dark .metis-org-chart .org-expand-toggle {
+        color: rgb(161 161 170);
+    }
+
+    .metis-org-chart .org-expand-toggle:hover {
+        color: rgb(37 99 235);
+    }
+
+    .dark .metis-org-chart .org-expand-toggle:hover {
+        color: rgb(96 165 250);
+    }
+
+    .metis-org-chart .org-expansion {
         margin-top: 0.5rem;
         padding-top: 0.5rem;
         border-top: 1px dashed rgb(212 212 216);
         text-align: left;
+        max-height: 16rem;
+        overflow-y: auto;
+    }
+
+    .metis-org-chart .org-expansion-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.125rem 0;
+        font-size: 0.75rem;
     }
 
     .metis-org-chart .org-trunk {
