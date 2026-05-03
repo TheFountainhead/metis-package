@@ -197,6 +197,7 @@
                                 <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Ejer') }}</th>
                                 <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Type') }}</th>
                                 <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Kreditor') }}</th>
+                                <th class="text-center py-2 pr-4 font-medium text-zinc-500" title="{{ __('Prioritetsnummer fra Tinglysningsretten — lavere = bedre sikkerhedsposition') }}">{{ __('Pri') }}</th>
                                 <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Hovedstol') }}</th>
                                 <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('LTV') }}</th>
                                 <th class="text-left py-2 font-medium text-zinc-500">{{ __('Tinglyst') }}</th>
@@ -226,6 +227,13 @@
                                     </td>
                                     <td class="py-2 pr-4 text-zinc-600 dark:text-zinc-300 text-xs">{{ $m['mortgage_type'] ?? '-' }}</td>
                                     <td class="py-2 pr-4 text-zinc-600 dark:text-zinc-300 text-xs">{{ $m['creditor'] ?? '-' }}</td>
+                                    <td class="py-2 pr-4 text-center text-zinc-700 dark:text-zinc-200 text-xs font-medium tabular-nums">
+                                        @if($m['priority'] ?? null)
+                                            {{ $m['priority'] }}
+                                        @else
+                                            <span class="text-zinc-300">-</span>
+                                        @endif
+                                    </td>
                                     <td class="py-2 pr-4 text-right">
                                         @if(($m['principal_amount'] ?? 0) > 0)
                                             {{ number_format($m['principal_amount'] / 100, 0, ',', '.') }} kr.
@@ -245,7 +253,7 @@
                             @endforeach
                             @if($streaming)
                                 @for($i = 0; $i < 3; $i++)
-                                    @include('metis::livewire.sections.partials.skeleton-row', ['columns' => 7])
+                                    @include('metis::livewire.sections.partials.skeleton-row', ['columns' => 8])
                                 @endfor
                             @endif
                         </tbody>
