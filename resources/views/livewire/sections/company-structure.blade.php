@@ -100,11 +100,10 @@
             </div>
         @endif
     </flux:card>
-</div>
 
-{{-- Org-chart styling — pure CSS tree connectors via pseudo-elements.
-     No JS dependency. Works for parents (1+) → searched (1) → subsidiaries (1+).  --}}
-@once
+{{-- Style INSIDE root-div for Livewire 3 morphdom-compatibility.
+     @once outside root-div gets stripped on lazy-load + every poll.
+     Pure CSS tree connectors via pseudo-elements. No JS dependency. --}}
 <style>
     .metis-org-chart {
         display: flex;
@@ -261,4 +260,4 @@
         top: -1.5rem;
     }
 </style>
-@endonce
+</div>
