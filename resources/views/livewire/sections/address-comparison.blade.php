@@ -183,6 +183,10 @@
                         <div class="text-xs text-zinc-400">{{ __('Datapunkter') }}</div>
                     </div>
                 </div>
+                <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
+                    {{ __('Kilde:') }} <a href="https://www.ejendomstorvet.dk" target="_blank" rel="noopener" class="hover:underline">ejendomstorvet.dk</a> —
+                    {{ __('median pr. m²/år ud fra :count aktuelle udlejnings-listings i postnummerområdet', ['count' => $rentalEstimate['sample_count'] ?? '?']) }}@if($rentalEstimate['property_type'] ?? null), {{ __('filtreret på type :type', ['type' => $rentalEstimate['property_type']]) }}@endif.
+                </div>
             </div>
         @endif
 
@@ -191,22 +195,31 @@
                 <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Rentabilitet') }}</div>
                 <div class="grid grid-cols-3 gap-3">
                     @if ($profitability['gross_yield'] ?? null)
-                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
+                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('Årlig leje / handelspris') }}">
                             <div class="font-bold">{{ $profitability['gross_yield'] }}%</div>
                             <div class="text-xs text-zinc-400">{{ __('Bruttoafkast') }}</div>
                         </div>
                     @endif
                     @if ($profitability['ltv'] ?? null)
-                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
+                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('Sum af aktive pantebreve / handelspris') }}">
                             <div class="font-bold">{{ $profitability['ltv'] }}%</div>
                             <div class="text-xs text-zinc-400">{{ __('LTV') }}</div>
                         </div>
                     @endif
                     @if ($profitability['estimated_dscr'] ?? null)
-                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
+                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('NOI / årlig gældsbetjening (estimat)') }}">
                             <div class="font-bold">{{ $profitability['estimated_dscr'] }}</div>
                             <div class="text-xs text-zinc-400">{{ __('DSCR') }}</div>
                         </div>
+                    @endif
+                </div>
+                <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
+                    {{ __('Kilde:') }}
+                    @if($profitability['gross_yield'] ?? null)
+                        <span title="{{ __('Årlig leje / handelspris') }}">{{ __('Bruttoafkast') }} = {{ ($profitability['rent_source'] ?? null) === 'market_estimate' ? __('lejeestimat (ejendomstorvet.dk)') : __('faktisk årlig leje') }} / {{ __('handelspris (Tinglysning)') }}</span>.
+                    @endif
+                    @if($profitability['ltv'] ?? null)
+                        {{ __('LTV') }} = {{ __('aktive pantebreve (Tinglysning)') }} / {{ __('handelspris') }}.
                     @endif
                 </div>
             </div>
