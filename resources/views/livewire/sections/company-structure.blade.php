@@ -1,6 +1,20 @@
 <div @if($enriching) wire:poll.3s="pollForUpdates" @endif>
     <flux:card>
-        <flux:heading size="lg" class="mb-4">{{ __('Company Structure') }}</flux:heading>
+        <div class="flex items-center justify-between mb-4">
+            <flux:heading size="lg">{{ __('Company Structure') }}</flux:heading>
+            @if($enriching)
+                <div class="flex items-center gap-2 text-blue-600 dark:text-blue-400 text-sm">
+                    <svg class="size-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>{{ __('Discovering subsidiary tree...') }}</span>
+                    @if($companiesFound > 0)
+                        <span class="font-medium">({{ $companiesFound }} {{ __('companies') }})</span>
+                    @endif
+                </div>
+            @endif
+        </div>
 
         @if(count($owners) === 0 && count($subsidiaries) === 0 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
@@ -151,18 +165,6 @@
             </div>
         @endif
 
-        @if($enriching)
-            <div class="flex items-center gap-2 text-blue-500 text-sm mt-4">
-                <svg class="size-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                {{ __('Discovering subsidiary tree...') }}
-                @if($companiesFound > 0)
-                    <span class="font-medium">{{ $companiesFound }} {{ __('companies') }}</span>
-                @endif
-            </div>
-        @endif
     </flux:card>
 
 {{-- Style INSIDE root-div for Livewire 3 morphdom-compatibility.
