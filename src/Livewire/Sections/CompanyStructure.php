@@ -101,6 +101,7 @@ class CompanyStructure extends MetisSection
         }
 
         $this->liftUltimateBeneficialOwners();
+        $this->reclassifySharelessOwnersAsHistorical();
 
         $status = rescue(fn () => app(RegistryApi::class)->getEnrichmentStatus($query));
         $this->enriching = in_array($status['status'] ?? '', ['pending', 'running']);
@@ -148,6 +149,31 @@ class CompanyStructure extends MetisSection
 
         $this->ultimateOwners = $lifted;
         $this->owners = $remaining;
+    }
+
+    /**
+     * If at least one owner has a 100% share, any other owner with no share data
+     * is most likely a stale/historical record that CVR didn't flag as historical.
+     * Reclassify them so they show in the "tidligere ejere"-toggle instead of
+     * misleading the chart with phantom current-owner edges.
+     */
+    protected function reclassifySharelessOwnersAsHistorical(): void
+    {
+        $hasFullOwner = collect($this->owners)
+            ->contains(fn ($o) => ($o['ownership_share'] ?? null) >= 100);
+
+        if (! $hasFullOwner) {
+            return;
+        }
+
+        $this->owners = array_map(function ($owner) {
+            $share = $owner['ownership_share'] ?? null;
+            if ($share === null || $share <= 0) {
+                $owner['is_current'] = false;
+            }
+
+            return $owner;
+        }, $this->owners);
     }
 
     protected function ownersMatch(array $a, array $b): bool

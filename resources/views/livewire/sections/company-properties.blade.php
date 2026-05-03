@@ -65,7 +65,13 @@
                                 $bfe = $first['matrikel_id'] ?? null;
                                 $matrikelnr = $first['matrikelnr'] ?? null;
                                 $ejerlav = $first['ejerlav'] ?? null;
-                                $matrikelLabel = $matrikelnr ? trim('Matr. nr. ' . $matrikelnr . ($ejerlav ? ', ' . $ejerlav : '')) : null;
+                                if ($matrikelnr) {
+                                    $matrikelLabel = trim('Matr. nr. ' . $matrikelnr . ($ejerlav ? ', ' . $ejerlav : ''));
+                                } elseif ($ejerlav) {
+                                    $matrikelLabel = __('Unbuilt parcel') . ' — ' . $ejerlav;
+                                } else {
+                                    $matrikelLabel = null;
+                                }
                                 // Latest sale across grouped units (max by date)
                                 $latestSale = $units->pluck('latest_sale')->filter()->sortByDesc('date')->first();
                             @endphp
@@ -77,7 +83,7 @@
                                         <div>
                                             <span class="text-zinc-700 dark:text-zinc-300">{{ $matrikelLabel }}</span>
                                             @if($bfe)
-                                                <div class="text-zinc-400 text-xs">BFE {{ $bfe }} · {{ __('Unbuilt parcel') }}</div>
+                                                <div class="text-zinc-400 text-xs">BFE {{ $bfe }}</div>
                                             @endif
                                         </div>
                                     @elseif($bfe)
