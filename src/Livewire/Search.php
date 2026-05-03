@@ -469,7 +469,14 @@ class Search extends Component
         if ($this->searchMode === 'person') {
             $result = ['persons' => $api->searchPersonByName($query)];
         } elseif ($this->searchMode === 'company') {
-            $result = ['companies' => $api->searchByName($query)];
+            // 8-cifret CVR → direkte lookup via fetchCompany. Ellers navne-søgning.
+            // Uden detection routes 'Selskab + 28963610' til searchByName(), der kun
+            // matcher firmanavn, så ingen-resultater for valid CVR-input.
+            if (preg_match('/^\d{8}$/', trim($query))) {
+                $result = $api->fetchCompany($query);
+            } else {
+                $result = ['companies' => $api->searchByName($query)];
+            }
         } elseif ($this->searchMode === 'address') {
             $result = $api->fetchPropertyByAddress($query);
         } else {
