@@ -16,19 +16,51 @@
             @endif
         </div>
 
-        @if(count($owners) === 0 && count($subsidiaries) === 0 && ! $enriching)
+        @if(count($owners) === 0 && count($subsidiaries) === 0 && count($ultimateOwners ?? []) === 0 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
             @php
                 $currentOwners = collect($owners)->filter(fn ($o) => $o['is_current'] ?? true)->values();
                 $historicalOwners = collect($owners)->reject(fn ($o) => $o['is_current'] ?? true)->values();
+                $ultimate = collect($ultimateOwners ?? []);
             @endphp
 
             <div class="metis-org-chart">
 
-                {{-- "Ejere" header --}}
+                {{-- Ultimate beneficial owners (lifted above legal owners) --}}
+                @if($ultimate->count() > 0)
+                    <div class="org-section-label">{{ __('Ultimate beneficial owner') }}</div>
+                    <div class="org-row {{ $ultimate->count() > 1 ? 'multi' : '' }}">
+                        @foreach($ultimate as $u)
+                            <div class="org-cell">
+                                <div class="org-node">
+                                    <x-metis-link type="person" :query="$u['person_name'] ?? '-'" :label="$u['person_name'] ?? '-'" />
+                                    <div class="org-meta">
+                                        @if($u['ownership_share'] ?? null)
+                                            <flux:badge size="sm" color="emerald">{{ number_format($u['ownership_share'], 0) }}%</flux:badge>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    @if($ultimate->count() > 1)
+                        <div class="org-stem-row">
+                            @foreach($ultimate as $u)
+                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
+                            @endforeach
+                        </div>
+                        <div class="org-bridge-row" style="--node-count: {{ $ultimate->count() }}">
+                            <div class="org-bridge-line"></div>
+                        </div>
+                    @endif
+                    <div class="org-trunk"></div>
+                @endif
+
+                {{-- "Ejere" header (or "Legal owner" if we have ultimate beneficial above) --}}
                 @if(count($owners) > 0)
-                    <div class="org-section-label">{{ __('Owners') }}</div>
+                    <div class="org-section-label">{{ $ultimate->count() > 0 ? __('Legal owner') : __('Owners') }}</div>
                 @endif
 
                 {{-- Current owners with connectors --}}

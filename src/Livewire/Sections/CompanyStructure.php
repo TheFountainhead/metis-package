@@ -7,6 +7,7 @@ use TheFountainhead\Metis\Services\RegistryApi;
 class CompanyStructure extends MetisSection
 {
     public array $owners = [];
+    public array $ultimateOwners = [];
     public array $subsidiaries = [];
     public bool $enriching = false;
     public int $companiesFound = 0;
@@ -58,9 +59,72 @@ class CompanyStructure extends MetisSection
             }
         }
 
+        $this->liftUltimateBeneficialOwners();
+
         $status = rescue(fn () => app(RegistryApi::class)->getEnrichmentStatus($query));
         $this->enriching = in_array($status['status'] ?? '', ['pending', 'running']);
         $this->companiesFound = $status['companies_found'] ?? 0;
+    }
+
+    /**
+     * If a person-owner of the searched company is also listed as a parent-owner
+     * (grand-parent) of a company-owner on the same level, lift the person up to
+     * a separate "ultimate beneficial owners" row above the legal owners.
+     *
+     * Example: Jeannine 100% direct + Tonsbakken Holding 100% direct, where Jeannine
+     * is also listed as parent-owner of Tonsbakken Holding → Jeannine is the
+     * ultimate beneficial owner; Tonsbakken Holding is the legal owner.
+     */
+    protected function liftUltimateBeneficialOwners(): void
+    {
+        $companyOwners = collect($this->owners)->filter(fn ($o) => $o['is_company'] ?? false);
+
+        $lifted = [];
+        $remaining = [];
+
+        foreach ($this->owners as $owner) {
+            if ($owner['is_company'] ?? false) {
+                $remaining[] = $owner;
+                continue;
+            }
+
+            $isUltimate = false;
+            foreach ($companyOwners as $company) {
+                foreach ($company['parent_owners'] ?? [] as $parentOwner) {
+                    if ($this->ownersMatch($owner, $parentOwner)) {
+                        $isUltimate = true;
+                        break 2;
+                    }
+                }
+            }
+
+            if ($isUltimate) {
+                $lifted[] = $owner;
+            } else {
+                $remaining[] = $owner;
+            }
+        }
+
+        $this->ultimateOwners = $lifted;
+        $this->owners = $remaining;
+    }
+
+    protected function ownersMatch(array $a, array $b): bool
+    {
+        $nameA = trim(strtolower($a['person_name'] ?? ''));
+        $nameB = trim(strtolower($b['person_name'] ?? ''));
+
+        if ($nameA !== '' && $nameA === $nameB) {
+            return true;
+        }
+
+        $cprA = $a['cpr'] ?? null;
+        $cprB = $b['cpr'] ?? null;
+        if ($cprA && $cprB && $cprA === $cprB) {
+            return true;
+        }
+
+        return false;
     }
 
     public function pollForUpdates(): void
@@ -76,7 +140,7 @@ class CompanyStructure extends MetisSection
         if (in_array($newStatus, ['completed', 'failed'])) {
             $this->enriching = false;
             $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyStructure($this->query), []);
-            $this->owners = $result['owners'] ?? $this->owners;
+            // Owners don't change during subsidiary-enrichment — preserve the lifted shape
             $this->subsidiaries = $result['subsidiaries'] ?? $this->subsidiaries;
         }
     }
