@@ -119,7 +119,11 @@ class CompanyStructure extends MetisSection
      */
     protected function liftUltimateBeneficialOwners(): void
     {
-        $companyOwners = collect($this->owners)->filter(fn ($o) => $o['is_company'] ?? false);
+        // Only consider CURRENT company-owners — if a holding company is historical,
+        // its UBO is already (or should be) the direct owner and doesn't need lifting.
+        $companyOwners = collect($this->owners)
+            ->filter(fn ($o) => $o['is_company'] ?? false)
+            ->filter(fn ($o) => $o['is_current'] ?? true);
 
         $lifted = [];
         $remaining = [];
