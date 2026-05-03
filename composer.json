@@ -11,13 +11,16 @@
         "laravel/socialite": "^5.24.1",
         "codercat/jwk-to-pem": "^1.0",
         "firebase/php-jwt": "^6.4|^7.0",
-        "mattketmo/email-checker": "^3.0",
-        "phpoffice/phpspreadsheet": "^5.7"
+        "mattketmo/email-checker": "^3.0"
     },
     "require-dev": {
         "pestphp/pest": "^4.4",
         "pestphp/pest-plugin-laravel": "^4.1",
-        "orchestra/testbench": "^10.0"
+        "orchestra/testbench": "^10.0",
+        "phpoffice/phpspreadsheet": "^5.7"
+    },
+    "suggest": {
+        "phpoffice/phpspreadsheet": "Required for XLSX export of Tinglysning portfolio data (only needed if using exportXlsx feature)"
     },
     "config": {
         "audit": {

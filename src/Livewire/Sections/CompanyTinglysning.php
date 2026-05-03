@@ -63,7 +63,7 @@ class CompanyTinglysning extends MetisSection
             return;
         }
 
-        $this->applyResponse($response, append: true);
+        $this->appendStreamedResponse($response);
     }
 
     public function retry(): void
@@ -208,7 +208,7 @@ class CompanyTinglysning extends MetisSection
             return;
         }
 
-        $this->applyResponse($response);
+        $this->applyInitialResponse($response);
     }
 
     /**
@@ -255,17 +255,43 @@ class CompanyTinglysning extends MetisSection
         return $filters;
     }
 
-    protected function applyResponse(array $response, bool $append = false): void
+    /**
+     * Apply the initial fetch response — replaces all mortgage state.
+     * Used by mount()/fetch() and resetAndFetch() (filter changes).
+     */
+    protected function applyInitialResponse(array $response): void
+    {
+        $this->company = $response['company'] ?? $this->company;
+        $this->treeMeta = $response['tree_meta'] ?? $this->treeMeta;
+        $this->tierBreakdown = $response['tier_breakdown'] ?? $this->tierBreakdown;
+
+        $this->mortgages = $response['mortgages_added'] ?? [];
+
+        $this->applyStreamingMeta($response);
+    }
+
+    /**
+     * Append a delta-streaming response — merges new mortgages into existing
+     * list and updates cursor/streaming state. Used by pollForUpdates().
+     */
+    protected function appendStreamedResponse(array $response): void
     {
         $this->company = $response['company'] ?? $this->company;
         $this->treeMeta = $response['tree_meta'] ?? $this->treeMeta;
         $this->tierBreakdown = $response['tier_breakdown'] ?? $this->tierBreakdown;
 
         $newMortgages = $response['mortgages_added'] ?? [];
-        $this->mortgages = $append
-            ? array_merge($this->mortgages, $newMortgages)
-            : $newMortgages;
+        $this->mortgages = array_merge($this->mortgages, $newMortgages);
 
+        $this->applyStreamingMeta($response);
+    }
+
+    /**
+     * Shared streaming-metadata extraction (cursor, totals, complete-flag)
+     * used by both initial and append paths.
+     */
+    protected function applyStreamingMeta(array $response): void
+    {
         $streamingMeta = $response['streaming'] ?? [];
         $complete = $streamingMeta['complete'] ?? true;
         $this->streaming = ! $complete;
@@ -283,13 +309,20 @@ class CompanyTinglysning extends MetisSection
      */
     public function exportXlsx()
     {
-        $export = new PortfolioTinglysningExport(
-            company: $this->company ?? [],
-            treeMeta: $this->treeMeta ?? [],
-            tierBreakdown: $this->tierBreakdown,
-            mortgages: $this->mortgages,
-            filters: $this->filters(),
-        );
+        try {
+            $export = new PortfolioTinglysningExport(
+                company: $this->company ?? [],
+                treeMeta: $this->treeMeta ?? [],
+                tierBreakdown: $this->tierBreakdown,
+                mortgages: $this->mortgages,
+                filters: $this->filters(),
+            );
+        } catch (\RuntimeException $e) {
+            // phpoffice/phpspreadsheet not installed (suggested dep). Surface
+            // a flash message instead of letting the exception bubble.
+            session()->flash('metis_tinglysning_export_error', $e->getMessage());
+            return null;
+        }
 
         $cvr = $this->company['cvr'] ?? 'export';
         $filename = "tinglysning-{$cvr}-" . now()->format('Y-m-d') . '.xlsx';

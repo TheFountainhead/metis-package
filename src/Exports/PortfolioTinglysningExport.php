@@ -25,6 +25,15 @@ class PortfolioTinglysningExport
         public readonly array $mortgages,
         public readonly array $filters = [],
     ) {
+        // phpoffice/phpspreadsheet is a `suggest` dependency — only required
+        // for the XLSX export feature. Guard at construction so callers get
+        // an actionable error message instead of a fatal class-not-found
+        // when the optional dep is missing.
+        if (! class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+            throw new \RuntimeException(
+                'XLSX export requires phpoffice/phpspreadsheet. Install via: composer require phpoffice/phpspreadsheet'
+            );
+        }
     }
 
     /**

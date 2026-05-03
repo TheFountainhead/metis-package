@@ -1,4 +1,4 @@
-<div @if($streaming) wire:poll.2s="pollForUpdates" @endif>
+<div @if($streaming) wire:poll.5s="pollForUpdates" @endif>
     <flux:card>
         <flux:heading size="lg" class="mb-4">{{ __('Tinglysning') }}</flux:heading>
 
@@ -121,6 +121,12 @@
                     </button>
                 </div>
             </div>
+
+            @if(session()->has('metis_tinglysning_export_error'))
+                <div class="mb-3 px-3 py-2 text-xs rounded border border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-200" role="alert">
+                    {{ session('metis_tinglysning_export_error') }}
+                </div>
+            @endif
 
             {{-- streaming progress --}}
             @if($streaming)
