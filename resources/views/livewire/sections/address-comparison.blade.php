@@ -224,13 +224,52 @@
                     </div>
                     <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
                         {{ __('Kilde:') }} <a href="https://www.ejendomstorvet.dk" target="_blank" rel="noopener" class="hover:underline">ejendomstorvet.dk</a> —
-                        {{ __('median pr. m²/år ud fra :count aktuelle udlejnings-listings i postnummerområdet', ['count' => $rentalEstimate['sample_count'] ?? '?']) }}@if($rentalEstimate['property_type'] ?? null), {{ __('filtreret på type :type', ['type' => $rentalEstimate['property_type']]) }}@endif.
+                        @if($rentalEstimate['weighted'] ?? false)
+                            {{ __('vægtet gennemsnit på tværs af :count enhedstyper', ['count' => count($rentalEstimate['breakdown'] ?? [])]) }}.
+                        @else
+                            {{ __('median pr. m²/år ud fra :count aktuelle udlejnings-listings i postnummerområdet', ['count' => $rentalEstimate['sample_count'] ?? '?']) }}@if($rentalEstimate['property_type'] ?? null), {{ __('filtreret på type :type', ['type' => $rentalEstimate['property_type']]) }}@endif.
+                        @endif
                         @if($isMarketEstimate)
                             <span x-show="factor !== 1.0" x-cloak>
                                 {{ __('Justeret til scenario:') }} <span x-text="factorLabel" class="font-medium"></span>.
                             </span>
                         @endif
                     </div>
+
+                    {{-- Mixed-use breakdown table --}}
+                    @if(! empty($rentalEstimate['breakdown']) && count($rentalEstimate['breakdown']) > 1)
+                        <div class="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                            <div class="text-[11px] font-semibold text-zinc-400 uppercase mb-2">{{ __('Opdeling pr. enhedstype') }}</div>
+                            <table class="w-full text-xs">
+                                <thead>
+                                    <tr class="text-zinc-500">
+                                        <th class="text-left py-1 pr-3 font-medium">{{ __('Type') }}</th>
+                                        <th class="text-right py-1 pr-3 font-medium">{{ __('Areal') }}</th>
+                                        <th class="text-right py-1 pr-3 font-medium">{{ __('Vægt') }}</th>
+                                        <th class="text-right py-1 pr-3 font-medium">{{ __('Kr/m²/år') }}</th>
+                                        <th class="text-right py-1 font-medium">{{ __('Datapunkter') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($rentalEstimate['breakdown'] as $b)
+                                        <tr class="border-t border-zinc-50 dark:border-zinc-800">
+                                            <td class="py-1 pr-3 capitalize">{{ __($b['type']) }}</td>
+                                            <td class="py-1 pr-3 text-right">{{ number_format($b['area'] ?? 0, 0, ',', '.') }} m²</td>
+                                            <td class="py-1 pr-3 text-right text-zinc-500">{{ $b['weight_pct'] ?? '-' }}%</td>
+                                            <td class="py-1 pr-3 text-right">
+                                                @if($b['rent_per_sqm'])
+                                                    <span x-text="fmt({{ $b['rent_per_sqm'] }} * factor)">{{ number_format($b['rent_per_sqm'], 0, ',', '.') }}</span>
+                                                @else
+                                                    <span class="text-zinc-400">{{ __('Ingen data') }}</span>
+                                                @endif
+                                            </td>
+                                            <td class="py-1 text-right text-zinc-400">{{ $b['sample_count'] ?: '0' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
                 @endif
 
                 @if ($profitability)
