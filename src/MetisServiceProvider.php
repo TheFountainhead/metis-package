@@ -100,6 +100,7 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-address-comparison-detail', \TheFountainhead\Metis\Livewire\Sections\AddressComparisonDetail::class);
 
         // Company sections
+        Livewire::component('metis-company-overview', \TheFountainhead\Metis\Livewire\Sections\CompanyOverview::class);
         Livewire::component('metis-company-info', \TheFountainhead\Metis\Livewire\Sections\CompanyInfo::class);
         Livewire::component('metis-company-roles', \TheFountainhead\Metis\Livewire\Sections\CompanyRoles::class);
         Livewire::component('metis-company-structure', \TheFountainhead\Metis\Livewire\Sections\CompanyStructure::class);
