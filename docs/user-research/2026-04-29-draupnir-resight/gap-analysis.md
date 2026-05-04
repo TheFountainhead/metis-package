@@ -207,6 +207,45 @@
 
 ---
 
+### F16: Funding history + valuation (enhjorning.bot-paritet) — ❌ FUTURE
+
+**Trigger:** 4. maj 2026 — Frederik observerede enhjorning.bot's funding-feature for danske tech-virksomheder (Resights ApS-eksempel: 3.445.928 DKK total funding, 2 rounds, valuation chart). Dataen er i CVR's `attributter.KAPITAL` + `EJERANDEL_PROCENT`-historik som vi allerede henter; vi extracter den bare ikke endnu.
+
+**Verificeret feasibility 4. maj:** Resights' egen kapital-historik via direkte ES-query:
+- 2020-07-16: 300.000 DKK (stiftet)
+- 2020-10-23: 365.823 DKK (Round 1: +65.823 nominel)
+- 2025-03-04 / 2025-07-25: små justeringer (warrants / nedsættelse)
+- 4 ejer-shift-events identificerbare via EJERANDEL_PROCENT med datoer
+
+**Værdi-vinkel:** Resights selv har ikke denne feature; enhjorning.bot er gratis beta. Hvis Metis tilføjer det får vi et **bedre alternativ end både Resights og enhjorning.bot** for tech/PE/M&A-segmentet — komplementerer vores nuværende lender/property-fokus uden at kannibalisere.
+
+**3-fase plan:**
+
+1. **Phase 1 — Structural funding history (2-3 dage)**
+   - Backend: parse KAPITAL + EJERANDEL_PROCENT-events → group by date → emit rounds[]
+   - Frontend: ny "Funding History"-sektion på selskabsforsiden (under Regnskaber)
+   - Output: "X rounds + Y dilution"-tabel med per-round ejer-ændringer
+   - **Værdi:** ~50% af enhjorning.bot uden behov for kurs-data; ren strukturel insight allerede bedre end Resights
+
+2. **Phase 2 — Round amounts + valuation (3-5 dage)**
+   - Statstidende-API integration (åben, gratis) for verificerede kurs-data pr. kapitaludvidelse
+   - Eller: vedtægts-PDF parser for kursfeltet
+   - Compute round_amount + cumulative funding + implied post-money valuation
+   - Marker tal som "verificeret" (Statstidende) vs "estimeret" (kurs-derivation)
+
+3. **Phase 3 — Charts (1-2 dage)**
+   - Capital growth-kurve over tid
+   - Ownership stack-chart (hvem ejede hvad-hvornår)
+   - Valuation-curve (efter Phase 2)
+
+**Estimat:** 6-10 dage for fuld paritet med enhjorning.bot. Phase 1 alene ~2-3 dage.
+
+**Prioritet:** Lav — under F1 mortgage-alerts, F2 debt-search-paritet og F6 lignende handler. Aktivér når Frederik vil eksperimentere med tech/PE-segment-positionering eller har Phase 1 som hurtig differentiator-demo til fx Mastercard / fintech-fonde.
+
+**Source:** 4. maj 2026 session med Frederik. ES-query-fund commited som verificeret data-tilgængelighed.
+
+---
+
 ### F11: Køber-profil-analyse (ejerskifte → demografi) — ❌
 
 **Status:** Prototype eksisterede iflg. F (T:446) men ikke produktiseret. B2B-vinkel mod ejendomsmæglere — IKKE prioriteret for Draupnir/kreditor-segment.
