@@ -553,4 +553,13 @@ class RegistryApi
             return ['error' => $e->getMessage(), 'status' => $e->getCode()];
         }
     }
+
+    public function getAlert(int $id): ?array
+    {
+        try {
+            return $this->client()->get("/v1/alerts/{$id}")->throw()->json('data');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
 }
