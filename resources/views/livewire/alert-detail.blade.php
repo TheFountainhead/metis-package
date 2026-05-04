@@ -33,6 +33,17 @@
         }
         return $active ? '✓ ' . __('Aktiv') : '✗ ' . __('Inaktiv');
     };
+
+    $formatDate = function ($iso) {
+        if (! $iso) {
+            return '—';
+        }
+        try {
+            return \Carbon\Carbon::parse($iso)->isoFormat('D. MMM YYYY');
+        } catch (\Throwable $e) {
+            return $iso;
+        }
+    };
 @endphp
 
 <div>
@@ -92,7 +103,7 @@
             // Diff-detection — highlight which fields changed
             $diffFields = [];
             if ($showBefore && $showAfter && $before && $after) {
-                foreach (['principal_amount', 'interest_rate', 'creditor', 'mortgage_type', 'is_active'] as $f) {
+                foreach (['principal_amount', 'interest_rate', 'creditor', 'mortgage_type', 'registration_date', 'maturity_date', 'is_active'] as $f) {
                     if (($before[$f] ?? null) !== ($after[$f] ?? null)) {
                         $diffFields[] = $f;
                     }
@@ -104,6 +115,8 @@
                 'creditor' => __('Kreditor'),
                 'interest_rate' => __('Rente') . ' (%)',
                 'mortgage_type' => __('Type'),
+                'registration_date' => __('Tinglyst dato'),
+                'maturity_date' => __('Udløbsdato'),
                 'is_active' => __('Aktiv'),
             ];
         @endphp
@@ -170,6 +183,8 @@
                                             {{ $formatRate($row[$key] ?? null) }}
                                         @elseif($key === 'is_active')
                                             {{ $formatActive($row[$key] ?? null) }}
+                                        @elseif($key === 'registration_date' || $key === 'maturity_date')
+                                            {{ $formatDate($row[$key] ?? null) }}
                                         @else
                                             {{ $row[$key] ?? '—' }}
                                         @endif
@@ -198,6 +213,8 @@
                                                     {{ $formatRate($before[$key] ?? null) }}
                                                 @elseif($key === 'is_active')
                                                     {{ $formatActive($before[$key] ?? null) }}
+                                                @elseif($key === 'registration_date' || $key === 'maturity_date')
+                                                    {{ $formatDate($before[$key] ?? null) }}
                                                 @else
                                                     {{ $before[$key] ?? '—' }}
                                                 @endif
@@ -224,6 +241,8 @@
                                                     {{ $formatRate($after[$key] ?? null) }}
                                                 @elseif($key === 'is_active')
                                                     {{ $formatActive($after[$key] ?? null) }}
+                                                @elseif($key === 'registration_date' || $key === 'maturity_date')
+                                                    {{ $formatDate($after[$key] ?? null) }}
                                                 @else
                                                     {{ $after[$key] ?? '—' }}
                                                 @endif
@@ -239,7 +258,7 @@
 
             <!-- Metadata footer -->
             <div class="text-xs text-zinc-400 flex items-center gap-3 px-1">
-                <span>{{ __('Registreret') }}: {{ \Carbon\Carbon::parse($alert['created_at'])->format('d. M Y H:i') }}</span>
+                <span title="{{ __('Tidspunkt hvor Metis detekterede ændringen — ikke tinglysningsdatoen') }}">{{ __('Alert-detekteret') }}: {{ \Carbon\Carbon::parse($alert['created_at'])->format('d. M Y H:i') }}</span>
                 <span>·</span>
                 <span>Alert ID: {{ $alert['id'] }}</span>
                 @if(! empty($alert['is_read']))
