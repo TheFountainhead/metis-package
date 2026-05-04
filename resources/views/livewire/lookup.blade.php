@@ -10,6 +10,7 @@
 
     <div class="max-w-7xl space-y-6">
         @if($type === 'cvr')
+            <livewire:metis-company-overview :query="$query" lazy />
             <livewire:metis-company-info :query="$query" lazy />
             <livewire:metis-company-roles :query="$query" lazy />
             <livewire:metis-company-structure :query="$query" lazy />
