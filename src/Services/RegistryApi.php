@@ -347,6 +347,25 @@ class RegistryApi
     }
 
     /**
+     * F6: Fetch comparable sales for a given BFE.
+     */
+    public function fetchSimilarSales(string $bfe, array $opts = []): ?array
+    {
+        try {
+            return $this->client()
+                ->get("/v1/properties/{$bfe}/similar-sales", array_filter([
+                    'radius_km' => $opts['radius_km'] ?? null,
+                    'area_pct' => $opts['area_pct'] ?? null,
+                    'months_back' => $opts['months_back'] ?? null,
+                ]))
+                ->throw()
+                ->json('data');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Aggregated property portfolio joined across all companies where this
      * person is Reelle ejere / EJERREGISTER. Server-side cached 6h per name.
      * Slow on first call (5-15s for ~10 companies), instant after cache.

@@ -31,6 +31,7 @@
             <livewire:metis-address-owners :query="$query" lazy />
             <livewire:metis-address-mortgages :query="$query" lazy />
             <livewire:metis-address-transactions :query="$query" lazy />
+            <livewire:metis-address-similar-trades :query="$query" lazy />
             <livewire:metis-address-comparison :query="$query" lazy />
             <livewire:metis-address-companies :query="$query" lazy />
             <livewire:metis-address-planning :query="$query" lazy />

@@ -181,6 +181,7 @@
                 <livewire:metis-address-owners :query="$query" lazy :key="'ao-'.$query" />
                 <livewire:metis-address-mortgages :query="$query" lazy :key="'am-'.$query" />
                 <livewire:metis-address-transactions :query="$query" lazy :key="'at-'.$query" />
+                <livewire:metis-address-similar-trades :query="$query" lazy :key="'ast-'.$query" />
                 <livewire:metis-address-comparison :query="$query" lazy :key="'ac-'.$query" />
                 <livewire:metis-address-companies :query="$query" lazy :key="'acom-'.$query" />
                 <livewire:metis-address-planning :query="$query" lazy :key="'ap-'.$query" />
