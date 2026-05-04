@@ -204,10 +204,10 @@
                     $watchLabel = $alert['watchlist']['display_label'] ?? $alert['watchlist']['watch_value'] ?? '';
                     $isHigh = ($alert['priority'] ?? 'low') === 'high';
                 @endphp
-                <li class="px-4 py-3 {{ $alert['is_read'] ? 'opacity-60' : '' }}">
+                <li class="px-4 py-3 hover:bg-zinc-50 transition {{ $alert['is_read'] ? 'opacity-60' : '' }}">
                     <div class="flex justify-between items-start gap-4">
-                        <div class="flex-1 min-w-0">
-                            <p class="font-medium">{{ $alert['title'] ?? '' }}</p>
+                        <a href="/alerts/{{ $alert['id'] }}" class="flex-1 min-w-0 block group">
+                            <p class="font-medium group-hover:text-blue-700">{{ $alert['title'] ?? '' }}</p>
                             <p class="text-sm text-zinc-600 mt-1">{{ $alert['description'] ?? '' }}</p>
 
                             <div class="flex items-center gap-2 mt-2 text-xs text-zinc-500">
@@ -217,7 +217,7 @@
                                 <span>{{ __('Via') }}: {{ $watchType === 'company' ? __('Selskab') : __('Ejendom') }} {{ $watchLabel }}</span>
                                 <span>{{ \Carbon\Carbon::parse($alert['created_at'])->diffForHumans() }}</span>
                             </div>
-                        </div>
+                        </a>
 
                         <div class="flex flex-col items-end gap-2 shrink-0">
                             @if(! $alert['is_read'])
@@ -226,12 +226,10 @@
                                     {{ __('Markér læst') }}
                                 </button>
                             @endif
-                            @if(! empty($meta['address']))
-                                <a href="/lookup/address/{{ urlencode($meta['address']) }}"
-                                   class="text-xs text-blue-600 hover:underline">
-                                    {{ __('Se ejendom') }} →
-                                </a>
-                            @endif
+                            <a href="/alerts/{{ $alert['id'] }}"
+                               class="text-xs text-blue-600 hover:underline">
+                                {{ __('Se detaljer') }} →
+                            </a>
                         </div>
                     </div>
                 </li>
