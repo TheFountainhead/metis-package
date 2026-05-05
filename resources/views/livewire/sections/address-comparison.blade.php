@@ -188,20 +188,23 @@
                 @if($isMarketEstimate)
                     <div class="flex items-center gap-2 mb-3">
                         <span class="text-xs text-zinc-500">{{ __('Scenario:') }}</span>
-                        <button type="button" @click="setScenario('conservative', 0.90, '{{ __('Konservativt') }}')"
+                        <button type="button" @click="setScenario('realiseret', 0.90, '{{ __('Skøn realiseret') }}')"
                                 :class="factor === 0.90 ? 'bg-zinc-200 dark:bg-zinc-700 font-medium' : 'bg-transparent'"
-                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                            {{ __('Konservativt') }} <span class="text-zinc-400">−10%</span>
+                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                title="{{ __('Erhvervsleje forhandles ofte ned ~10% fra udbud til realiseret kontrakt') }}">
+                            {{ __('Skøn realiseret') }} <span class="text-zinc-400">−10%</span>
                         </button>
-                        <button type="button" @click="setScenario('market', 1.00, '{{ __('Marked') }}')"
+                        <button type="button" @click="setScenario('udbud', 1.00, '{{ __('Udbudsleje') }}')"
                                 :class="factor === 1.00 ? 'bg-zinc-200 dark:bg-zinc-700 font-medium' : 'bg-transparent'"
-                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                            {{ __('Marked') }}
+                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                title="{{ __('Udbudt leje fra aktuelle scrape-listings — det udlejer beder om før forhandling') }}">
+                            {{ __('Udbudsleje') }}
                         </button>
-                        <button type="button" @click="setScenario('aggressive', 1.05, '{{ __('Aggressivt') }}')"
+                        <button type="button" @click="setScenario('optimistisk', 1.05, '{{ __('Optimistisk') }}')"
                                 :class="factor === 1.05 ? 'bg-zinc-200 dark:bg-zinc-700 font-medium' : 'bg-transparent'"
-                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                            {{ __('Aggressivt') }} <span class="text-zinc-400">+5%</span>
+                                class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                title="{{ __('Hvis udlejer kan forhandle udover udbud — fx ved efterspørgsels-overhæng') }}">
+                            {{ __('Optimistisk') }} <span class="text-zinc-400">+5%</span>
                         </button>
                     </div>
                 @endif
@@ -225,16 +228,47 @@
                     <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
                         {{ __('Kilde:') }} <a href="https://www.ejendomstorvet.dk" target="_blank" rel="noopener" class="hover:underline">ejendomstorvet.dk</a> —
                         @if($rentalEstimate['weighted'] ?? false)
-                            {{ __('vægtet gennemsnit på tværs af :count enhedstyper', ['count' => count($rentalEstimate['breakdown'] ?? [])]) }}.
+                            {{ __('vægtet udbudsleje på tværs af :count enhedstyper', ['count' => count($rentalEstimate['breakdown'] ?? [])]) }}.
                         @else
-                            {{ __('median pr. m²/år ud fra :count aktuelle udlejnings-listings i postnummerområdet', ['count' => $rentalEstimate['sample_count'] ?? '?']) }}@if($rentalEstimate['property_type'] ?? null), {{ __('filtreret på type :type', ['type' => $rentalEstimate['property_type']]) }}@endif.
+                            {{ __('median pr. m²/år fra :count aktuelle udbud i postnummeret', ['count' => $rentalEstimate['sample_count'] ?? '?']) }}@if($rentalEstimate['property_type'] ?? null), {{ __('filtreret på type :type', ['type' => $rentalEstimate['property_type']]) }}@endif.
                         @endif
+                        {{ __('Realiseret leje typisk 10% lavere ved forhandling (gælder primært erhverv).') }}
                         @if($isMarketEstimate)
                             <span x-show="factor !== 1.0" x-cloak>
                                 {{ __('Justeret til scenario:') }} <span x-text="factorLabel" class="font-medium"></span>.
                             </span>
                         @endif
                     </div>
+
+                    {{-- Confidence-badge per dominant property type. Bolig has higher signal
+                         (udbud ≈ realiseret per Christian Øhlers / Dannebrog) than erhverv. --}}
+                    @php
+                        $primaryType = $rentalEstimate['property_type'] ?? null;
+                        $breakdown = $rentalEstimate['breakdown'] ?? [];
+                        $hasMixedSignal = false;
+                        if (! empty($breakdown) && count($breakdown) > 1) {
+                            $types = collect($breakdown)->pluck('type')->unique();
+                            $hasResi = $types->contains('bolig');
+                            $hasComm = $types->reject(fn ($t) => $t === 'bolig')->isNotEmpty();
+                            $hasMixedSignal = $hasResi && $hasComm;
+                        }
+                    @endphp
+                    @if($hasMixedSignal)
+                        <div class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                            <span class="size-1.5 bg-amber-500 rounded-full"></span>
+                            {{ __('Blandet signal') }}: {{ __('bolig + erhverv') }} — {{ __('bolig-delen er høj signal, erhvervs-delen er lavere signal') }}
+                        </div>
+                    @elseif($primaryType === 'bolig')
+                        <div class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            <span class="size-1.5 bg-emerald-500 rounded-full"></span>
+                            {{ __('Høj signal') }}: {{ __('udbud ≈ realiseret på bolig') }}
+                        </div>
+                    @elseif($primaryType)
+                        <div class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] bg-zinc-50 dark:bg-zinc-800/40 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
+                            <span class="size-1.5 bg-zinc-400 rounded-full"></span>
+                            {{ __('Lavere signal') }}: {{ __('erhvervsleje forhandles ofte under udbud') }}
+                        </div>
+                    @endif
 
                     {{-- Mixed-use breakdown table --}}
                     @if(! empty($rentalEstimate['breakdown']) && count($rentalEstimate['breakdown']) > 1)
