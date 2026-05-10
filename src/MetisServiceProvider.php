@@ -127,6 +127,7 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-lookup', \TheFountainhead\Metis\Livewire\Lookup::class);
         Livewire::component('metis-debt-search', \TheFountainhead\Metis\Livewire\DebtSearch::class);
         Livewire::component('metis-follow-button', \TheFountainhead\Metis\Livewire\FollowButton::class);
+        Livewire::component('metis-person-follow-button', \TheFountainhead\Metis\Livewire\PersonFollowButton::class);
         Livewire::component('metis-alerts-inbox', \TheFountainhead\Metis\Livewire\AlertsInbox::class);
     }
 
