@@ -215,3 +215,47 @@ it('nextPage uses next_cursor and pushes current cursor onto history', function 
         isset($r->data()['cursor']) && $r->data()['cursor'] === 'page-2-cursor.signature'
     );
 });
+
+// Rasmus-feedback 2026-05-25: registered_from/registered_to date-range filter.
+
+it('registeredFrom + registeredTo are sent as reg_from + reg_to to backend', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('registeredFrom', '2020-01-01')
+        ->set('registeredTo', '2023-12-31');
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/debt-search')
+        && ($r->data()['registered_from'] ?? null) === '2020-01-01'
+        && ($r->data()['registered_to'] ?? null) === '2023-12-31');
+});
+
+it('strips malformed date-input (partial typing) from API call', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('registeredFrom', '2020-1'); // user mid-typing
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/debt-search')
+        && ! isset($r->data()['registered_from']));
+});
+
+it('mounts with reg_from query-param fires search (URL-bookmarkable filter)', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::withQueryParams(['reg_from' => '2024-01-01'])
+        ->test(DebtSearch::class)
+        ->assertSet('hasSearched', true)
+        ->assertSet('registeredFrom', '2024-01-01');
+});
+
+it('resetFilters clears registeredFrom + registeredTo', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('registeredFrom', '2020-01-01')
+        ->set('registeredTo', '2023-12-31')
+        ->call('resetFilters')
+        ->assertSet('registeredFrom', null)
+        ->assertSet('registeredTo', null);
+});

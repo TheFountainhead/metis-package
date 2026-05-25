@@ -67,13 +67,47 @@
 
                 <div>
                     <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Hovedstol (kr)') }}</label>
-                    <div class="flex gap-2">
-                        <input type="number" min="0" step="100000"
-                               wire:model.live.debounce.500ms="minAmount"
+                    {{-- Rasmus-feedback 2026-05-25: vis tusind-separator mens bruger skriver.
+                         Display-input bærer formateret tekst; hidden number-input synker
+                         raw integer til Livewire (max 16 cifre = ~10 billiarder). --}}
+                    <div class="flex gap-2"
+                         x-data="{
+                             format(v) {
+                                 const digits = String(v ?? '').replace(/\D/g, '');
+                                 if (digits === '') return '';
+                                 return Number(digits).toLocaleString('da-DK');
+                             },
+                             parse(v) {
+                                 const digits = String(v ?? '').replace(/\D/g, '').slice(0, 16);
+                                 return digits === '' ? null : Number(digits);
+                             },
+                         }">
+                        <input type="text" inputmode="numeric"
+                               x-data="{ display: $wire.minAmount === null ? '' : Number($wire.minAmount).toLocaleString('da-DK') }"
+                               x-model="display"
+                               @input="display = format($event.target.value); $wire.minAmount = parse(display)"
                                placeholder="min" class="w-1/2 px-2 py-1 text-sm border rounded">
-                        <input type="number" min="0" step="100000"
-                               wire:model.live.debounce.500ms="maxAmount"
+                        <input type="text" inputmode="numeric"
+                               x-data="{ display: $wire.maxAmount === null ? '' : Number($wire.maxAmount).toLocaleString('da-DK') }"
+                               x-model="display"
+                               @input="display = format($event.target.value); $wire.maxAmount = parse(display)"
                                placeholder="max" class="w-1/2 px-2 py-1 text-sm border rounded">
+                    </div>
+                </div>
+
+                <div>
+                    {{-- Rasmus-feedback 2026-05-25: "meget vigtig" — alder af pant
+                         er proxy for built-up equity og refinansieringsvinduer. --}}
+                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Gæld oprettet (dato)') }}</label>
+                    <div class="flex gap-2">
+                        <input type="date"
+                               wire:model.live.debounce.500ms="registeredFrom"
+                               class="w-1/2 px-2 py-1 text-sm border rounded"
+                               aria-label="{{ __('Fra-dato') }}">
+                        <input type="date"
+                               wire:model.live.debounce.500ms="registeredTo"
+                               class="w-1/2 px-2 py-1 text-sm border rounded"
+                               aria-label="{{ __('Til-dato') }}">
                     </div>
                 </div>
 

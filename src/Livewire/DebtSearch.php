@@ -30,6 +30,8 @@ class DebtSearch extends Component
     public ?string $creditorContains = null;
     public ?int $minAmount = null;
     public ?int $maxAmount = null;
+    public ?string $registeredFrom = null;
+    public ?string $registeredTo = null;
 
     public ?array $response = null;
     public ?string $cursor = null;
@@ -59,6 +61,8 @@ class DebtSearch extends Component
         'creditorContains' => ['as' => 'creditor'],
         'minAmount' => ['as' => 'amount_min'],
         'maxAmount' => ['as' => 'amount_max'],
+        'registeredFrom' => ['as' => 'reg_from'],
+        'registeredTo' => ['as' => 'reg_to'],
     ];
 
     public function mount(): void
@@ -148,6 +152,8 @@ class DebtSearch extends Component
         $this->creditorContains = null;
         $this->minAmount = null;
         $this->maxAmount = null;
+        $this->registeredFrom = null;
+        $this->registeredTo = null;
         $this->cursor = null;
         $this->cursorHistory = [];
         $this->response = null;
@@ -192,6 +198,8 @@ class DebtSearch extends Component
             'creditor_contains' => $this->validCreditorOrNull($this->creditorContains),
             'min_amount' => $this->minAmount,
             'max_amount' => $this->maxAmount,
+            'registered_from' => $this->validDateOrNull($this->registeredFrom),
+            'registered_to' => $this->validDateOrNull($this->registeredTo),
         ], fn ($v) => $v !== null && $v !== '');
 
         if ($this->cursor) {
@@ -222,6 +230,15 @@ class DebtSearch extends Component
         return strlen((string) $value) >= 3 ? $value : null;
     }
 
+    /**
+     * Backend requires Y-m-d format. Strip malformed input client-side so
+     * an in-progress date entry doesn't trigger a 422 round-trip.
+     */
+    private function validDateOrNull(?string $value): ?string
+    {
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $value) ? $value : null;
+    }
+
     private function hasNonDefaultFilters(): bool
     {
         return $this->minRate !== 8.0
@@ -232,6 +249,8 @@ class DebtSearch extends Component
             || $this->postalCodeTo !== null
             || $this->creditorContains !== null
             || $this->minAmount !== null
-            || $this->maxAmount !== null;
+            || $this->maxAmount !== null
+            || $this->registeredFrom !== null
+            || $this->registeredTo !== null;
     }
 }
