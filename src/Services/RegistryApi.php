@@ -516,6 +516,24 @@ class RegistryApi
         }
     }
 
+    /**
+     * F5 disambiguation: search CVR-deltagere by name, return candidates with
+     * enhedsnummer + address + companies+roles for user to pick from.
+     *
+     * @return array{candidates: array, total: int}|array{error: string}
+     */
+    public function disambiguatePerson(string $name, int $limit = 20): array
+    {
+        try {
+            return $this->client()
+                ->get('/v1/cvr/person-disambiguate', ['name' => $name, 'limit' => $limit])
+                ->throw()
+                ->json('data');
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
     public function checkBatch(array $items): array
     {
         try {
