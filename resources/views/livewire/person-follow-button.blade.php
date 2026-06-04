@@ -1,6 +1,8 @@
 <div class="inline-flex flex-col items-end gap-1">
     <button wire:click="openModal"
-            class="px-3 py-1.5 text-sm border rounded bg-white border-zinc-300 hover:bg-zinc-50 transition">
+            wire:loading.attr="disabled"
+            wire:target="openModal"
+            class="px-3 py-1.5 text-sm border rounded bg-white border-zinc-300 hover:bg-zinc-50 transition disabled:opacity-50">
         ☆ {{ __('Følg en specifik person') }}
     </button>
 

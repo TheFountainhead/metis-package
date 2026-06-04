@@ -47,7 +47,13 @@ class PersonFollowButton extends Component
 
         if (empty($this->candidates)) {
             $this->fetchCandidates();
+
+            return;
         }
+
+        // Candidates are cached across open/close, but follow-state may have
+        // changed elsewhere (other tab, AlertsInbox) — re-sync it on reopen.
+        $this->refreshFollowState();
     }
 
     public function closeModal(): void
@@ -83,6 +89,12 @@ class PersonFollowButton extends Component
 
     public function follow(string $enhedsnummer): void
     {
+        // Guard against rapid double-clicks: two requests can race past the
+        // disabled-button window and would create duplicate watchlists.
+        if ($this->followState[$enhedsnummer]['is_followed'] ?? false) {
+            return;
+        }
+
         $candidate = collect($this->candidates)->firstWhere('enhedsnummer', $enhedsnummer);
         if (! $candidate) {
             $this->error = __('Ukendt kandidat.');

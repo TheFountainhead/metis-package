@@ -202,7 +202,7 @@ it('refreshFollowState populates from checkBatch on modal open', function () {
         ->assertSet('followState.4001000002.is_followed', false);
 });
 
-it('does not re-fetch candidates on second openModal call', function () {
+it('does not re-fetch candidates on second openModal call but re-syncs follow-state', function () {
     Http::fake([
         '*person-disambiguate*' => Http::response(fakeDisambiguateResponse([
             candidate('4001000001', 'Peter Nielsen', 'København'),
@@ -215,5 +215,30 @@ it('does not re-fetch candidates on second openModal call', function () {
         ->call('closeModal')
         ->call('openModal');
 
-    Http::assertSentCount(2); // 1× disambiguate + 1× check-batch, NOT re-fetched
+    // 3 = 1× disambiguate (cached) + 2× check-batch (re-synced on reopen).
+    Http::assertSentCount(3);
+    expect(Http::recorded(fn ($request) => str_contains($request->url(), 'person-disambiguate')))
+        ->toHaveCount(1);
+});
+
+it('follow is a no-op when candidate is already followed (double-click guard)', function () {
+    Http::fake([
+        '*person-disambiguate*' => Http::response(fakeDisambiguateResponse([
+            candidate('4001000001', 'Peter Nielsen', 'København'),
+        ])),
+        '*check-batch*' => Http::response(['data' => [
+            ['type' => 'person', 'value' => '4001000001', 'is_followed' => true, 'watchlist_id' => 42],
+        ]]),
+    ]);
+
+    Livewire::test(PersonFollowButton::class, ['name' => 'Peter Nielsen'])
+        ->call('openModal')
+        ->call('follow', '4001000001')
+        ->assertSet('followState.4001000001.is_followed', true)
+        ->assertSet('followState.4001000001.watchlist_id', 42);
+
+    // The second click must NOT create a duplicate watchlist. createWatchlist
+    // posts to /v1/watchlists; check-batch (also POST) must not count.
+    Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/v1/watchlists')
+        && $request->method() === 'POST');
 });
