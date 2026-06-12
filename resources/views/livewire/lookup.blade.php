@@ -36,6 +36,7 @@
             <livewire:metis-address-comparison :query="$query" lazy />
             <livewire:metis-address-companies :query="$query" lazy />
             <livewire:metis-address-planning :query="$query" lazy />
+            <livewire:metis-address-energy :query="$query" lazy />
             <livewire:metis-address-heritage :query="$query" lazy />
         @endif
     </div>

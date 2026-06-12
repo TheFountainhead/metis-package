@@ -185,6 +185,7 @@
                 <livewire:metis-address-comparison :query="$query" lazy :key="'ac-'.$query" />
                 <livewire:metis-address-companies :query="$query" lazy :key="'acom-'.$query" />
                 <livewire:metis-address-planning :query="$query" lazy :key="'ap-'.$query" />
+                <livewire:metis-address-energy :query="$query" lazy :key="'aen-'.$query" />
                 <livewire:metis-address-heritage :query="$query" lazy :key="'ah-'.$query" />
             </div>
             @endif
