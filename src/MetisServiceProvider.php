@@ -89,6 +89,7 @@ class MetisServiceProvider extends ServiceProvider
         // Address sections
         Livewire::component('metis-address-bbr', \TheFountainhead\Metis\Livewire\Sections\AddressBbr::class);
         Livewire::component('metis-address-companies', \TheFountainhead\Metis\Livewire\Sections\AddressCompanies::class);
+        Livewire::component('metis-address-energy', \TheFountainhead\Metis\Livewire\Sections\AddressEnergy::class);
         Livewire::component('metis-address-heritage', \TheFountainhead\Metis\Livewire\Sections\AddressHeritage::class);
         Livewire::component('metis-address-mortgages', \TheFountainhead\Metis\Livewire\Sections\AddressMortgages::class);
         Livewire::component('metis-address-owners', \TheFountainhead\Metis\Livewire\Sections\AddressOwners::class);
