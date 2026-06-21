@@ -5,6 +5,7 @@
         'removed' => __('Pantebrev fjernet'),
         'principal_change' => __('Hovedstol ændret'),
         'creditor_change' => __('Kreditor skiftet'),
+        'rate_change' => __('Rente ændret'),
     ];
 
     $priorityColors = [
@@ -81,22 +82,70 @@
             $meta = is_array($alert['metadata'] ?? null)
                 ? $alert['metadata']
                 : (json_decode($alert['metadata'] ?? '[]', true) ?: []);
-            $changeType = $meta['change_type'] ?? 'new';
+
+            // Two metadata schemas reach this view:
+            //  - Snapshot-path (legacy): `change_type` + `before`/`after` objects (ører).
+            //  - Observer-path (live, DetectMortgageChange::safeMetadata): `change_kind`
+            //    + flat `address`/`creditor`/`principal_amount_kr` (KRONER)/`mortgage_type`/
+            //    `registered_date`, with no before/after objects and no `property_address`.
+            // Normalise the live `change_kind` onto the canonical change_type rendered below.
+            $mortgageType = $meta['mortgage_type'] ?? null;
+            $changeKind = $meta['change_kind'] ?? null;
+            $kindToType = [
+                'new' => in_array($mortgageType, ['udlaeg', 'arrest'], true) ? 'new_lien' : 'new',
+                'amount_changed' => 'principal_change',
+                'rate_changed' => 'rate_change',
+                'paid_off' => 'removed',
+            ];
+            // Unknown future change_kind passes through verbatim (shows the raw kind
+            // as its own label, no synthesised panel) rather than masquerading as a
+            // confident "new mortgage" — fail visibly, never fabricate.
+            $changeType = $meta['change_type']
+                ?? ($changeKind !== null ? ($kindToType[$changeKind] ?? $changeKind) : 'new');
+
             $priority = $meta['priority'] ?? ($alert['priority'] ?? 'low');
             $before = $meta['before'] ?? null;
             $after = $meta['after'] ?? null;
             $bfe = $meta['bfe'] ?? null;
-            $address = $meta['property_address'] ?? null;
+            $address = $meta['property_address'] ?? $meta['address'] ?? null;
+
+            // Observer-path carries no before/after objects — synthesise the current
+            // pantebrev state from the flat fields so the facts panel renders real data
+            // instead of em-dashes. principal_amount_kr is in KRONER; the formatter
+            // expects ører, so scale back up. interest_rate may be absent on older
+            // alerts (added to safeMetadata later) — null-safe. The before→after delta
+            // itself is conveyed by the alert description ("Ny rente: 5% (var 4%).").
+            if ($before === null && $after === null && $changeKind !== null && isset($kindToType[$changeKind])) {
+                $snapshot = [
+                    'principal_amount' => isset($meta['principal_amount_kr']) ? ((int) $meta['principal_amount_kr']) * 100 : null,
+                    'interest_rate' => isset($meta['interest_rate']) ? (float) $meta['interest_rate'] : null,
+                    'creditor' => $meta['creditor'] ?? null,
+                    'mortgage_type' => $mortgageType,
+                    'registration_date' => $meta['registered_date'] ?? null,
+                    'maturity_date' => null,
+                    'is_active' => $changeType !== 'removed',
+                ];
+                if ($changeType === 'removed') {
+                    $before = $snapshot;
+                } else {
+                    $after = $snapshot;
+                }
+            }
+
             $changeLabel = $changeTypeLabels[$changeType] ?? $changeType;
             $priorityClass = $priorityColors[$priority] ?? $priorityColors['low'];
 
-            // Determine which columns to show
+            // Determine which columns to show. A genuine two-column diff needs both
+            // a structured before AND after (snapshot-path); observer-path changes
+            // have only the synthesised current state, so they render single-column.
+            $hasStructuredDiff = $before && $after;
             $showBefore = in_array($changeType, ['removed', 'principal_change', 'creditor_change'], true);
-            $showAfter = in_array($changeType, ['new', 'new_lien', 'principal_change', 'creditor_change'], true);
+            $showAfter = in_array($changeType, ['new', 'new_lien', 'rate_change', 'principal_change', 'creditor_change'], true);
 
             $singleColumnHeading = match (true) {
                 in_array($changeType, ['new', 'new_lien'], true) => __('Ny tilstand'),
                 $changeType === 'removed' => __('Fjernet'),
+                in_array($changeType, ['rate_change', 'principal_change', 'creditor_change'], true) && ! $hasStructuredDiff => __('Nuværende tilstand'),
                 default => null,
             };
 
