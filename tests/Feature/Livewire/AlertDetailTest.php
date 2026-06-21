@@ -262,6 +262,7 @@ function observerAlert(array $overrides = []): array
             'mortgage_type' => 'realkreditpantebrev',
             'change_kind' => 'rate_changed',
             'principal_amount_kr' => 2500000,
+            'interest_rate' => 5.0,
             'creditor' => 'Nordea Kredit',
             'registered_date' => '2026-06-20',
         ],
@@ -280,7 +281,8 @@ it('renders a live rate_changed alert with correct label, address and creditor',
         ->assertDontSee('Ukendt ejendom')   // address lives in metadata.address
         ->assertDontSee('Nyt pantebrev')    // it's a rate change, not a new mortgage
         ->assertSee('Rente ændret')
-        ->assertSee('Nordea Kredit');       // flat metadata.creditor — currently shows "—"
+        ->assertSee('Nordea Kredit')        // flat metadata.creditor
+        ->assertSee('5,00');                // interest_rate now surfaced in facts panel
 });
 
 it('renders a live amount_changed alert with hovedstol and creditor', function () {

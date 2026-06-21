@@ -112,12 +112,13 @@
             // Observer-path carries no before/after objects — synthesise the current
             // pantebrev state from the flat fields so the facts panel renders real data
             // instead of em-dashes. principal_amount_kr is in KRONER; the formatter
-            // expects ører, so scale back up. The before→after delta itself is conveyed
-            // by the alert description ("Ny rente: 5% (var 4%).").
+            // expects ører, so scale back up. interest_rate may be absent on older
+            // alerts (added to safeMetadata later) — null-safe. The before→after delta
+            // itself is conveyed by the alert description ("Ny rente: 5% (var 4%).").
             if ($before === null && $after === null && $changeKind !== null && isset($kindToType[$changeKind])) {
                 $snapshot = [
                     'principal_amount' => isset($meta['principal_amount_kr']) ? ((int) $meta['principal_amount_kr']) * 100 : null,
-                    'interest_rate' => null,
+                    'interest_rate' => isset($meta['interest_rate']) ? (float) $meta['interest_rate'] : null,
                     'creditor' => $meta['creditor'] ?? null,
                     'mortgage_type' => $mortgageType,
                     'registration_date' => $meta['registered_date'] ?? null,
