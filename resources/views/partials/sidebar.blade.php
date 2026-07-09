@@ -104,7 +104,7 @@
                 ✓ {{ __('Personal token aktiv') }}
             </div>
         @endif
-        <p class="px-3 text-[11px]">{{ __('Pilot — interne data') }}</p>
+        <p class="px-3 text-[11px]">{{ __('Åben beta') }} · <a href="https://frankston.io/metis" class="hover:underline">frankston.io</a></p>
     </div>
 </aside>
 
