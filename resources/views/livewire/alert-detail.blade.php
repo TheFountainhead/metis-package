@@ -307,7 +307,7 @@
 
             <!-- Metadata footer -->
             <div class="text-xs text-zinc-400 flex items-center gap-3 px-1">
-                <span title="{{ __('Tidspunkt hvor Metis detekterede ændringen — ikke tinglysningsdatoen') }}">{{ __('Alert-detekteret') }}: {{ \Carbon\Carbon::parse($alert['created_at'])->format('d. M Y H:i') }}</span>
+                <span title="{{ __('Tidspunkt hvor Metis detekterede ændringen, ikke tinglysningsdatoen') }}">{{ __('Alert-detekteret') }}: {{ \Carbon\Carbon::parse($alert['created_at'])->format('d. M Y H:i') }}</span>
                 <span>·</span>
                 <span>Alert ID: {{ $alert['id'] }}</span>
                 @if(! empty($alert['is_read']))

@@ -7,7 +7,7 @@
                     <dt class="text-zinc-500">{{ __('Protected') }}</dt>
                     <dd>
                         @if($heritage['protected'])
-                            <span class="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">{{ __('Yes — Listed building') }}</span>
+                            <span class="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">{{ __('Yes, listed building') }}</span>
                         @else
                             {{ __('No') }}
                         @endif

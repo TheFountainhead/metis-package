@@ -64,7 +64,7 @@
                 </table>
             </div>
             <p class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
-                {{ __('Kilde:') }} {{ __('CVR-registrets kapitalhistorik (KAPITAL + ejerandels-perioder). Beløb er nominel selskabskapital — ikke investeret beløb eller værdiansættelse.') }}
+                {{ __('Kilde:') }} {{ __('CVR-registrets kapitalhistorik (KAPITAL + ejerandels-perioder). Beløb er nominel selskabskapital, ikke investeret beløb eller værdiansættelse.') }}
             </p>
         </flux:card>
     @endif

@@ -115,7 +115,7 @@
                 @endforeach
             </div>
             <p class="text-xs text-zinc-400 mt-3 italic">
-                Implied valuation er estimeret fra kapitalindskud ÷ ny aktieandel. Baseret på offentlige regnskaber — faktiske vilkår kan afvige.
+                Implied valuation er estimeret fra kapitalindskud ÷ ny aktieandel. Baseret på offentlige regnskaber. Faktiske vilkår kan afvige.
             </p>
         </flux:card>
     @endif

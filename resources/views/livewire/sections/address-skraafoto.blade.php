@@ -10,7 +10,7 @@
             </div>
             <div class="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
                 <iframe src="{{ $this->viewerUrl }}"
-                        title="{{ __('Skråfoto') }} — {{ $query }}"
+                        title="{{ __('Skråfoto') }} · {{ $query }}"
                         loading="lazy"
                         referrerpolicy="no-referrer-when-downgrade"
                         class="w-full h-96 border-0"></iframe>
