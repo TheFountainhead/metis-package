@@ -243,8 +243,10 @@ class Search extends Component
             return;
         }
 
-        // Check email gate (lookup 2+) before rate limit — skip when gating disabled (embedded mode)
-        if (config('metis.gating.enabled', true)) {
+        // Check email gate (lookup 2+) before rate limit — skip when gating disabled
+        // (embedded mode) eller når en pilot-token er aktiv (Rasmus-piloten skal
+        // ikke rammes af den offentlige betas gate/kvoter).
+        if (config('metis.gating.enabled', true) && ! session('metis_user_token')) {
             $lookupCount = session('metis_lookup_count', 0);
             $hasVerifiedEmail = session('metis_verified_email');
 
