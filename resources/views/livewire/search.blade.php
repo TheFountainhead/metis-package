@@ -165,6 +165,7 @@
             @if($resultType === 'cvr' && !$result)
             <div class="space-y-6">
                 <livewire:metis-company-info :query="$query" lazy :key="'ci-'.$query" />
+                <livewire:metis-company-funding :query="$query" lazy :key="'cf-'.$query" />
                 <livewire:metis-company-roles :query="$query" lazy :key="'cr-'.$query" />
                 <livewire:metis-company-structure :query="$query" lazy :key="'cs-'.$query" />
                 <livewire:metis-company-properties :query="$query" lazy :key="'cp-'.$query" />

@@ -240,6 +240,18 @@ class RegistryApi
         return $this->post('/v1/cvr/company-structure', ['cvr' => $cvr]) ?? [];
     }
 
+    public function fetchFundingHistory(string $cvr): ?array
+    {
+        try {
+            return $this->client()
+                ->get("/v1/company/{$cvr}/funding-history")
+                ->throw()
+                ->json('data');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     public function fetchCompanyPropertyPortfolio(string $cvr, int $limit = 25, int $offset = 0): ?array
     {
         $cacheKey = "metis:company_property_portfolio:{$cvr}:{$limit}:{$offset}";
