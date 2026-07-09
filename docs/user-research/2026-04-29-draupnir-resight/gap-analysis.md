@@ -244,7 +244,9 @@ CompanyOverview-section med kort + grafer landet i PR #53. Nøglepersoner/roller
 
 ---
 
-### F16: Funding history + valuation (enhjorning.bot-paritet) — ❌ FUTURE
+### F16: Funding history + valuation (enhjorning.bot-paritet) — ✅ Phase 1 LIVE 9/7
+
+**Phase 1 leveret 9. juli 2026** (registry-api PR #152 + metis-package PR #64, prod-verificeret på Resights ApS 41527080): Kapitalhistorik-section på selskabsforsiden med rounds-tabel (Stiftelse/Forhøjelse/Nedsættelse), ændring +%, og samme-dato ejer-ændringer fra EJERREGISTER. Phase 2 (Statstidende-beløb + implied valuation) og Phase 3 (charts) udestår.
 
 **Trigger:** 4. maj 2026 — Frederik observerede enhjorning.bot's funding-feature for danske tech-virksomheder (Resights ApS-eksempel: 3.445.928 DKK total funding, 2 rounds, valuation chart). Dataen er i CVR's `attributter.KAPITAL` + `EJERANDEL_PROCENT`-historik som vi allerede henter; vi extracter den bare ikke endnu.
 
@@ -323,8 +325,8 @@ Resight har dem (Figur 7), men Rasmus bruger dem ikke aktivt. Skip indtil ekspli
 
 **Næste konkrete skridt (juli-prioritet):**
 1. **Pilot-validering med Rasmus** — statusmøde/demo: F1-digests kører, F2 komplet m. CSV, lignende handler + energimærke nye siden sidst. Afklar: mangler han noget før skifte-beslutning + 20-25% rabat-aftalen aktiveres?
-2. **Spor 2 UX-huller:** skråfoto (F6-rest), LTV-indikator m. farver (F10-rest), kilde-badges på lejedata (F8-rest)
-3. **Spor 3 F16 funding-history Phase 1** (2-3 dage) — differentiator over både Resight og enhjorning.bot
+2. ~~Spor 2 UX-huller~~ ✅ LEVERET 9/7: skråfoto (PR #62), LTV-indikator (PR #60), kilde-badges (PR #61) — alle prod-verificeret. Bonus: PR #63 fixede at 'Lignende handler' ALDRIG havde virket i prod (forkert payload-nøgle, Flare 8913035)
+3. ~~Spor 3 F16 funding-history Phase 1~~ ✅ LEVERET 9/7 — Phase 2 (Statstidende) / Phase 3 (charts) udestår
 
 **Open questions tilbage at afklare:**
 1. Backend-rebrand-strategi (alias eller migration?) — `/v1/debt-search` alias findes; resten uafklaret
