@@ -109,6 +109,7 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-company-properties', \TheFountainhead\Metis\Livewire\Sections\CompanyProperties::class);
         Livewire::component('metis-company-tinglysning', \TheFountainhead\Metis\Livewire\Sections\CompanyTinglysning::class);
         Livewire::component('metis-company-tax', \TheFountainhead\Metis\Livewire\Sections\CompanyTax::class);
+        Livewire::component('metis-company-funding', \TheFountainhead\Metis\Livewire\Sections\CompanyFunding::class);
 
         // Person sections
         Livewire::component('metis-person-summary', \TheFountainhead\Metis\Livewire\Sections\PersonSummary::class);

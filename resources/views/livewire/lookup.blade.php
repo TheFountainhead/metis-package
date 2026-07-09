@@ -12,6 +12,7 @@
         @if($type === 'cvr')
             <livewire:metis-company-overview :query="$query" lazy />
             <livewire:metis-company-info :query="$query" lazy />
+            <livewire:metis-company-funding :query="$query" lazy />
             <livewire:metis-company-roles :query="$query" lazy />
             <livewire:metis-company-structure :query="$query" lazy />
             <livewire:metis-company-properties :query="$query" lazy />
