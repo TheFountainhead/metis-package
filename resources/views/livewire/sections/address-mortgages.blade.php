@@ -3,7 +3,20 @@
         <flux:heading size="lg" class="mb-4">{{ __('Mortgages') }}</flux:heading>
         @if(count($mortgages) > 0)
             @if($totalDebt)
-                <p class="text-sm text-zinc-500 mb-3">{{ __('Total debt') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($totalDebt, 0, ',', '.') }} kr.</span></p>
+                <div class="flex flex-wrap items-center gap-2 mb-3">
+                    <p class="text-sm text-zinc-500">{{ __('Total debt') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($totalDebt, 0, ',', '.') }} kr.</span></p>
+                    @if(!is_null($ltv))
+                        @php
+                            $ltvColor = match (true) {
+                                $ltv < 60 => 'green',
+                                $ltv <= 80 => 'yellow',
+                                default => 'red',
+                            };
+                        @endphp
+                        <flux:badge color="{{ $ltvColor }}" size="sm">LTV {{ number_format($ltv, 1, ',', '.') }}%</flux:badge>
+                        <span class="text-xs text-zinc-400">{{ __('vs. public valuation') }}</span>
+                    @endif
+                </div>
             @endif
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
@@ -27,6 +40,7 @@
                     </tbody>
                 </table>
             </div>
+            <p class="text-xs text-zinc-400 mt-3">{{ __('Registered principal is not the same as current outstanding debt.') }}</p>
         @else
             <p class="text-sm text-zinc-500">{{ __('No mortgages found.') }}</p>
         @endif
