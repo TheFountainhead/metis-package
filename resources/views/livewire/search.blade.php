@@ -178,6 +178,7 @@
                 <livewire:metis-map-panel :query="$query" lazy :key="'mp-'.$query" />
                 <livewire:metis-address-bbr :query="$query" lazy :key="'ab-'.$query" />
                 <livewire:metis-address-valuation :query="$query" lazy :key="'av-'.$query" />
+                <livewire:metis-address-skraafoto :query="$query" lazy :key="'ask-'.$query" />
                 <livewire:metis-address-owners :query="$query" lazy :key="'ao-'.$query" />
                 <livewire:metis-address-mortgages :query="$query" lazy :key="'am-'.$query" />
                 <livewire:metis-address-transactions :query="$query" lazy :key="'at-'.$query" />

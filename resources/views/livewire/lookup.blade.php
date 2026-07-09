@@ -29,6 +29,7 @@
             <livewire:metis-map-panel :query="$query" lazy />
             <livewire:metis-address-bbr :query="$query" lazy />
             <livewire:metis-address-valuation :query="$query" lazy />
+            <livewire:metis-address-skraafoto :query="$query" lazy />
             <livewire:metis-address-owners :query="$query" lazy />
             <livewire:metis-address-mortgages :query="$query" lazy />
             <livewire:metis-address-transactions :query="$query" lazy />
