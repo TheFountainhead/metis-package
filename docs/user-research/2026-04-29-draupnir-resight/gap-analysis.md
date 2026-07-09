@@ -1,10 +1,11 @@
 # Gap-analysis: Metis vs. Draupnir-feedback
 
-**Status pr. 4. maj 2026.** Verificeret mod live `metis.frankston.io` + kode i `metis-package/src/` + `registry-api/app/`.
+**Status pr. 9. juli 2026.** Verificeret mod live `metis.frankston.io` + kode i `metis-package/src/` + `registry-api/app/` + **prod-DB read-only inspektion** (Forge command-dispatch).
 
 **Historik:**
 - 1. maj 2026: Initial gap-analyse efter 19 PRs siden Draupnir-mødet 29. apr (se git-history)
 - 4. maj 2026: Opdateret efter ~25 nye PRs der adresserede flere af gap-items direkte
+- 9. juli 2026: Opdateret efter PR #49-58 (AlertDetail diff-view, similar trades, F3 CompanyOverview, F5 modal, F2 filtre, energimærke, observer-path alerts). **Begge P0-blockers verificeret LUKKET i prod.**
 
 **Detaljer:** se `phase-A-findings.md` for `verified-vs-assumed`-tabel og kilde-citationer.
 
@@ -20,7 +21,22 @@
 
 ## P0 — Sticky differentiators (BLOCKERS for Rasmus-skifte)
 
-### F1: Alerts på gælds-ændringer pr. fulgt ejendom — 🟦
+### F1: Alerts på gælds-ændringer pr. fulgt ejendom — ✅ LIVE (prod-verificeret 9/7)
+
+**Prod-verifikation 9. juli 2026 (read-only DB-inspektion):**
+- Arkitektur: event-drevet — `MortgageObserver` dispatcher `DetectMortgageChange` ved hver mortgage-write (real-time, ingen daglig snapshot-diff nødvendig)
+- `mortgage:digest:send` kører dagligt 08:00 UTC → `MortgageDigestMail` pr. bruger
+- **Rasmus (user 2) modtager digests i praksis:** "Nyt ejerpantebrev: Vestergade 58" (29/6, digest 30/6 08:00) og "Nyt udlæg: Høbjergvej 29A+29B" (3/7, digest samme morgen 08:00:04)
+- Udlæg vs. ejerpantebrev differentieres i alert-titler ✓
+- Rasmus har 31 aktive watches (7 property + 24 company) og 37 alerts totalt
+- Nul u-digestede mortgage-alerts (backlog tom); scheduler-liveness bekræftet dags dato
+- AlertDetail med før/nu-diff (PR #49), tinglyst dato + udløbsdato (PR #50), rente i facts-panel + observer-path rendering (PR #58)
+- `new_transaction`-alerts (29 stk) er bevidst in-app-only — ikke i mail-digest
+
+**Tilbageværende (ikke-blokerende):**
+- [ ] `check-batch` endpoint (aldrig bygget — uklart om stadig relevant)
+
+<details><summary>Historisk status pr. 4. maj (🟦)</summary>
 
 **Hvad findes nu:**
 - ✅ FollowButton.php (`metis-package/src/Livewire/FollowButton.php:1-88`)
@@ -47,9 +63,21 @@
 
 **Source:** T:497-518, T:347 (Rasmus' egen "autopilot"-forespørgsel), resumé side 6+11
 
+</details>
+
 ---
 
-### F2: Omvendt søgning på gæld — 🟡
+### F2: Omvendt søgning på gæld — ✅ (kode-verificeret 9/7)
+
+**Alle 4. maj-mangler er lukket:**
+- [✅] Route `/v1/debt-search` (routes/api/v1.php:74) m. quota + throttle
+- [✅] `owner_type` filter (company/person) — backend-valideret
+- [✅] `debt_types` filter (realkredit/ejerpantebrev/privat/udlæg/arrest/skadesløsbrev/indeks/anden)
+- [✅] CSV-eksport: `POST /v1/debt-search/export-link` + `GET /v1/debt-search.csv` + download-dispatch i DebtSearch.php
+- [✅] Gem-søgning/alert-ved-match dækket via watchlist-typerne (postal_code-watch findes i prod)
+- [✅] Dato-filter + Hovedstol-formatering fra Rasmus-feedback (PR #56)
+
+<details><summary>Historisk status pr. 4. maj (🟡)</summary>
 
 **Hvad findes nu:**
 - ✅ DebtSearch.php (`metis-package/src/Livewire/DebtSearch.php`)
@@ -70,11 +98,17 @@
 
 **Source:** T:20, T:254-268, T:347
 
+</details>
+
 ---
 
 ## P1 — Resight-paritet (kvalitets-vinkler)
 
-### F3: Selskabsforside med portefølje-overblik — 🟦
+### F3: Selskabsforside med portefølje-overblik — ✅ (PR #53, 4. maj)
+
+CompanyOverview-section med kort + grafer landet i PR #53. Nøglepersoner/roller fandtes i forvejen (CompanyRoles).
+
+<details><summary>Historisk status pr. 4. maj (🟦)</summary>
 
 **Tjekliste:**
 - [✅] Nøglepersoner/roller-liste (CompanyRoles section)
@@ -86,6 +120,8 @@
 **Estimat:** 3-5 dage. Genbrug `Sections/`-pattern.
 
 **Source:** T:370-378, screenshots 01 + 05 (Figur 2+3 i PDF-resumé)
+
+</details>
 
 ---
 
@@ -102,27 +138,28 @@
 
 ---
 
-### F5: Følg-funktion (selskab + ejendom + person) — 🟡
+### F5: Følg-funktion (selskab + ejendom + person) — ✅ (opdateret 9/7)
 
 **Tjekliste:**
 - [✅] Følg-knap som komponent
 - [✅] Personlig følg-liste på /alerts (men kræver token)
-- [ ] **Person-watch_type på backend** (kræver GDPR-vurdering)
-- [ ] Email-digest (daglig/ugentlig)
-- [ ] Trigger-typer for selskab: `new_filing`, `name_change`, `role_change`
-- [ ] Trigger-types for ejendom: F1 `mortgage_change` (overlap)
-
-**Estimat:** 3-5 dage.
+- [✅] **Person-watch backend bygget** — `person-roles:snapshot` (03:30 UTC), monitoring-diff (04:00), `PersonDigestMail` (08:30) + GDPR-retention: 24-mdr alert-prune (DPIA mitigation R5) og snapshot-prune (daglig 90d / ugentlig 1å / månedlig forever)
+- [✅] PersonFollowButton 2-step disambiguation modal (PR #55)
+- [✅] Email-digest (daglig) — mortgage 08:00 + person 08:30 UTC
+- [✅] Selskabs-watches virker i praksis (Rasmus har 24 aktive company-watches i prod)
+- [✅] Ejendoms-triggers via F1 mortgage-pipeline
+- [ ] Ingen aktive person-watches i prod endnu (0 brugere har taget det i brug — feature findes)
 
 **Source:** T:489-491
 
 ---
 
-### F6: Ejendomsdetalje med "lignende handler" + skråfoto — 🟦 ⚠️ KRITISK MANGLER
+### F6: Ejendomsdetalje med "lignende handler" + skråfoto — 🟡 (lignende handler ✅ 9/7)
 
 **Tjekliste:**
-- [ ] **Tabel med 5-10 lignende handler** (kvm-pris, dato, areal, anvendelses-type) — ikke fundet i src/
-- [ ] **Skråfoto** (Datafordeleren WMS / SDFE) — kræver datakilde-research
+- [✅] **Tabel med lignende handler** — AddressSimilarTrades Livewire-section (PR #52)
+- [✅] Energimærke-sektion (PR #57 — bonus ud over original gap; badge-farver, Expired-badge, ENS PDF-link)
+- [ ] **Skråfoto** (Datafordeleren WMS / SDFE) — kræver datakilde-research → **Spor 2, juli 2026**
 - [ ] Matrikelkort side-om-side med skråfoto
 
 **Datakilder vi kan bruge:**
@@ -272,7 +309,31 @@ Resight har dem (Figur 7), men Rasmus bruger dem ikke aktivt. Skip indtil ekspli
 
 ---
 
-## Sammenfatning pr. 4. maj 2026
+## Sammenfatning pr. 9. juli 2026
+
+**Total status:**
+- P0 done: **2 / 2 fuldt** ✅ (F1 prod-verificeret LIVE, F2 kode-verificeret komplet)
+- P1 done: 4 / 5 fuldt (F3 ✅, F4 ✅, F5 ✅, F7 ✅) + F6 🟡 (kun skråfoto mangler)
+- P2 done: 2 / 4 fuldt (F8 ✅+, F9 ✅+) + F10 ✅+ partial (LTV-indikator mangler)
+- P3: 4 skip ✓
+
+**Alle tre "kritiske blockers" fra 4. maj er lukket.** Rasmus modtager mortgage-digests i praksis og har selv bygget sin watch-portefølje op til 31 aktive watches — det er adfærds-evidens for at sticky-featuren virker.
+
+**Differentiators (bedre end Resight):** gælds-alerts m. daglig mail-digest · omvendt gælds-søgning m. CSV · hierarkisk ejer-visualisering (Reel/Legal) · lejeniveau m. transparent kilde + scenarier · frasolgte ejendomme-afsløring · Grund/Bebygget/Etageareal-distinction · energimærke m. ENS-link.
+
+**Næste konkrete skridt (juli-prioritet):**
+1. **Pilot-validering med Rasmus** — statusmøde/demo: F1-digests kører, F2 komplet m. CSV, lignende handler + energimærke nye siden sidst. Afklar: mangler han noget før skifte-beslutning + 20-25% rabat-aftalen aktiveres?
+2. **Spor 2 UX-huller:** skråfoto (F6-rest), LTV-indikator m. farver (F10-rest), kilde-badges på lejedata (F8-rest)
+3. **Spor 3 F16 funding-history Phase 1** (2-3 dage) — differentiator over både Resight og enhjorning.bot
+
+**Open questions tilbage at afklare:**
+1. Backend-rebrand-strategi (alias eller migration?) — `/v1/debt-search` alias findes; resten uafklaret
+2. F8 lejeniveau-kilde-udvidelse (GLR / kunde-indberetning?)
+3. `check-batch` endpoint — stadig relevant, eller død idé?
+
+---
+
+<details><summary>Historisk sammenfatning pr. 4. maj 2026</summary>
 
 **Total status:**
 - P0 done: 0 / 2 fuldt (begge er 🟦/🟡)
@@ -280,29 +341,11 @@ Resight har dem (Figur 7), men Rasmus bruger dem ikke aktivt. Skip indtil ekspli
 - P2 done: **2 / 4 fuldt** (F8 ✅+, F9 ✅+) + F10 ✅+ partial
 - P3: 4 skip ✓
 
-**Differentiators bygget pr. 4. maj (bedre end Resight):**
-1. ✅+ **Hierarkisk ejer-visualisering** med Reel/Legal ejer-separation, Udfold struktur, EJF/Tinglysning cross-check
-2. ✅+ **Lejeniveau med transparent kilde + scenarier + mixed-use vægtning**
-3. ✅+ **Frasolgte ejendomme afsløring** (EJF lagger Tinglysning, vi viser divergensen)
-4. ✅+ **Grund/Bebygget/Etageareal-distinction** (Resight viser kun ét areal)
-5. ✅ **Omvendt gælds-søgning** (Resight har ikke)
-
 **Kritiske blockers før pilot kan fungere ende-til-ende:**
 1. F1 `mortgage_change` alert-detektor + email — Rasmus' eksplicitte sticky-feature
 2. F2 owner_type + debt_type filtre + CSV-eksport
 3. F6 "Lignende handler"-tabel på ejendomsdetalje (Resight har 376; vi har 0)
 
-**Næste konkrete skridt (sprint-prioritet):**
-1. **F1 mortgage_change ende-til-ende (7-10 dage)** — låser sticky-pilot
-2. **F6 lignende handler (4-6 dage)** — Resight-paritet for Rasmus' favorit-feature
-3. **F2 filter-paritet (3-5 dage)** — kompletter omvendt søgning
-4. **Pilot-validering med Rasmus (1 uge)** efter F1+F2+F6 lander
+**Estimat til "Rasmus klar til skifte":** Best case 3-4 uger; realistisk 5-7 uger.
 
-**Estimat til "Rasmus klar til skifte":**
-- Best case: 3-4 uger (hvis F1+F2+F6 sprint kører rent)
-- Realistisk: 5-7 uger (med pilot-iteration + UX-polering)
-
-**Open questions tilbage at afklare:**
-1. Backend-rebrand-strategi (alias eller migration?)
-2. F5 person-watch GDPR
-3. F8 lejeniveau-kilde-udvidelse (GLR / kunde-indberetning?)
+</details>
