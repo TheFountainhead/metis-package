@@ -210,7 +210,13 @@
                 @endif
 
                 @if($rentalEstimate)
-                    <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Lejeestimat') }}</div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="text-xs font-semibold text-zinc-400 uppercase">{{ __('Lejeestimat') }}</div>
+                        {{-- F8 kilde-badge: estimatet bygger altid på annoncerede udbud (ejendomstorvet.dk) --}}
+                        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] bg-sky-50 dark:bg-sky-900/20 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                            <span class="size-1.5 bg-sky-500 rounded-full"></span>{{ __('Annonce-baseret') }}
+                        </span>
+                    </div>
                     <div class="grid grid-cols-3 gap-3">
                         <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center">
                             <div class="font-bold" x-text="fmt({{ $baseRentPerSqm }} * factor)">{{ number_format($baseRentPerSqm, 0, ',', '.') }}</div>
@@ -308,7 +314,18 @@
 
                 @if ($profitability)
                     <div class="mt-4">
-                        <div class="text-xs font-semibold text-zinc-400 uppercase mb-2">{{ __('Rentabilitet') }}</div>
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="text-xs font-semibold text-zinc-400 uppercase">{{ __('Rentabilitet') }}</div>
+                            @if($rentSource === 'user_input')
+                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    <span class="size-1.5 bg-emerald-500 rounded-full"></span>{{ __('Indberettet leje') }}
+                                </span>
+                            @elseif($rentSource === 'market_estimate')
+                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] bg-sky-50 dark:bg-sky-900/20 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                                    <span class="size-1.5 bg-sky-500 rounded-full"></span>{{ __('Annonce-baseret leje') }}
+                                </span>
+                            @endif
+                        </div>
                         <div class="grid grid-cols-3 gap-3">
                             @if ($profitability['gross_yield'] ?? null)
                                 <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-3 text-center" title="{{ __('Årlig leje / handelspris') }}">

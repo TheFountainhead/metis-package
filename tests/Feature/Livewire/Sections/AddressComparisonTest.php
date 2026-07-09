@@ -111,3 +111,36 @@ it('renders rent grid with correct base value', function () {
     Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12'])
         ->assertSet('rentalEstimate.avg_rent_per_sqm', 1450);
 });
+
+it('shows Annonce-baseret source badges for market estimates (F8)', function () {
+    Http::fake([
+        '*property/analysis*' => Http::response(fakeAnalysisWithRent('kontor')),
+        '*property/compare*' => Http::response(['data' => null]),
+    ]);
+
+    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12'])
+        ->assertSee(__('Annonce-baseret'))
+        ->assertSee(__('Annonce-baseret leje'));
+});
+
+it('shows Indberettet leje badge when rent comes from user input (F8)', function () {
+    Http::fake([
+        '*property/analysis*' => Http::response([
+            'data' => [
+                'property' => [
+                    'rental_estimate' => null,
+                    'profitability' => [
+                        'gross_yield' => 6.1,
+                        'estimated_dscr' => 1.8,
+                        'rent_source' => 'user_input',
+                    ],
+                ],
+            ],
+        ]),
+        '*property/compare*' => Http::response(['data' => null]),
+    ]);
+
+    Livewire::test(AddressComparison::class, ['query' => 'Indberettet 2, 8000 Aarhus'])
+        ->assertSee(__('Indberettet leje'))
+        ->assertDontSee(__('Annonce-baseret'));
+});
