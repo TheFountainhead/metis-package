@@ -28,13 +28,13 @@
                     <span class="text-zinc-500">{{ __('Land area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_area'], 0, ',', '.') }} m²</span></span>
                 @endif
                 @if(($portfolio['total_footprint_area'] ?? 0) > 0)
-                    <span class="text-zinc-500" title="{{ __('Bygningens fodaftryk på grunden — sum af byg041BebyggetAreal') }}">{{ __('Built area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_footprint_area'], 0, ',', '.') }} m²</span></span>
+                    <span class="text-zinc-500" title="{{ __('Bygningens fodaftryk på grunden (byg041BebyggetAreal)') }}">{{ __('Built area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_footprint_area'], 0, ',', '.') }} m²</span></span>
                 @endif
                 @if(($portfolio['total_building_area'] ?? 0) > 0)
-                    <span class="text-zinc-500" title="{{ __('Sum af alle etagers areal — sum af byg038SamletBygningsareal') }}">{{ __('Floor area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_building_area'], 0, ',', '.') }} m²</span></span>
+                    <span class="text-zinc-500" title="{{ __('Sum af alle etagers areal (byg038SamletBygningsareal)') }}">{{ __('Floor area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_building_area'], 0, ',', '.') }} m²</span></span>
                 @endif
                 @if($loadedDebt > 0)
-                    <span class="text-zinc-500" title="{{ __('Sum af tinglyst gæld for de viste ejendomme — yderligere gæld kan være på endnu-ikke-loadede sider') }}">{{ __('Tinglyst gæld') }} ({{ count($portfolio['properties']) }}/{{ $portfolio['total_count'] }}): <span class="font-medium text-red-700 dark:text-red-400">{{ number_format($loadedDebt, 0, ',', '.') }} kr.</span></span>
+                    <span class="text-zinc-500" title="{{ __('Sum af tinglyst gæld for de viste ejendomme, yderligere gæld kan være på endnu-ikke-loadede sider') }}">{{ __('Tinglyst gæld') }} ({{ count($portfolio['properties']) }}/{{ $portfolio['total_count'] }}): <span class="font-medium text-red-700 dark:text-red-400">{{ number_format($loadedDebt, 0, ',', '.') }} kr.</span></span>
                 @endif
             </div>
 
@@ -56,7 +56,7 @@
                             <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Year') }}</th>
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Offentlig ejendomsvurdering (VUR)') }}">{{ __('Off. vurdering') }}</th>
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Seneste handelspris (tinglysning)') }}">{{ __('Seneste handel') }}</th>
-                            <th class="text-right py-2 font-medium text-zinc-500" title="{{ __('Tinglyst gæld i alt — sum af aktive pantebreve') }}">{{ __('Tinglyst gæld') }}</th>
+                            <th class="text-right py-2 font-medium text-zinc-500" title="{{ __('Tinglyst gæld i alt (sum af aktive pantebreve)') }}">{{ __('Tinglyst gæld') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -76,7 +76,7 @@
                                 if ($matrikelnr) {
                                     $matrikelLabel = trim('Matr. nr. ' . $matrikelnr . ($ejerlav ? ', ' . $ejerlav : ''));
                                 } elseif ($ejerlav) {
-                                    $matrikelLabel = __('Unbuilt parcel') . ' — ' . $ejerlav;
+                                    $matrikelLabel = __('Unbuilt parcel') . ' · ' . $ejerlav;
                                 } else {
                                     $matrikelLabel = null;
                                 }
@@ -114,7 +114,7 @@
                                             <div class="text-zinc-500 text-xs" title="{{ __('Bygningens fodaftryk på grunden') }}">{{ number_format($totalFootprint, 0, ',', '.') }} m² {{ __('bebygget') }}</div>
                                         @endif
                                         @if($totalBuildingArea && $totalBuildingArea !== $totalFootprint)
-                                            <div class="text-zinc-400 text-xs" title="{{ __('Etageareal — sum af alle etagers areal') }}">{{ number_format($totalBuildingArea, 0, ',', '.') }} m² {{ __('etageareal') }}</div>
+                                            <div class="text-zinc-400 text-xs" title="{{ __('Etageareal (sum af alle etagers areal)') }}">{{ number_format($totalBuildingArea, 0, ',', '.') }} m² {{ __('etageareal') }}</div>
                                         @endif
                                     @else
                                         -

@@ -19,7 +19,7 @@
     </style>
 </head>
 <body>
-    <h1>Metis — {{ $type === 'address' ? __('Address') : strtoupper($type) }}</h1>
+    <h1>Metis · {{ $type === 'address' ? __('Address') : strtoupper($type) }}</h1>
     <p class="meta">{{ $query }} &middot; {{ now()->format('d-m-Y H:i') }}</p>
 
     @if($type === 'cvr')

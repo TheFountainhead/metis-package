@@ -197,7 +197,7 @@
                                 <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Ejer') }}</th>
                                 <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Type') }}</th>
                                 <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Kreditor') }}</th>
-                                <th class="text-center py-2 pr-4 font-medium text-zinc-500" title="{{ __('Prioritetsnummer fra Tinglysningsretten — lavere = bedre sikkerhedsposition') }}">{{ __('Pri') }}</th>
+                                <th class="text-center py-2 pr-4 font-medium text-zinc-500" title="{{ __('Prioritetsnummer fra Tinglysningsretten, lavere = bedre sikkerhedsposition') }}">{{ __('Pri') }}</th>
                                 <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Hovedstol') }}</th>
                                 <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('LTV') }}</th>
                                 <th class="text-left py-2 font-medium text-zinc-500">{{ __('Tinglyst') }}</th>

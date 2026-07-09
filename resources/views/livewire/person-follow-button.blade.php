@@ -17,7 +17,7 @@
                         <p class="text-sm text-zinc-500 mt-1">
                             {{ __('Søgning på') }} "<span class="font-medium">{{ $name }}</span>"
                             @if(! $loading && count($candidates) > 0)
-                                — {{ count($candidates) }} {{ count($candidates) === 1 ? __('kandidat') : __('kandidater') }}
+                                · {{ count($candidates) }} {{ count($candidates) === 1 ? __('kandidat') : __('kandidater') }}
                             @endif
                         </p>
                     </div>

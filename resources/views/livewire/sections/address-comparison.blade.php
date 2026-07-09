@@ -197,13 +197,13 @@
                         <button type="button" @click="setScenario('udbud', 1.00, '{{ __('Udbudsleje') }}')"
                                 :class="factor === 1.00 ? 'bg-zinc-200 dark:bg-zinc-700 font-medium' : 'bg-transparent'"
                                 class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                                title="{{ __('Udbudt leje fra aktuelle scrape-listings — det udlejer beder om før forhandling') }}">
+                                title="{{ __('Udbudt leje fra aktuelle scrape-listings, det udlejer beder om før forhandling') }}">
                             {{ __('Udbudsleje') }}
                         </button>
                         <button type="button" @click="setScenario('optimistisk', 1.05, '{{ __('Optimistisk') }}')"
                                 :class="factor === 1.05 ? 'bg-zinc-200 dark:bg-zinc-700 font-medium' : 'bg-transparent'"
                                 class="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                                title="{{ __('Hvis udlejer kan forhandle udover udbud — fx ved efterspørgsels-overhæng') }}">
+                                title="{{ __('Hvis udlejer kan forhandle udover udbud, fx ved efterspørgsels-overhæng') }}">
                             {{ __('Optimistisk') }} <span class="text-zinc-400">+5%</span>
                         </button>
                     </div>
@@ -262,7 +262,7 @@
                     @if($hasMixedSignal)
                         <div class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                             <span class="size-1.5 bg-amber-500 rounded-full"></span>
-                            {{ __('Blandet signal') }}: {{ __('bolig + erhverv') }} — {{ __('bolig-delen er høj signal, erhvervs-delen er lavere signal') }}
+                            {{ __('Blandet signal') }}: {{ __('bolig + erhverv') }} · {{ __('bolig-delen er høj signal, erhvervs-delen er lavere signal') }}
                         </div>
                     @elseif($primaryType === 'bolig')
                         <div class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">

@@ -170,7 +170,7 @@
                 <h2 class="text-lg font-semibold mb-2">{{ __('Ingen alerts endnu') }}</h2>
                 <p class="text-sm text-zinc-600 mb-4">
                     {{ __('Du følger') }} <strong>{{ $watchCount }}</strong> {{ __('entiteter, men der er ikke tinglyst ændringer på dem siden du startede.') }}<br>
-                    {{ __('Alerts dukker op automatisk her — typisk indenfor få timer når en pant-ændring sker.') }}
+                    {{ __('Alerts dukker op automatisk her, typisk indenfor få timer når en pant-ændring sker.') }}
                 </p>
             @else
                 <h2 class="text-lg font-semibold mb-2">{{ __('Du følger ikke noget endnu') }}</h2>

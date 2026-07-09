@@ -65,7 +65,7 @@
             @endif
 
             <div class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-3 italic">
-                {{ __('Kilde:') }} {{ __('Tinglysning — handler i samme postnr eller inden for :km km, ±:pct% areal-tolerance, sidste :months mdr.', ['km' => $radiusKm, 'pct' => $areaPct, 'months' => $monthsBack]) }}
+                {{ __('Kilde:') }} {{ __('Tinglysning: handler i samme postnr eller inden for :km km, ±:pct% areal-tolerance, sidste :months mdr.', ['km' => $radiusKm, 'pct' => $areaPct, 'months' => $monthsBack]) }}
             </div>
         @endif
     </flux:card>

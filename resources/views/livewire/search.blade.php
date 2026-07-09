@@ -21,7 +21,7 @@
                     </svg>
                 </div>
                 <h3 class="text-lg font-semibold text-zinc-900 mb-1">Person</h3>
-                <p class="text-sm text-zinc-600">Søg efter person — se roller, ejede selskaber, ejendomme</p>
+                <p class="text-sm text-zinc-600">Søg efter person: roller, ejede selskaber, ejendomme</p>
             </button>
 
             <button wire:click="setSearchMode('company')"
@@ -32,7 +32,7 @@
                     </svg>
                 </div>
                 <h3 class="text-lg font-semibold text-zinc-900 mb-1">Selskab</h3>
-                <p class="text-sm text-zinc-600">Søg efter virksomhed — regnskaber, ejerstruktur, ejendomme</p>
+                <p class="text-sm text-zinc-600">Søg efter virksomhed: regnskaber, ejerstruktur, ejendomme</p>
             </button>
 
             <button wire:click="setSearchMode('address')"
@@ -44,7 +44,7 @@
                     </svg>
                 </div>
                 <h3 class="text-lg font-semibold text-zinc-900 mb-1">Ejendom</h3>
-                <p class="text-sm text-zinc-600">Søg efter adresse — BBR, vurdering, ejere, transaktioner</p>
+                <p class="text-sm text-zinc-600">Søg efter adresse: BBR, vurdering, ejere, transaktioner</p>
             </button>
         </div>
 
