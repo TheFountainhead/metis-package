@@ -3,7 +3,7 @@
             wire:loading.attr="disabled"
             wire:target="openModal"
             class="px-3 py-1.5 text-sm border rounded bg-white border-zinc-300 hover:bg-zinc-50 transition disabled:opacity-50">
-        ☆ {{ __('Følg en specifik person') }}
+        {{ __('Følg en specifik person') }}
     </button>
 
     @if($open)
@@ -86,13 +86,13 @@
                                                 <button wire:click="unfollow('{{ $en }}')"
                                                         wire:loading.attr="disabled"
                                                         class="text-xs px-2.5 py-1 rounded border bg-blue-50 border-blue-300 text-blue-700 hover:bg-red-50 hover:border-red-300 hover:text-red-700">
-                                                    ✓ {{ __('Følger') }}
+                                                    {{ __('Følger') }}
                                                 </button>
                                             @else
                                                 <button wire:click="follow('{{ $en }}')"
                                                         wire:loading.attr="disabled"
                                                         class="text-xs px-2.5 py-1 rounded border bg-white border-zinc-300 hover:bg-zinc-50">
-                                                    ☆ {{ __('Følg') }}
+                                                    {{ __('Følg') }}
                                                 </button>
                                             @endif
                                         </div>

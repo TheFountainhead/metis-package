@@ -154,7 +154,7 @@
 
     @if($error)
         <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-            ⚠️ {{ $error }}
+            {{ $error }}
             <button wire:click="fetch" class="ml-2 text-xs underline">{{ __('Prøv igen') }}</button>
         </div>
     @endif

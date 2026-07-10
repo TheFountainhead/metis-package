@@ -32,7 +32,7 @@
         if ($active === null) {
             return '—';
         }
-        return $active ? '✓ ' . __('Aktiv') : '✗ ' . __('Inaktiv');
+        return $active ? __('Aktiv') : __('Inaktiv');
     };
 
     $formatDate = function ($iso) {
@@ -73,7 +73,7 @@
 
     @if($error)
         <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-            ⚠️ {{ $error }}
+            {{ $error }}
         </div>
     @endif
 

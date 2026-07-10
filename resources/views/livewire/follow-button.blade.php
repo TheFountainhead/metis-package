@@ -9,9 +9,9 @@
                    disabled:opacity-50 disabled:cursor-not-allowed">
         <span wire:loading.remove wire:target="toggle">
             @if($isFollowed)
-                ✓ {{ __('Følger') }}
+                {{ __('Følger') }}
             @else
-                ☆ {{ __('Følg') }}
+                {{ __('Følg') }}
             @endif
         </span>
         <span wire:loading wire:target="toggle">
