@@ -244,9 +244,11 @@ CompanyOverview-section med kort + grafer landet i PR #53. Nøglepersoner/roller
 
 ---
 
-### F16: Funding history + valuation (enhjorning.bot-paritet) — ✅ Phase 1 LIVE 9/7
+### F16: Funding history + valuation (enhjorning.bot-paritet) — ✅ KOMPLET (Phase 1+2+3 LIVE 10/7)
 
-**Phase 1 leveret 9. juli 2026** (registry-api PR #152 + metis-package PR #64, prod-verificeret på Resights ApS 41527080): Kapitalhistorik-section på selskabsforsiden med rounds-tabel (Stiftelse/Forhøjelse/Nedsættelse), ændring +%, og samme-dato ejer-ændringer fra EJERREGISTER. Phase 2 (Statstidende-beløb + implied valuation) og Phase 3 (charts) udestår.
+**Phase 1 leveret 9. juli 2026** (registry-api PR #152 + metis-package PR #64): rounds-tabel m. samme-dato ejer-ændringer.
+
+**Phase 2+3 leveret 10. juli 2026** (registry-api PR #153 + metis-package PR #70/#71): rundebeløb, indbetalingsform og implied post-money valuation parses fra CVR's registreringstekster-indeks (kurs ved kapitalændringer; beløb = nominel x kurs/100, valuation = kapital x kurs/100) + valuation-kurve (Chart.js). Metoden er valideret 1:1 mod enhjorning.bot på ROCCAMORE ApS 36542225: total funding 10.364.489,98 DKK matcher EKSAKT, alle valuation-punkter matcher deres kurve. Statstidende-vejen fra det oprindelige estimat blev UNØDVENDIG — registreringsteksterne ligger i samme ES som CVR-data med samme credentials.
 
 **Trigger:** 4. maj 2026 — Frederik observerede enhjorning.bot's funding-feature for danske tech-virksomheder (Resights ApS-eksempel: 3.445.928 DKK total funding, 2 rounds, valuation chart). Dataen er i CVR's `attributter.KAPITAL` + `EJERANDEL_PROCENT`-historik som vi allerede henter; vi extracter den bare ikke endnu.
 
