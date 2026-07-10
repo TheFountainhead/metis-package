@@ -117,7 +117,7 @@
                             class="flex-1 px-3 py-1.5 text-xs border rounded bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 border-zinc-300 dark:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
                             title="{{ __('Eksportér til XLSX (Oversigt + Tier-breakdown + Pantebreve)') }}">
                         <span wire:loading.remove wire:target="exportXlsx">{{ __('Eksportér XLSX') }}</span>
-                        <span wire:loading wire:target="exportXlsx">{{ __('Eksporterer…') }}</span>
+                        <span wire:loading wire:target="exportXlsx">{{ __('Eksporterer...') }}</span>
                     </button>
                 </div>
             </div>
@@ -367,7 +367,7 @@
                         <div class="border-t border-zinc-200 dark:border-zinc-700 pt-3">
                             <h4 class="text-xs font-semibold text-zinc-700 dark:text-zinc-200 mb-1.5 uppercase tracking-wide">{{ __('Ændringshistorik') }}</h4>
                             @if($changeHistory === null)
-                                <p class="text-xs text-zinc-400">{{ __('Loader…') }}</p>
+                                <p class="text-xs text-zinc-400">{{ __('Loader...') }}</p>
                             @elseif(count($changeHistory) === 0)
                                 <p class="text-xs text-zinc-500">{{ __('Ingen ændringer registreret siden tracking startede.') }}</p>
                             @else
