@@ -128,7 +128,7 @@
             </div>
 
             <div class="px-4 py-3 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800 rounded-lg border dark:border-zinc-700">
-                {{ __('Tinglysning-coverage: ~33% af danske ejendomme. Resultater er ikke udtømmende.') }}
+                {{ __('Dækker over halvdelen af landets ejendomme, og dækningen vokser dagligt. Resultater er ikke udtømmende.') }}
             </div>
         </aside>
 
