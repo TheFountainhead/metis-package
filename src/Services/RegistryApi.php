@@ -256,20 +256,30 @@ class RegistryApi
     {
         $cacheKey = "metis:company_property_portfolio:{$cvr}:{$limit}:{$offset}";
 
-        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($cvr, $limit, $offset) {
-            try {
-                return $this->client()
-                    ->timeout(30)
-                    ->get("/v1/company/{$cvr}/property-portfolio", [
-                        'limit' => $limit,
-                        'offset' => $offset,
-                    ])
-                    ->throw()
-                    ->json('data');
-            } catch (\Throwable $e) {
-                return null;
-            }
-        });
+        if ($cached = Cache::get($cacheKey)) {
+            return $cached;
+        }
+
+        try {
+            $result = $this->client()
+                ->timeout(30)
+                ->get("/v1/company/{$cvr}/property-portfolio", [
+                    'limit' => $limit,
+                    'offset' => $offset,
+                ])
+                ->throw()
+                ->json('data');
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        // Cache kun færdige porteføljer. Fejl og 'building'-svar må ikke
+        // skygge for friske data i 5 min mens backend-jobbet bygger cachen.
+        if (! empty($result['portfolio']['properties'])) {
+            Cache::put($cacheKey, $result, now()->addMinutes(5));
+        }
+
+        return $result;
     }
 
     /**

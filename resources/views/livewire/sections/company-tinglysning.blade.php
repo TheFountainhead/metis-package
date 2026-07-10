@@ -342,7 +342,13 @@
                         @if(($drawer['address'] ?? null) || ($drawer['bfe'] ?? null))
                             <div class="border-t border-zinc-200 dark:border-zinc-700 pt-3">
                                 <h4 class="text-xs font-semibold text-zinc-700 dark:text-zinc-200 mb-1.5 uppercase tracking-wide">{{ __('Ejendom') }}</h4>
-                                <p class="text-sm">{{ $drawer['address'] ?? '-' }}</p>
+                                <p class="text-sm">
+                                    @if($drawer['address'] ?? null)
+                                        <x-metis-link type="address" :query="$drawer['address']" />
+                                    @else
+                                        -
+                                    @endif
+                                </p>
                                 @if($drawer['bfe'] ?? null)
                                     <p class="text-xs text-zinc-500">BFE: {{ $drawer['bfe'] }}</p>
                                 @endif
@@ -352,7 +358,7 @@
                         @if($drawer['owner_company']['cvr'] ?? null)
                             <div class="border-t border-zinc-200 dark:border-zinc-700 pt-3">
                                 <h4 class="text-xs font-semibold text-zinc-700 dark:text-zinc-200 mb-1.5 uppercase tracking-wide">{{ __('Ejer-selskab') }}</h4>
-                                <x-metis-link type="company" :query="$drawer['owner_company']['cvr']">
+                                <x-metis-link type="cvr" :query="$drawer['owner_company']['cvr']">
                                     {{ $drawer['owner_company']['name'] ?? $drawer['owner_company']['cvr'] }}
                                 </x-metis-link>
                             </div>

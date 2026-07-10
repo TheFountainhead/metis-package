@@ -8,6 +8,7 @@ class CompanyProperties extends MetisSection
 {
     public ?array $portfolio = null;
     public bool $enriching = false;
+    public bool $building = false;
     public int $propertiesFound = 0;
 
     protected function sectionTitle(): string
@@ -23,12 +24,25 @@ class CompanyProperties extends MetisSection
         $result = rescue(fn () => app(RegistryApi::class)
             ->fetchCompanyPropertyPortfolio($query, limit: 15));
         $this->portfolio = $result['portfolio'] ?? null;
+        $this->building = (bool) data_get($result, 'portfolio.building', false);
 
         // Check if enrichment is running
         $status = rescue(fn () => app(RegistryApi::class)
             ->getEnrichmentStatus($query));
         $this->enriching = in_array($status['status'] ?? '', ['pending', 'running']);
         $this->propertiesFound = $status['properties_found'] ?? 0;
+    }
+
+    public function pollPortfolio(): void
+    {
+        $result = rescue(fn () => app(RegistryApi::class)
+            ->fetchCompanyPropertyPortfolio($this->query, limit: 15));
+        $portfolio = $result['portfolio'] ?? null;
+
+        if ($portfolio && empty($portfolio['building'])) {
+            $this->portfolio = $portfolio;
+            $this->building = false;
+        }
     }
 
     public function pollForUpdates(): void
