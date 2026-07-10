@@ -9,8 +9,10 @@
                             <div>
                                 @if(($owner['type'] ?? '') === 'company' && isset($owner['identifier']))
                                     <x-metis-link type="cvr" :query="$owner['identifier']" :label="$owner['name'] ?? $owner['identifier']" />
-                                @elseif($owner['name'] ?? null)
+                                @elseif(($owner['name'] ?? null) && ! str_contains(mb_strtolower($owner['name']), 'beskyttelse'))
                                     <x-metis-link type="person" :query="$owner['name']" class="font-medium" />
+                                @elseif($owner['name'] ?? null)
+                                    <span class="font-medium">{{ $owner['name'] }}</span>
                                 @else
                                     <span class="font-medium">-</span>
                                 @endif
