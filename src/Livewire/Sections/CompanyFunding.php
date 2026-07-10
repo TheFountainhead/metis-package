@@ -8,6 +8,7 @@ class CompanyFunding extends MetisSection
 {
     public array $rounds = [];
     public array $summary = [];
+    public array $valuationSeries = [];
     public string $currency = 'DKK';
 
     protected function sectionTitle(): string
@@ -31,6 +32,7 @@ class CompanyFunding extends MetisSection
 
         $this->rounds = $history['rounds'] ?? [];
         $this->summary = $history['summary'] ?? [];
+        $this->valuationSeries = $history['valuation_series'] ?? [];
         $this->currency = $history['currency'] ?? 'DKK';
     }
 
