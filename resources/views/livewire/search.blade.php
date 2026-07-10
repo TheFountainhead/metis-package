@@ -5,8 +5,7 @@
     {{-- Type-selection: when no mode chosen and no result --}}
     @if(! $hasResult && $searchMode === '')
     <div class="flex flex-col items-center justify-center min-h-[60vh] px-4">
-        <div class="mb-10 flex items-center justify-center gap-3">
-            <img src="/images/metis-logo.png" alt="Metis" class="w-10 h-10 md:w-12 md:h-12 -mt-1">
+        <div class="mb-10 flex items-center justify-center">
             <p class="text-3xl md:text-[40px] font-serif text-ink-800 font-normal tracking-tight">
                 Hvad vil du søge på?
             </p>
@@ -53,12 +52,12 @@
             <div class="flex flex-wrap justify-center gap-2">
                 <a href="{{ Route::has('metis.debt-search') ? route('metis.debt-search') : '/soeg' }}"
                    class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
-                    💰 Søg gæld
+                    Søg gæld
                 </a>
                 @if(! empty(session('metis_user_token')))
                     <a href="{{ Route::has('metis.alerts') ? route('metis.alerts') : '/alerts' }}"
                        class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
-                        🔔 Mine alerts
+                        Mine alerts
                     </a>
                 @endif
             </div>

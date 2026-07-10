@@ -128,7 +128,7 @@
             </div>
 
             <div class="px-4 py-3 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800 rounded-lg border dark:border-zinc-700">
-                ℹ️ {{ __('Tinglysning-coverage: ~33% af danske ejendomme. Resultater er ikke udtømmende.') }}
+                {{ __('Tinglysning-coverage: ~33% af danske ejendomme. Resultater er ikke udtømmende.') }}
             </div>
         </aside>
 
@@ -154,14 +154,14 @@
 
             @if($error)
                 <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">
-                    ⚠️ {{ $error }}
+                    {{ $error }}
                     <button wire:click="search" class="ml-2 text-xs underline">{{ __('Prøv igen') }}</button>
                 </div>
             @endif
 
             @if($quotaExceeded)
                 <div class="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-300">
-                    ⏱️ {{ __('Du har nået dagens søgekvote. Tilbagestilles ved midnat.') }}
+                    {{ __('Du har nået dagens søgekvote. Tilbagestilles ved midnat.') }}
                 </div>
             @endif
 

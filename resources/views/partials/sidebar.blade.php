@@ -101,7 +101,7 @@
     <div class="px-3 py-3 border-t border-zinc-200 text-xs text-zinc-400 space-y-1">
         @if($hasUserToken)
             <div class="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-blue-700">
-                ✓ {{ __('Personal token aktiv') }}
+                {{ __('Personal token aktiv') }}
             </div>
         @endif
         <p class="px-3 text-[11px]">{{ __('Åben beta') }} · <a href="https://frankston.io/metis" class="hover:underline">frankston.io</a></p>
