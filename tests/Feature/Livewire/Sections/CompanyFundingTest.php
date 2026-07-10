@@ -56,7 +56,8 @@ it('renders the funding rounds table with event badges', function () {
         ->assertSee(__('Nedsættelse'))
         ->assertSee('365.290 DKK')
         ->assertSee('+65.823')
-        ->assertSee('Stifter Stiftersen → 100%')
+        ->assertSee('Stifter Stiftersen')
+        ->assertSeeHtml('lookup/person/Stifter%20Stiftersen')
         ->assertSee('1 kapitaludvidelse');
 });
 

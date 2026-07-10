@@ -91,7 +91,14 @@
                                 </td>
                                 <td class="py-2 text-xs text-zinc-500 align-top">
                                     @forelse($round['owner_changes'] ?? [] as $oc)
-                                        <div>{{ $oc['owner'] }} → {{ number_format($oc['share_pct'], $oc['share_pct'] == (int) $oc['share_pct'] ? 0 : 2, ',', '.') }}%</div>
+                                        <div>
+                                            @if($oc['cvr'] ?? null)
+                                                <x-metis-link type="cvr" :query="$oc['cvr']" :label="$oc['owner']" />
+                                            @else
+                                                <x-metis-link type="person" :query="$oc['owner']" />
+                                            @endif
+                                            → {{ number_format($oc['share_pct'], $oc['share_pct'] == (int) $oc['share_pct'] ? 0 : 2, ',', '.') }}%
+                                        </div>
                                     @empty
                                         -
                                     @endforelse
