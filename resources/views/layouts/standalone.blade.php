@@ -42,7 +42,7 @@
                 </div>
 
                 @if(config('metis.admin.enabled'))
-                    <a href="/admin" class="text-text-muted hover:text-text-primary text-xs transition-colors">Admin</a>
+                    @if(session('metis_admin_authenticated'))<a href="/admin" class="text-text-muted hover:text-text-primary text-xs transition-colors">Admin</a>@endif
                 @endif
             </header>
 

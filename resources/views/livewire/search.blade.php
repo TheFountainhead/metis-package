@@ -70,9 +70,9 @@
     @if(! $hasResult && $searchMode !== '')
     @php
         $modeConfig = [
-            'person' => ['label' => 'person', 'placeholder' => 'Indtast personnavn…', 'color' => 'blue'],
-            'company' => ['label' => 'selskab', 'placeholder' => 'Indtast selskabsnavn eller CVR…', 'color' => 'purple'],
-            'address' => ['label' => 'adresse', 'placeholder' => 'Indtast adresse, fx Esrumvej 151, 3000…', 'color' => 'green'],
+            'person' => ['label' => 'person', 'placeholder' => 'Indtast personnavn...', 'color' => 'blue'],
+            'company' => ['label' => 'selskab', 'placeholder' => 'Indtast selskabsnavn eller CVR...', 'color' => 'purple'],
+            'address' => ['label' => 'adresse', 'placeholder' => 'Indtast adresse, fx Esrumvej 151, 3000...', 'color' => 'green'],
         ][$searchMode];
     @endphp
     <div class="flex flex-col items-center justify-center min-h-[60vh] px-4">

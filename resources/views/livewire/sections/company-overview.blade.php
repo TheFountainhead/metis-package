@@ -46,14 +46,8 @@
             @if(count($mapPins) > 0)
                 <div class="lg:col-span-2 bg-white rounded-xl border border-zinc-200 p-4">
                     <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">{{ __('Property map') }}</div>
-                    <div
-                        x-data='companyOverviewMap(@json($mapPins))'
-                        x-init="init()"
-                        wire:ignore
-                        class="w-full rounded-lg overflow-hidden"
-                        style="height: 300px;"
-                    >
-                        <div x-ref="map" class="w-full h-full"></div>
+                    <div wire:ignore class="w-full rounded-lg overflow-hidden" style="height: 300px;">
+                        <div data-overview-map class="w-full h-full"></div>
                     </div>
                 </div>
             @endif
@@ -62,13 +56,8 @@
             @if(count($usageDistribution) > 0)
                 <div class="bg-white rounded-xl border border-zinc-200 p-4">
                     <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">{{ __('Property type') }}</div>
-                    <div
-                        x-data='companyOverviewPie(@json($usageDistribution))'
-                        x-init="init()"
-                        wire:ignore
-                        style="height: 280px;"
-                    >
-                        <canvas x-ref="canvas"></canvas>
+                    <div wire:ignore style="height: 280px;">
+                        <canvas data-overview-pie></canvas>
                     </div>
                 </div>
             @endif
@@ -78,13 +67,8 @@
         @if(count($financialHistory) > 0)
             <div class="bg-white rounded-xl border border-zinc-200 p-4">
                 <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">{{ __('Financial history (3 years)') }}</div>
-                <div
-                    x-data='companyOverviewFinancials(@json($financialHistory))'
-                    x-init="init()"
-                    wire:ignore
-                    style="height: 260px;"
-                >
-                    <canvas x-ref="canvas"></canvas>
+                <div wire:ignore style="height: 260px;">
+                    <canvas data-overview-fin></canvas>
                 </div>
             </div>
         @endif
@@ -105,106 +89,92 @@
         </div>
     @endif
 
-    @once
-        @push('scripts')
-            <script>
-                // Lazy-load Leaflet + Chart.js once via CDN. Idempotent — checks window globals first.
-                window.metisLoadLeaflet = window.metisLoadLeaflet || (async () => {
-                    if (window.L) return window.L;
-                    await new Promise((resolve, reject) => {
-                        const css = document.createElement('link');
-                        css.rel = 'stylesheet';
-                        css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-                        document.head.appendChild(css);
-                        const s = document.createElement('script');
-                        s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-                        s.onload = resolve;
-                        s.onerror = reject;
-                        document.head.appendChild(s);
-                    });
-                    return window.L;
+    {{-- @push når ikke layoutets stack fra lazy sections — @script kører ved init --}}
+    @script
+    <script>
+        (async () => {
+            window.metisLoadLeaflet = window.metisLoadLeaflet || (async () => {
+                if (window.L) return window.L;
+                await new Promise((resolve, reject) => {
+                    const css = document.createElement('link');
+                    css.rel = 'stylesheet';
+                    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+                    document.head.appendChild(css);
+                    const s = document.createElement('script');
+                    s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
                 });
+                return window.L;
+            });
 
-                window.metisLoadChartjs = window.metisLoadChartjs || (async () => {
-                    if (window.Chart) return window.Chart;
-                    await new Promise((resolve, reject) => {
-                        const s = document.createElement('script');
-                        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
-                        s.onload = resolve;
-                        s.onerror = reject;
-                        document.head.appendChild(s);
-                    });
-                    return window.Chart;
+            window.metisLoadChartjs = window.metisLoadChartjs || (async () => {
+                if (window.Chart) return window.Chart;
+                await new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
                 });
+                return window.Chart;
+            });
 
-                document.addEventListener('alpine:init', () => {
-                    Alpine.data('companyOverviewMap', (pins) => ({
-                        pins,
-                        async init() {
-                            const L = await window.metisLoadLeaflet();
-                            if (!this.pins.length) return;
-                            const map = L.map(this.$refs.map, { scrollWheelZoom: false });
-                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                                attribution: '© OpenStreetMap',
-                                maxZoom: 18,
-                            }).addTo(map);
-                            const markers = this.pins.map(p =>
-                                L.marker([p.lat, p.lng]).bindPopup(p.address).addTo(map)
-                            );
-                            const group = L.featureGroup(markers);
-                            map.fitBounds(group.getBounds().pad(0.2));
-                        },
-                    }));
+            const root = $wire.$el;
+            const palette = ['#7a1f1f', '#0a5c4a', '#c8553d', '#b8a884', '#6b6457', '#1a1a1a'];
 
-                    Alpine.data('companyOverviewPie', (distribution) => ({
-                        distribution,
-                        async init() {
-                            const Chart = await window.metisLoadChartjs();
-                            const labels = Object.keys(this.distribution);
-                            const data = Object.values(this.distribution);
-                            const palette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b'];
-                            new Chart(this.$refs.canvas, {
-                                type: 'doughnut',
-                                data: {
-                                    labels,
-                                    datasets: [{ data, backgroundColor: palette.slice(0, labels.length) }],
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
-                                },
-                            });
-                        },
-                    }));
+            const mapEl = root.querySelector('[data-overview-map]');
+            const pins = $wire.mapPins ?? [];
+            if (mapEl && pins.length) {
+                const L = await window.metisLoadLeaflet();
+                const map = L.map(mapEl, { scrollWheelZoom: false });
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap',
+                    maxZoom: 18,
+                }).addTo(map);
+                const markers = pins.map(p => L.marker([p.lat, p.lng]).bindPopup(p.address).addTo(map));
+                map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2));
+            }
 
-                    Alpine.data('companyOverviewFinancials', (history) => ({
-                        history,
-                        async init() {
-                            const Chart = await window.metisLoadChartjs();
-                            const labels = this.history.map(h => h.year);
-                            const equity = this.history.map(h => (h.equity ?? 0) / 1_000_000);
-                            const assets = this.history.map(h => (h.assets ?? 0) / 1_000_000);
-                            new Chart(this.$refs.canvas, {
-                                type: 'bar',
-                                data: {
-                                    labels,
-                                    datasets: [
-                                        { label: 'Egenkapital (mio. kr)', data: equity, backgroundColor: '#3b82f6' },
-                                        { label: 'Aktiver (mio. kr)', data: assets, backgroundColor: '#10b981' },
-                                    ],
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
-                                    scales: { y: { beginAtZero: true, ticks: { font: { size: 11 } } } },
-                                },
-                            });
-                        },
-                    }));
+            const pieEl = root.querySelector('[data-overview-pie]');
+            const distribution = $wire.usageDistribution ?? {};
+            if (pieEl && Object.keys(distribution).length) {
+                const Chart = await window.metisLoadChartjs();
+                const labels = Object.keys(distribution);
+                new Chart(pieEl, {
+                    type: 'doughnut',
+                    data: { labels, datasets: [{ data: Object.values(distribution), backgroundColor: labels.map((_, i) => palette[i % palette.length]) }] },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+                    },
                 });
-            </script>
-        @endpush
-    @endonce
+            }
+
+            const finEl = root.querySelector('[data-overview-fin]');
+            const history = $wire.financialHistory ?? [];
+            if (finEl && history.length) {
+                const Chart = await window.metisLoadChartjs();
+                new Chart(finEl, {
+                    type: 'bar',
+                    data: {
+                        labels: history.map(h => h.year),
+                        datasets: [
+                            { label: 'Egenkapital (mio. kr)', data: history.map(h => (h.equity ?? 0) / 1_000_000), backgroundColor: '#7a1f1f' },
+                            { label: 'Aktiver (mio. kr)', data: history.map(h => (h.assets ?? 0) / 1_000_000), backgroundColor: '#0a5c4a' },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+                        scales: { y: { beginAtZero: true, ticks: { font: { size: 11 } } } },
+                    },
+                });
+            }
+        })();
+    </script>
+    @endscript
 </div>
