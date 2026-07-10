@@ -7,6 +7,9 @@ return [
         'enabled' => env('METIS_GATING', true),
         'free_lookups' => 1,
         'require_business_email' => true,
+        // "email:token,email:token" — når en pilot-email verificeres i gaten,
+        // hæftes deres registry-api-token på sessionen (alerts + kvote-fritagelse)
+        'pilot_users' => env('METIS_PILOT_USERS', ''),
         'free_email_domains' => [
             'gmail.com', 'googlemail.com', 'hotmail.com', 'yahoo.com',
             'yahoo.dk', 'outlook.com', 'outlook.dk', 'icloud.com',

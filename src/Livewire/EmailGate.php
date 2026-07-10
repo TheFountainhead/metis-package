@@ -216,8 +216,25 @@ class EmailGate extends Component
 
         cookie()->queue('metis_email', $this->email, 60 * 24 * 30);
         session(['metis_verified_email' => $this->email]);
+
+        if ($token = $this->pilotToken($this->email)) {
+            session(['metis_user_token' => $token]);
+        }
+
         $this->dispatch('email-verified', email: $this->email);
         $this->show = false;
+    }
+
+    protected function pilotToken(string $email): ?string
+    {
+        foreach (explode(',', (string) config('metis.gating.pilot_users', '')) as $pair) {
+            [$pilotEmail, $token] = array_pad(explode(':', trim($pair), 2), 2, null);
+            if ($token && strcasecmp((string) $pilotEmail, $email) === 0) {
+                return $token;
+            }
+        }
+
+        return null;
     }
 
     public function resendCode(): void
