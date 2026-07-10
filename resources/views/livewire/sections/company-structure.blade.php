@@ -261,7 +261,7 @@
         padding-top: 0.5rem;
         border-top: 1px solid rgb(228 228 231);
         font-size: 0.6875rem;
-        color: rgb(37 99 235);
+        color: var(--color-claret, rgb(37 99 235));
         text-decoration: none;
     }
 
@@ -292,7 +292,7 @@
     }
 
     .metis-org-chart .org-expand-toggle:hover {
-        color: rgb(37 99 235);
+        color: var(--color-claret, rgb(37 99 235));
     }
 
     .dark .metis-org-chart .org-expand-toggle:hover {
