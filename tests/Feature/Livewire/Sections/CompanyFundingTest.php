@@ -90,5 +90,5 @@ it('renders Phase 2 amounts, valuations, payment types and chart island', functi
         ->assertSee(__('Implied valuation'))
         ->assertSee('19.452.000 DKK')
         ->assertSee(__('Seneste implied valuation'))
-        ->assertSeeHtml('metisFundingChart');
+        ->assertSeeHtml('data-metis-funding-chart');
 });
