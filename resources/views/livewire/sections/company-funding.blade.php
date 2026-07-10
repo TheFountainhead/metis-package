@@ -135,6 +135,7 @@
                     const canvas = $wire.$el.querySelector('[data-metis-funding-chart]');
                     const series = $wire.valuationSeries;
                     if (!canvas || !series?.length) return;
+                    Chart.getChart(canvas)?.destroy();
                     const fmt = (v) => new Intl.NumberFormat('da-DK', { maximumFractionDigits: 1 }).format(v / 1_000_000) + ' mio.';
                     new Chart(canvas, {
                         type: 'line',
