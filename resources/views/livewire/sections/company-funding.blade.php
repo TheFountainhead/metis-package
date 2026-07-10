@@ -27,8 +27,8 @@
             </div>
 
             @if(count($valuationSeries) >= 2)
-                <div class="mb-4 rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 h-56" x-data="metisFundingChart(@js($valuationSeries))" wire:ignore>
-                    <canvas x-ref="canvas"></canvas>
+                <div class="mb-4 rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 h-56" wire:ignore>
+                    <canvas data-metis-funding-chart></canvas>
                 </div>
             @endif
 
@@ -107,9 +107,11 @@
         </flux:card>
 
         @if(count($valuationSeries) >= 2)
-            @push('scripts')
-                <script>
-                    // Idempotent Chart.js-loader — deles med CompanyOverview når begge er på siden.
+            {{-- @push('scripts') virker IKKE fra lazy sections (XHR-render efter
+                 layoutet er sendt) — @script kører ved Livewire component-init. --}}
+            @script
+            <script>
+                (async () => {
                     window.metisLoadChartjs = window.metisLoadChartjs || (async () => {
                         if (window.Chart) return window.Chart;
                         await new Promise((resolve, reject) => {
@@ -122,44 +124,41 @@
                         return window.Chart;
                     });
 
-                    document.addEventListener('alpine:init', () => {
-                        Alpine.data('metisFundingChart', (series) => ({
-                            series,
-                            async init() {
-                                const Chart = await window.metisLoadChartjs();
-                                const fmt = (v) => new Intl.NumberFormat('da-DK', { maximumFractionDigits: 1 }).format(v / 1_000_000) + ' mio.';
-                                new Chart(this.$refs.canvas, {
-                                    type: 'line',
-                                    data: {
-                                        labels: this.series.map(p => p.date),
-                                        datasets: [{
-                                            label: 'Implied valuation',
-                                            data: this.series.map(p => p.valuation),
-                                            borderColor: '#7a1f1f',
-                                            backgroundColor: 'rgba(122, 31, 31, 0.08)',
-                                            fill: true,
-                                            tension: 0.15,
-                                            pointRadius: 4,
-                                            pointBackgroundColor: '#7a1f1f',
-                                        }],
-                                    },
-                                    options: {
-                                        responsive: true,
-                                        maintainAspectRatio: false,
-                                        plugins: {
-                                            legend: { display: false },
-                                            tooltip: { callbacks: { label: (ctx) => fmt(ctx.parsed.y) + ' DKK' } },
-                                        },
-                                        scales: {
-                                            y: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } },
-                                        },
-                                    },
-                                });
+                    const Chart = await window.metisLoadChartjs();
+                    const canvas = $wire.$el.querySelector('[data-metis-funding-chart]');
+                    const series = $wire.valuationSeries;
+                    if (!canvas || !series?.length) return;
+                    const fmt = (v) => new Intl.NumberFormat('da-DK', { maximumFractionDigits: 1 }).format(v / 1_000_000) + ' mio.';
+                    new Chart(canvas, {
+                        type: 'line',
+                        data: {
+                            labels: series.map(p => p.date),
+                            datasets: [{
+                                label: 'Implied valuation',
+                                data: series.map(p => p.valuation),
+                                borderColor: '#7a1f1f',
+                                backgroundColor: 'rgba(122, 31, 31, 0.08)',
+                                fill: true,
+                                tension: 0.15,
+                                pointRadius: 4,
+                                pointBackgroundColor: '#7a1f1f',
+                            }],
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: { callbacks: { label: (ctx) => fmt(ctx.parsed.y) + ' DKK' } },
                             },
-                        }));
+                            scales: {
+                                y: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } },
+                            },
+                        },
                     });
-                </script>
-            @endpush
+                })();
+            </script>
+            @endscript
         @endif
     @endif
 </div>
