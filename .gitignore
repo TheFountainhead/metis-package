@@ -1,3 +1,9 @@
 /vendor/
 composer.lock
 .phpunit.result.cache
+
+# Lokale frankston-lender-docs (hører til lender-projektet, ikke metis) —
+# fejet ind 2x ved git add docs/ (#65, #72); ignorér mekanisk
+docs/research/
+docs/superpowers/plans/2026-06-07-frankston-lender-implementation.md
+docs/superpowers/specs/2026-06-07-frankston-lender-product-design.md
