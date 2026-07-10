@@ -85,21 +85,16 @@ class CompanyStructure extends MetisSection
             $this->companyName = $this->companyName ?? ($company['name'] ?? null);
         }
 
-        // For each company owner, fetch their owners too (one level deep)
+        // For each company owner, fetch their owners too (one level deep).
+        // NB: tidligere blev EJERENS datterselskaber vist som det søgte selskabs
+        // egne når subsidiaries var tomme — faktuelt forkert under et
+        // DATTERSELSKABER-label (JEUDAN viste Chr. Augustinus' porteføljeselskaber).
+        // Ejerens øvrige selskaber ses korrekt mærket via 'Udfold struktur'.
         foreach ($this->owners as $i => $owner) {
             if (($owner['is_company'] ?? false) && ($owner['cvr'] ?? null)) {
                 $parentInfo = rescue(fn () => $api->fetchCompanyInfo($owner['cvr']));
                 if ($parentInfo) {
                     $this->owners[$i]['parent_owners'] = $parentInfo['owners'] ?? [];
-                }
-
-                if (empty($this->subsidiaries)) {
-                    $parentStructure = rescue(fn () => $api->fetchCompanyStructure($owner['cvr']), []);
-                    $parentSubs = $parentStructure['subsidiaries'] ?? [];
-                    $this->subsidiaries = collect($parentSubs)
-                        ->filter(fn ($sub) => ($sub['cvr'] ?? '') !== $query)
-                        ->values()
-                        ->toArray();
                 }
             }
         }
