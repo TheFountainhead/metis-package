@@ -259,3 +259,65 @@ it('resetFilters clears registeredFrom + registeredTo', function () {
         ->assertSet('registeredFrom', null)
         ->assertSet('registeredTo', null);
 });
+
+// --- Fri sortering, rammerente-markør, hide-nominal, eksport-teaser ---
+
+it('sortBy toggles direction and sends sort to backend', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->call('sortBy', 'amount')
+        ->assertSet('sort', 'amount_desc')
+        ->call('sortBy', 'amount')
+        ->assertSet('sort', 'amount_asc');
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/debt-search')
+        && ($r->data()['sort'] ?? null) === 'amount_asc');
+});
+
+it('sortBy resets pagination (new keyset)', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('cursor', 'abc')
+        ->set('cursorHistory', ['x', 'y'])
+        ->call('sortBy', 'date')
+        ->assertSet('cursor', null)
+        ->assertSet('cursorHistory', []);
+});
+
+it('sortBy ignores unknown columns', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->call('sortBy', 'creditor')
+        ->assertSet('sort', 'rate_desc'); // uændret
+});
+
+it('hideNominalRates sends hide_nominal_rates=1 to backend', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)->set('hideNominalRates', true);
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/debt-search')
+        && ($r->data()['hide_nominal_rates'] ?? null) === '1');
+});
+
+it('renders rammerente-badge on nominal-rate hits', function () {
+    $resp = fakeDebtSearchResponse();
+    $resp['results'][0]['debt']['is_nominal_rate'] = true;
+    Http::fake(['*/v1/debt-search*' => Http::response($resp)]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('minRate', 8.0)
+        ->assertSee('rammerente');
+});
+
+it('shows CSV export as a coming-soon teaser, not an active button', function () {
+    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+
+    Livewire::test(DebtSearch::class)
+        ->set('minRate', 8.0)
+        ->assertSee('kommer snart')
+        ->assertDontSeeHtml('wire:click="downloadCsv"');
+});
