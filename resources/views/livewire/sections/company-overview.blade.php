@@ -1,15 +1,26 @@
 <div class="space-y-4">
+    @php
+        // Store beløb (kr) som mia når over 1.000 mio, ellers mio, så tallet kan
+        // læses i stedet for at tælles. Returnerer [værdi, enhed] til visning.
+        $kpiSum = function (int $kr): array {
+            return $kr >= 1_000_000_000
+                ? [number_format($kr / 1_000_000_000, 1, ',', '.'), __('mia. kr')]
+                : [number_format($kr / 1_000_000, 1, ',', '.'), __('mio. kr')];
+        };
+        [$valVal, $valUnit] = $kpiSum((int) $totalValuation);
+        [$debtVal, $debtUnit] = $kpiSum((int) $totalDebt);
+    @endphp
     {{-- KPI tiles --}}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div class="bg-white rounded-xl border border-zinc-200 p-4">
             <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">{{ __('Properties') }}</div>
-            <div class="text-2xl font-semibold text-zinc-900">{{ number_format($propertyCount, 0, ',', '.') }}</div>
+            <div class="text-xl font-semibold text-zinc-900 tabular-nums">{{ number_format($propertyCount, 0, ',', '.') }}</div>
         </div>
         <div class="bg-white rounded-xl border border-zinc-200 p-4">
             <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">{{ __('Total valuation') }}</div>
-            <div class="text-2xl font-semibold text-zinc-900">
+            <div class="text-xl font-semibold text-zinc-900 tabular-nums whitespace-nowrap">
                 @if($totalValuation > 0)
-                    {{ number_format($totalValuation / 1_000_000, 1, ',', '.') }} {{ __('mio. kr') }}
+                    {{ $valVal }} <span class="text-sm font-normal text-zinc-500">{{ $valUnit }}</span>
                 @else
                     <span class="text-zinc-400">—</span>
                 @endif
@@ -17,9 +28,9 @@
         </div>
         <div class="bg-white rounded-xl border border-zinc-200 p-4">
             <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">{{ __('Total mortgage debt') }}</div>
-            <div class="text-2xl font-semibold text-zinc-900">
+            <div class="text-xl font-semibold text-zinc-900 tabular-nums whitespace-nowrap">
                 @if($totalDebt > 0)
-                    {{ number_format($totalDebt / 1_000_000, 1, ',', '.') }} {{ __('mio. kr') }}
+                    {{ $debtVal }} <span class="text-sm font-normal text-zinc-500">{{ $debtUnit }}</span>
                 @else
                     <span class="text-zinc-400">—</span>
                 @endif
@@ -30,7 +41,7 @@
         </div>
         <div class="bg-white rounded-xl border border-zinc-200 p-4">
             <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">{{ __('Employees') }}</div>
-            <div class="text-2xl font-semibold text-zinc-900">
+            <div class="text-xl font-semibold text-zinc-900 tabular-nums">
                 {{ $employees !== null ? number_format($employees, 0, ',', '.') : '—' }}
             </div>
             @if($companyName)
