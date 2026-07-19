@@ -185,6 +185,12 @@ class DebtSearch extends Component
         $this->error = null;
     }
 
+    /**
+     * BEVIDST BEVARET selv om UI'et pt. viser CSV-eksport som en "kommer snart"-
+     * teaser (ingen wire:click). Metoden + createDebtSearchCsvLink + Alpine-
+     * download-listeneren genaktiveres når eksport lanceres som Pro-feature.
+     * Slet ikke — dækket af tests.
+     */
     public function downloadCsv(): void
     {
         $api = app(RegistryApi::class);
