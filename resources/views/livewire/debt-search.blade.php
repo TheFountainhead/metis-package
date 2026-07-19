@@ -66,7 +66,7 @@
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Hovedstol (kr)') }}</label>
+                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Gæld (kr)') }}</label>
                     {{-- Rasmus-feedback 2026-05-25: vis tusind-separator mens bruger skriver.
                          Display-input bærer formateret tekst; hidden number-input synker
                          raw integer til Livewire (max 16 cifre = ~10 billiarder). --}}
@@ -187,22 +187,34 @@
                         <button wire:click="resetFilters" class="mt-2 text-xs underline">{{ __('Nulstil filtre') }}</button>
                     </div>
                 @else
+                    @php
+                        // Store sums som mia når over 1.000 mio, ellers mio, så
+                        // en rådgiver kan læse tallet i stedet for at tælle cifre.
+                        $totalKr = (int) ($summary['total_principal_kr'] ?? 0);
+                        if ($totalKr >= 1_000_000_000) {
+                            $debtValue = number_format($totalKr / 1_000_000_000, 1, ',', '.');
+                            $debtUnit = 'mia';
+                        } else {
+                            $debtValue = number_format($totalKr / 1_000_000, 1, ',', '.');
+                            $debtUnit = 'mio';
+                        }
+                    @endphp
                     <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div class="p-4 bg-white dark:bg-zinc-800 border rounded-lg dark:border-zinc-700">
                             <p class="text-xs text-zinc-500">{{ __('Lån') }}</p>
-                            <p class="text-2xl font-semibold">{{ number_format($summary['n_loans'] ?? 0, 0, ',', '.') }}</p>
+                            <p class="text-xl font-semibold tabular-nums">{{ number_format($summary['n_loans'] ?? 0, 0, ',', '.') }}</p>
                         </div>
                         <div class="p-4 bg-white dark:bg-zinc-800 border rounded-lg dark:border-zinc-700">
                             <p class="text-xs text-zinc-500">{{ __('Ejendomme') }}</p>
-                            <p class="text-2xl font-semibold">{{ number_format($summary['n_properties'] ?? 0, 0, ',', '.') }}</p>
+                            <p class="text-xl font-semibold tabular-nums">{{ number_format($summary['n_properties'] ?? 0, 0, ',', '.') }}</p>
                         </div>
                         <div class="p-4 bg-white dark:bg-zinc-800 border rounded-lg dark:border-zinc-700">
                             <p class="text-xs text-zinc-500">{{ __('Selskaber') }}</p>
-                            <p class="text-2xl font-semibold">{{ number_format($summary['n_companies'] ?? 0, 0, ',', '.') }}</p>
+                            <p class="text-xl font-semibold tabular-nums">{{ number_format($summary['n_companies'] ?? 0, 0, ',', '.') }}</p>
                         </div>
                         <div class="p-4 bg-white dark:bg-zinc-800 border rounded-lg dark:border-zinc-700">
-                            <p class="text-xs text-zinc-500">{{ __('Total hovedstol') }}</p>
-                            <p class="text-2xl font-semibold">{{ number_format(($summary['total_principal_kr'] ?? 0) / 1_000_000, 1, ',', '.') }} mio</p>
+                            <p class="text-xs text-zinc-500">{{ __('Tinglyst gæld') }}</p>
+                            <p class="text-xl font-semibold tabular-nums whitespace-nowrap">{{ $debtValue }} <span class="text-sm font-normal text-zinc-500">{{ $debtUnit }}</span></p>
                         </div>
                     </section>
 
@@ -221,8 +233,8 @@
                                     <tr>
                                         <th class="text-left px-4 py-2">{{ __('Kreditor') }}</th>
                                         <th class="text-right px-4 py-2">{{ __('Antal') }}</th>
-                                        <th class="text-right px-4 py-2">{{ __('Avg rente') }}</th>
-                                        <th class="text-right px-4 py-2">{{ __('Total kr') }}</th>
+                                        <th class="text-right px-4 py-2">{{ __('Snit-rente') }}</th>
+                                        <th class="text-right px-4 py-2">{{ __('Samlet gæld') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
