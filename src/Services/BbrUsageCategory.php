@@ -15,6 +15,10 @@ namespace TheFountainhead\Metis\Services;
  * (teknik.bbr.dk, BygAnvendelse). Bemærk at BBR 2.0 (fx 321=kontor,
  * 322=detailhandel, 323=lager) adskiller sig fra legacy BBR 1.0 — vi følger
  * 2.0-semantikken, da porteføljedata leveres i den.
+ *
+ * Returnerer STABILE, sprog-uafhængige nøgler ("Bolig", "Kontor", ...). De
+ * bruges som aggregeringsnøgler (countBy), så de må ikke oversættes her;
+ * oversættelse til visning sker i Blade via __() på nøglen.
  */
 class BbrUsageCategory
 {
@@ -29,51 +33,57 @@ class BbrUsageCategory
             return null;
         }
 
-        // Allerede en tekst-label (fx fra ældre datakilder) — lad den stå.
-        if (! is_numeric($usage)) {
-            return (string) $usage;
+        // Kun rene heltals-koder klassificeres. Alt andet (allerede-humaniseret
+        // tekst fra ældre datakilder, eller uventet junk) returneres uændret, så
+        // en gyldig label står, men fx "140abc" eller "3.5" aldrig fejl-buckets.
+        $digits = (string) $usage;
+        if (! ctype_digit($digits)) {
+            return $digits;
         }
 
-        $code = (int) $usage;
+        $code = (int) $digits;
 
+        // Returnér STABILE, sprog-uafhængige kategori-nøgler. Aggregeringen
+        // (countBy) grupperer på disse, så de må ikke oversættes her —
+        // oversættelse sker i visningen (Blade) via __() på nøglen.
         return match (true) {
             // 100-199: Boligbebyggelse (parcelhus, række-, etagebolig mv.)
-            $code >= 100 && $code < 200 => __('Bolig'),
+            $code >= 100 && $code < 200 => 'Bolig',
 
             // 210-219: Landbrug, gartneri, stalde, væksthuse
-            $code >= 210 && $code <= 219 => __('Landbrug'),
+            $code >= 210 && $code <= 219 => 'Landbrug',
 
-            // 220-229: Industri/produktion/værksted
-            $code >= 220 && $code <= 229 => __('Produktion'),
+            // 220-239: Industri/produktion/værksted + energi, vand, affald/forsyning
+            $code >= 220 && $code <= 239 => 'Produktion',
 
             // 310-319: Parkering- og transportanlæg
-            $code >= 310 && $code <= 319 => __('Transport'),
+            $code >= 310 && $code <= 319 => 'Transport',
 
-            // 321, 329: Kontor
-            $code === 321 || $code === 329 => __('Kontor'),
+            // 320 (udfaset aggregat kontor/handel/lager), 321, 329: Kontor
+            $code === 320 || $code === 321 || $code === 329 => 'Kontor',
 
             // 322, 324, 325: Detailhandel, butikscenter, tankstation
-            $code === 322 || $code === 324 || $code === 325 => __('Butik'),
+            $code === 322 || $code === 324 || $code === 325 => 'Butik',
 
             // 323: Lager
-            $code === 323 => __('Lager'),
+            $code === 323 => 'Lager',
 
-            // 330-339: Hotel, restaurant, café og personlig service
-            $code >= 330 && $code <= 339 => __('Hotel/service'),
+            // 330-339: Hotel, restaurant, café og personlig service (339 = anden serviceerhverv)
+            $code >= 330 && $code <= 339 => 'Hotel/service',
 
-            // 320, 390 + øvrig 300-serie: udfaset/andet erhverv
-            $code >= 300 && $code < 400 => __('Erhverv'),
+            // 390 + øvrig 300-serie: udfaset/andet erhverv
+            $code >= 300 && $code < 400 => 'Erhverv',
 
             // 400-499: Kultur, institution, uddannelse, sundhed
-            $code >= 400 && $code < 500 => __('Institution'),
+            $code >= 400 && $code < 500 => 'Institution',
 
             // 500-599: Fritidsformål (sommerhus, kolonihave, sportsanlæg)
-            $code >= 500 && $code < 600 => __('Fritid'),
+            $code >= 500 && $code < 600 => 'Fritid',
 
             // 900-999: Garage, carport, udhus, ukendt
-            $code >= 900 && $code < 1000 => __('Andet'),
+            $code >= 900 && $code < 1000 => 'Andet',
 
-            default => __('Andet'),
+            default => 'Andet',
         };
     }
 }

@@ -29,6 +29,40 @@ it('maps production, agriculture, transport, institution and holiday ranges', fu
     expect(BbrUsageCategory::label('910'))->toBe('Andet');      // Garage
 });
 
+it('classifies energy/utility 230-239 as Produktion (not the Andet junk bucket)', function () {
+    expect(BbrUsageCategory::label('230'))->toBe('Produktion'); // El-/varmeværk
+    expect(BbrUsageCategory::label('233'))->toBe('Produktion'); // Vandforsyning
+    expect(BbrUsageCategory::label('234'))->toBe('Produktion'); // Affald/spildevand
+    expect(BbrUsageCategory::label('239'))->toBe('Produktion'); // Anden forsyning
+});
+
+it('classifies the legacy aggregate office code 320 as Kontor', function () {
+    expect(BbrUsageCategory::label('320'))->toBe('Kontor'); // udfaset kontor/handel/lager
+});
+
+it('covers range boundaries and the generic + default fallbacks', function () {
+    // Produktion-grænser
+    expect(BbrUsageCategory::label('220'))->toBe('Produktion');
+    // Hotel/service-grænser (339 = anden serviceerhverv, hører til 330-familien)
+    expect(BbrUsageCategory::label('330'))->toBe('Hotel/service');
+    expect(BbrUsageCategory::label('339'))->toBe('Hotel/service');
+    // Generisk 300-serie erhverv (fx 390 udfaset)
+    expect(BbrUsageCategory::label('390'))->toBe('Erhverv');
+    // Default junk-bucket for udefinerede serier (600-899)
+    expect(BbrUsageCategory::label('620'))->toBe('Andet');
+});
+
+it('accepts integer codes, not just strings', function () {
+    expect(BbrUsageCategory::label(321))->toBe('Kontor');
+    expect(BbrUsageCategory::label(140))->toBe('Bolig');
+});
+
+it('does not fejl-bucket non-integer junk; returns it verbatim', function () {
+    // ctype_digit afviser float-strings og alfanumerisk støj → ingen truncate til forkert bucket.
+    expect(BbrUsageCategory::label('140abc'))->toBe('140abc');
+    expect(BbrUsageCategory::label('321.0'))->toBe('321.0');
+});
+
 it('passes already-humanized labels through unchanged (idempotent)', function () {
     expect(BbrUsageCategory::label('Bolig'))->toBe('Bolig');
     expect(BbrUsageCategory::label('Erhverv'))->toBe('Erhverv');
