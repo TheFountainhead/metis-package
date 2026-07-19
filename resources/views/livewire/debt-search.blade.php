@@ -119,6 +119,14 @@
                            class="w-full px-2 py-1 text-sm border rounded">
                 </div>
 
+                <label class="flex items-start gap-2 text-xs text-zinc-600 dark:text-zinc-300 cursor-pointer">
+                    <input type="checkbox" wire:model.live="hideNominalRates" class="mt-0.5">
+                    <span>
+                        {{ __('Skjul rammerenter') }}
+                        <span class="block text-[11px] text-zinc-400 mt-0.5">{{ __('Ejerpantebreve med pålydende 10/15/20 % er juridiske rammer, sjældent den faktiske rente.') }}</span>
+                    </span>
+                </label>
+
                 @if($hasSearched)
                     <button type="button" wire:click="resetFilters"
                             class="w-full px-3 py-1.5 text-xs border rounded hover:bg-zinc-50">
@@ -202,10 +210,11 @@
                         <section class="bg-white dark:bg-zinc-800 border rounded-lg dark:border-zinc-700 overflow-hidden">
                             <div class="px-4 py-2 border-b dark:border-zinc-700 flex justify-between items-center">
                                 <h3 class="text-sm font-semibold">{{ __('Top kreditorer') }}</h3>
-                                <button wire:click="downloadCsv"
-                                        class="text-xs px-3 py-1 bg-zinc-100 hover:bg-zinc-200 rounded border">
+                                <span class="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded border border-dashed border-zinc-300 text-zinc-400 dark:border-zinc-600 dark:text-zinc-500 cursor-default"
+                                      title="{{ __('Eksport af leads til regneark kommer som en del af en kommende Pro-plan') }}">
                                     {{ __('Eksportér CSV') }}
-                                </button>
+                                    <span class="text-[10px] uppercase tracking-wide font-medium px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300">{{ __('kommer snart') }}</span>
+                                </span>
                             </div>
                             <table class="w-full text-sm">
                                 <thead class="text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900">
@@ -232,8 +241,18 @@
 
                     @if(count($results) > 0)
                         <section class="bg-white dark:bg-zinc-800 border rounded-lg dark:border-zinc-700 overflow-hidden">
-                            <div class="px-4 py-2 border-b dark:border-zinc-700">
+                            <div class="px-4 py-2 border-b dark:border-zinc-700 flex items-center justify-between gap-3 flex-wrap">
                                 <h3 class="text-sm font-semibold">{{ __('Adresser') }}</h3>
+                                <div class="flex items-center gap-1.5 text-xs">
+                                    <span class="text-zinc-500 mr-0.5">{{ __('Sortér') }}:</span>
+                                    @foreach(['rate' => __('Rente'), 'amount' => __('Beløb'), 'date' => __('Dato')] as $col => $label)
+                                        @php $active = str_starts_with($sort, $col.'_'); @endphp
+                                        <button type="button" wire:click="sortBy('{{ $col }}')"
+                                                class="px-2 py-1 rounded border {{ $active ? 'bg-zinc-800 text-white border-zinc-800 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300' }}">
+                                            {{ $label }}@if($active) {{ str_ends_with($sort, '_desc') ? '↓' : '↑' }}@endif
+                                        </button>
+                                    @endforeach
+                                </div>
                             </div>
                             <ul class="divide-y dark:divide-zinc-700">
                                 @foreach($results as $r)
@@ -260,7 +279,15 @@
                                                 </p>
                                             </div>
                                             <div class="text-right shrink-0">
-                                                <p class="text-sm font-semibold tabular-nums">{{ number_format($r['debt']['interest_rate'] ?? 0, 2, ',', '.') }}%</p>
+                                                <p class="text-sm font-semibold tabular-nums">
+                                                    {{ number_format($r['debt']['interest_rate'] ?? 0, 2, ',', '.') }}%
+                                                    @if($r['debt']['is_nominal_rate'] ?? false)
+                                                        <span class="inline-block align-middle ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                                                              title="{{ __('Pålydende rammerente på ejerpantebrev, ikke nødvendigvis den faktisk betalte rente') }}">
+                                                            {{ __('rammerente') }}
+                                                        </span>
+                                                    @endif
+                                                </p>
                                                 <p class="text-xs text-zinc-500 tabular-nums">{{ number_format($r['debt']['principal_amount_kr'] ?? 0, 0, ',', '.') }} kr</p>
                                                 <p class="text-xs text-zinc-400">{{ $r['debt']['type'] ?? '' }}</p>
                                             </div>

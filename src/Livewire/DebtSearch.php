@@ -33,6 +33,12 @@ class DebtSearch extends Component
     public ?string $registeredFrom = null;
     public ?string $registeredTo = null;
 
+    /** rate_desc|rate_asc|amount_desc|amount_asc|date_desc|date_asc */
+    public string $sort = 'rate_desc';
+
+    /** Opt-in: skjul ejerpant-rammerenter (10/15/20/25 %). Default: vis alt. */
+    public bool $hideNominalRates = false;
+
     public ?array $response = null;
     public ?string $cursor = null;
 
@@ -141,6 +147,22 @@ class DebtSearch extends Component
         $this->search();
     }
 
+    /**
+     * Sortér efter en kolonne (rate|amount|date). Klik samme kolonne igen
+     * flipper retningen. Ny sortering = ny keyset → nulstil paginering.
+     */
+    public function sortBy(string $column): void
+    {
+        if (! in_array($column, ['rate', 'amount', 'date'], true)) {
+            return;
+        }
+
+        $this->sort = ($this->sort === "{$column}_desc") ? "{$column}_asc" : "{$column}_desc";
+        $this->cursor = null;
+        $this->cursorHistory = [];
+        $this->search();
+    }
+
     public function resetFilters(): void
     {
         $this->minRate = 8.0;
@@ -154,6 +176,8 @@ class DebtSearch extends Component
         $this->maxAmount = null;
         $this->registeredFrom = null;
         $this->registeredTo = null;
+        $this->sort = 'rate_desc';
+        $this->hideNominalRates = false;
         $this->cursor = null;
         $this->cursorHistory = [];
         $this->response = null;
@@ -200,6 +224,8 @@ class DebtSearch extends Component
             'max_amount' => $this->maxAmount,
             'registered_from' => $this->validDateOrNull($this->registeredFrom),
             'registered_to' => $this->validDateOrNull($this->registeredTo),
+            'sort' => $this->sort,
+            'hide_nominal_rates' => $this->hideNominalRates ? '1' : null,
         ], fn ($v) => $v !== null && $v !== '');
 
         if ($this->cursor) {
