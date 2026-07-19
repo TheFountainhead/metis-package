@@ -100,6 +100,44 @@ it('aggregates building_usage_distribution for pie chart', function () {
     expect($distribution['Bolig'])->toBe(1);
 });
 
+it('maps raw BBR usage codes to readable categories (not the raw code)', function () {
+    // Prod BBR-data leverer numeriske koder — ikke tekst. Diagrammet må aldrig
+    // vise "321"/"322"/"140"; det skal gruppere til brede kategorier og lægge
+    // koder for samme anvendelse sammen (fx 321+329 = Kontor).
+    $portfolio = fakePortfolio([
+        'property_count' => 6,
+        'properties' => [
+            ['building_usage' => '140', 'address' => 'A', 'postal_code' => '2200'], // Bolig
+            ['building_usage' => '120', 'address' => 'B', 'postal_code' => '2200'], // Bolig
+            ['building_usage' => '321', 'address' => 'C', 'postal_code' => '1050'], // Kontor
+            ['building_usage' => '329', 'address' => 'D', 'postal_code' => '1050'], // Kontor
+            ['building_usage' => '322', 'address' => 'E', 'postal_code' => '1050'], // Butik
+            ['building_usage' => '323', 'address' => 'F', 'postal_code' => '2630'], // Lager
+        ],
+    ]);
+
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo()]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => $portfolio]]),
+    ]);
+
+    $distribution = Livewire::test(CompanyOverview::class, ['query' => '28963610'])
+        ->get('usageDistribution');
+
+    // Ingen rå koder tilbage som labels.
+    foreach (array_keys($distribution) as $label) {
+        expect(is_numeric($label))->toBeFalse();
+    }
+
+    expect($distribution['Bolig'])->toBe(2);   // 140 + 120
+    expect($distribution['Kontor'])->toBe(2);  // 321 + 329
+    expect($distribution['Butik'])->toBe(1);   // 322
+    expect($distribution['Lager'])->toBe(1);   // 323
+
+    // Sorteret faldende, så de største typer står først i legenden.
+    expect(array_values($distribution))->toBe([2, 2, 1, 1]);
+});
+
 it('exposes 3-year financial history in chronological order (oldest → newest)', function () {
     Http::fake([
         '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo()]]),

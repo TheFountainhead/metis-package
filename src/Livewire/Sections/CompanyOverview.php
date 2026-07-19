@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Livewire\Sections;
 
+use TheFountainhead\Metis\Services\BbrUsageCategory;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 class CompanyOverview extends MetisSection
@@ -74,8 +75,10 @@ class CompanyOverview extends MetisSection
     {
         return collect($properties)
             ->pluck('building_usage')
+            ->map(fn ($usage) => BbrUsageCategory::label($usage))
             ->filter()
             ->countBy()
+            ->sortDesc()
             ->toArray();
     }
 
