@@ -17,8 +17,10 @@ namespace TheFountainhead\Metis\Services;
  * 2.0-semantikken, da porteføljedata leveres i den.
  *
  * Returnerer STABILE, sprog-uafhængige nøgler ("Bolig", "Kontor", ...). De
- * bruges som aggregeringsnøgler (countBy), så de må ikke oversættes her;
- * oversættelse til visning sker i Blade via __() på nøglen.
+ * bruges som aggregeringsnøgler (countBy), så de må ikke oversættes her — ellers
+ * bliver optællingen locale-koblet. Nøglerne er display-klar dansk; hvis en
+ * anden locale nogensinde tilføjes, wrappes de i __() ved rendering (Blade),
+ * ikke i mapperen.
  */
 class BbrUsageCategory
 {
@@ -44,8 +46,7 @@ class BbrUsageCategory
         $code = (int) $digits;
 
         // Returnér STABILE, sprog-uafhængige kategori-nøgler. Aggregeringen
-        // (countBy) grupperer på disse, så de må ikke oversættes her —
-        // oversættelse sker i visningen (Blade) via __() på nøglen.
+        // (countBy) grupperer på disse, så de må ikke oversættes her.
         return match (true) {
             // 100-199: Boligbebyggelse (parcelhus, række-, etagebolig mv.)
             $code >= 100 && $code < 200 => 'Bolig',
