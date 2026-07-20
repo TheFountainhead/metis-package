@@ -108,8 +108,14 @@
                     <tbody>
                         @foreach($companies as $company)
                             @php
+                                // CVR's rå register-navn "EJERREGISTER" er ikke en menneskelig
+                                // rolle men navnet på det legale ejer-register. Vis det læsbart.
+                                $prettyRole = fn ($label) => match ($label) {
+                                    'EJERREGISTER' => __('Legal ejer'),
+                                    default => $label,
+                                };
                                 $currentRoles = collect($company['roles'] ?? [])->filter(fn ($r) => $r['is_current'] ?? false);
-                                $roleLabels = $currentRoles->pluck('role_label')->filter()->implode(', ');
+                                $roleLabels = $currentRoles->pluck('role_label')->filter()->map($prettyRole)->unique()->implode(', ');
                             @endphp
                             <tr class="border-b border-zinc-100 dark:border-zinc-800">
                                 <td class="py-2 pr-4">

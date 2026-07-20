@@ -1,9 +1,14 @@
 <div>
-    {{-- Minimal header: "Nyt opslag" back-button only. Selskabs-CVR + navn vises
-         allerede i CompanyInfo-kortet nedenfor. Global Metis-logo er i app-layout. --}}
-    <div class="flex justify-end mb-4">
+    {{-- Header: "Tilbage" (til forrige visning) + "Nyt opslag" (start forfra).
+         Selskabs-CVR + navn vises i CompanyInfo-kortet; Metis-logo i app-layout. --}}
+    <div class="flex justify-end gap-2 mb-4" x-data="{ canGoBack: window.history.length > 1 }">
+        <button type="button" x-show="canGoBack" @click="window.history.back()"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:border-zinc-700 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+            {{ __('Tilbage') }}
+        </button>
         <a href="{{ route(Route::has('metis.index') ? 'metis.index' : 'metis.home') }}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:border-zinc-700 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
             {{ __('New lookup') }}
         </a>
     </div>
