@@ -31,3 +31,19 @@ it('formats JEUDAN-scale debt as mia, not a 7-digit mio number', function () {
     expect($html)->toContain('whitespace-nowrap');
     expect($html)->not->toContain('text-2xl');
 });
+
+it('uses total_count (full portfolio) not page-count for property KPI', function () {
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'JEUDAN A/S']]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => [
+            'owner_type' => 'company', 'owner_cvr' => '14246045',
+            'property_count' => 500,   // kun side
+            'total_count' => 649,      // fuldt antal
+            'total_valuation' => 1_000_000_000,
+            'properties' => array_fill(0, 500, ['building_usage' => '321', 'total_debt' => 0]),
+        ]]]),
+    ]);
+
+    Livewire::test(CompanyOverview::class, ['query' => '14246045'])
+        ->assertSet('propertyCount', 649); // ikke 500
+});

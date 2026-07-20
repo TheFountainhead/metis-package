@@ -45,7 +45,10 @@ class CompanyOverview extends MetisSection
         }
 
         $properties = $portfolio['properties'] ?? [];
-        $this->propertyCount = (int) ($portfolio['property_count'] ?? count($properties));
+        // total_count er det fulde antal ejendomme i porteføljen; property_count
+        // er kun antallet på den hentede side (limit). Vis totalen, ellers
+        // under-tæller KPI'en store porteføljer (fx JEUDAN: 649 vs. side-500).
+        $this->propertyCount = (int) ($portfolio['total_count'] ?? $portfolio['property_count'] ?? count($properties));
         $this->totalValuation = (int) ($portfolio['total_valuation'] ?? 0);
         $this->totalDebt = (int) collect($properties)->sum(fn ($p) => (int) ($p['total_debt'] ?? 0));
         $this->usageDistribution = $this->buildUsageDistribution($properties);
