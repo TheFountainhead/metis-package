@@ -22,7 +22,7 @@
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 <span>
-                    {{ __('Porteføljen hentes fra Ejerfortegnelsen') }}@if(($portfolio['total_count'] ?? 0) > 0): <span class="font-medium">{{ $portfolio['total_count'] }} {{ __('ejendomme fundet') }}</span>@endif.
+                    {{ (($portfolio['source'] ?? null) === 'koncern_bfe') ? __('Porteføljen dækker hele koncernen (moder + datterselskaber)') : __('Porteføljen hentes fra Ejerfortegnelsen') }}@if(($portfolio['total_count'] ?? 0) > 0): <span class="font-medium">{{ $portfolio['total_count'] }} {{ __('ejendomme fundet') }}</span>@endif.
                     {{ __('Store porteføljer tager et par minutter første gang; siden opdaterer selv.') }}
                 </span>
             </div>
@@ -34,7 +34,12 @@
             <div class="mb-3 flex flex-wrap gap-4 text-sm">
                 <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $portfolio['total_count'] ?? $portfolio['property_count'] ?? 0 }}</span></span>
                 @if(($portfolio['total_valuation'] ?? 0) > 0)
-                    <span class="text-zinc-500">{{ __('Total valuation') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_valuation'], 0, ',', '.') }} kr.</span></span>
+                    @php
+                        $valCov = $portfolio['valuation_coverage'] ?? null;
+                        $partialVal = $valCov && $valCov['with_valuation'] < $valCov['total'];
+                        $valCovNote = $partialVal ? __('Offentlig vurdering foreligger kun for :n af :t ejendomme; totalen er derfor et minimum.', ['n' => $valCov['with_valuation'], 't' => $valCov['total']]) : null;
+                    @endphp
+                    <span class="text-zinc-500" @if($partialVal) title="{{ $valCovNote }}" @endif>{{ __('Total valuation') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_valuation'], 0, ',', '.') }} kr.</span>@if($partialVal)<span class="text-zinc-400 text-xs"> ({{ __('vurdering for :n/:t', ['n' => $valCov['with_valuation'], 't' => $valCov['total']]) }})</span>@endif</span>
                 @endif
                 @if(($portfolio['total_area'] ?? 0) > 0)
                     <span class="text-zinc-500">{{ __('Land area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_area'], 0, ',', '.') }} m²</span></span>
@@ -56,6 +61,13 @@
                     $addr = trim(($p['address'] ?? '') . ', ' . ($p['postal_code'] ?? '') . ' ' . ($p['city'] ?? ''), ', ');
                     return $addr ?: 'BFE ' . ($p['matrikel_id'] ?? '?');
                 });
+
+                // Ejer-kolonne: kun på koncern-stien OG kun når datterselskaber
+                // rent faktisk ejer noget (ellers er kolonnen redundant). EJF-stien
+                // har ingen per-ejendom owner_cvr → kolonnen forbliver skjult.
+                $rootCvr = $portfolio['owner_cvr'] ?? null;
+                $showOwnerColumn = ($portfolio['source'] ?? null) === 'koncern_bfe'
+                    && collect($portfolio['properties'])->contains(fn ($p) => ($p['owner_cvr'] ?? $rootCvr) !== $rootCvr);
             @endphp
 
             <div class="overflow-x-auto">
@@ -63,6 +75,9 @@
                     <thead>
                         <tr class="border-b border-zinc-200 dark:border-zinc-700">
                             <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Address') }}</th>
+                            @if($showOwnerColumn)
+                                <th class="text-left py-2 pr-4 font-medium text-zinc-500" title="{{ __('Hvilket koncern-selskab der ejer ejendommen') }}">{{ __('Ejer') }}</th>
+                            @endif
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Units') }}</th>
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Land area / built area') }}">{{ __('Area') }}</th>
                             <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Year') }}</th>
@@ -94,6 +109,8 @@
                                 }
                                 // Latest sale across grouped units (max by date)
                                 $latestSale = $units->pluck('latest_sale')->filter()->sortByDesc('date')->first();
+                                // Ejer(e) i denne adresse-gruppe (koncern-stien).
+                                $groupOwners = $units->pluck('owner_name')->filter()->unique()->values();
                             @endphp
                             <tr class="border-b border-zinc-100 dark:border-zinc-800">
                                 <td class="py-2 pr-4">
@@ -112,6 +129,17 @@
                                         <span class="text-zinc-400">-</span>
                                     @endif
                                 </td>
+                                @if($showOwnerColumn)
+                                    <td class="py-2 pr-4 text-zinc-600 dark:text-zinc-400">
+                                        @if($groupOwners->count() === 1)
+                                            {{ $groupOwners->first() }}
+                                        @elseif($groupOwners->count() > 1)
+                                            <span title="{{ $groupOwners->implode(', ') }}">{{ $groupOwners->first() }} <span class="text-zinc-400 text-xs">+{{ $groupOwners->count() - 1 }}</span></span>
+                                        @else
+                                            <span class="text-zinc-300">-</span>
+                                        @endif
+                                    </td>
+                                @endif
                                 <td class="py-2 pr-4 text-right">
                                     @if($units->count() > 1)
                                         <span class="text-zinc-500">{{ $units->count() }}</span>
