@@ -18,7 +18,7 @@ function fakeRelations(array $payload): void
 
 it('viser aktieposter begge retninger, mærket som ikke-koncern', function () {
     fakeRelations([
-        'outgoing' => [['cvr' => '20000002', 'name' => 'DatterAktie ApS']],
+        'outgoing' => [['cvr' => '20000002', 'name' => 'DatterAktie ApS', 'property_count' => 15, 'property_value_kr' => 30_726_000]],
         'incoming' => [['cvr' => '30000003', 'name' => 'Moder-aktionær A/S']],
         'outgoing_count' => 1,
         'incoming_count' => 1,
@@ -30,7 +30,9 @@ it('viser aktieposter begge retninger, mærket som ikke-koncern', function () {
         ->assertSee('Aktionær i')
         ->assertSee('DatterAktie ApS')
         ->assertSee('Aktionærer')
-        ->assertSee('Moder-aktionær A/S');
+        ->assertSee('Moder-aktionær A/S')
+        ->assertSee('15 ejendomme')
+        ->assertSee('30.726.000 kr.');
 });
 
 it('skjules helt når ingen aktieposter', function () {

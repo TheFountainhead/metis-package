@@ -21,6 +21,11 @@
                                 <li>
                                     <x-metis-link type="cvr" :query="$rel['cvr']" :label="$rel['name'] ?: $rel['cvr']" />
                                     <span class="text-zinc-400 text-xs">{{ $rel['cvr'] }}</span>
+                                    @if(($rel['property_count'] ?? 0) > 0)
+                                        <span class="text-xs text-zinc-500 block">
+                                            {{ trans_choice('{1}:count ejendom|[2,*]:count ejendomme', $rel['property_count'], ['count' => $rel['property_count']]) }}@if(($rel['property_value_kr'] ?? 0) > 0) · {{ number_format($rel['property_value_kr'], 0, ',', '.') }} kr.@endif
+                                        </span>
+                                    @endif
                                 </li>
                             @endforeach
                         </ul>
@@ -44,6 +49,11 @@
                                 <li>
                                     <x-metis-link type="cvr" :query="$rel['cvr']" :label="$rel['name'] ?: $rel['cvr']" />
                                     <span class="text-zinc-400 text-xs">{{ $rel['cvr'] }}</span>
+                                    @if(($rel['property_count'] ?? 0) > 0)
+                                        <span class="text-xs text-zinc-500 block">
+                                            {{ trans_choice('{1}:count ejendom|[2,*]:count ejendomme', $rel['property_count'], ['count' => $rel['property_count']]) }}@if(($rel['property_value_kr'] ?? 0) > 0) · {{ number_format($rel['property_value_kr'], 0, ',', '.') }} kr.@endif
+                                        </span>
+                                    @endif
                                 </li>
                             @endforeach
                         </ul>
