@@ -24,17 +24,25 @@
                 <div
                     wire:ignore
                     x-data="{
-                        map: null, drawn: null,
+                        map: null, mapFailed: false,
                         async init() {
-                            await this.loadDeps();
-                            this.initMap();
+                            try {
+                                await this.loadDeps();
+                                this.initMap();
+                            } catch (e) {
+                                // CDN nede/blokeret/offline: fald tilbage til postnr/kommune
+                                // frem for at efterlade en tom grå boks der hænger for evigt.
+                                this.mapFailed = true;
+                            }
                         },
                         loadDeps() {
-                            return new Promise((resolve) => {
-                                const done = () => { if (window.L && window.L.Control && window.L.Control.Draw) resolve(); };
+                            return new Promise((resolve, reject) => {
                                 if (window.L && window.L.Control && window.L.Control.Draw) { resolve(); return; }
-                                const addCss = (href) => { const l = document.createElement('link'); l.rel='stylesheet'; l.href=href; document.head.appendChild(l); };
-                                const addJs = (src, cb) => { const s = document.createElement('script'); s.src=src; s.onload=cb; document.head.appendChild(s); };
+                                // 8s timeout — resolver aldrig hvis onerror/onload aldrig fyrer.
+                                const timer = setTimeout(() => reject(new Error('leaflet-timeout')), 8000);
+                                const done = () => { if (window.L && window.L.Control && window.L.Control.Draw) { clearTimeout(timer); resolve(); } };
+                                const addCss = (href) => { if (document.querySelector(`link[href='${href}']`)) return; const l = document.createElement('link'); l.rel='stylesheet'; l.href=href; document.head.appendChild(l); };
+                                const addJs = (src, cb) => { const s = document.createElement('script'); s.src=src; s.onload=cb; s.onerror=() => { clearTimeout(timer); reject(new Error('leaflet-load-failed')); }; document.head.appendChild(s); };
                                 addCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
                                 addCss('https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css');
                                 const loadDraw = () => addJs('https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js', done);
@@ -67,7 +75,13 @@
                     x-ref="drawmap"
                     class="w-full rounded border"
                     style="height: 200px; z-index: 0;"
-                ></div>
+                >
+                    <template x-if="mapFailed">
+                        <div class="flex items-center justify-center h-full text-xs text-zinc-500 text-center px-4">
+                            {{ __('Kortet kunne ikke indlæses — brug postnummer eller kommune nedenfor.') }}
+                        </div>
+                    </template>
+                </div>
                 @if(count($polygon) >= 3)
                     <div class="flex items-center justify-between text-xs">
                         <span class="text-emerald-600">✓ {{ __('Område optegnet (:n punkter)', ['n' => count($polygon)]) }}</span>
