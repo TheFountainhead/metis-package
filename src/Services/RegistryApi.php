@@ -240,6 +240,15 @@ class RegistryApi
         return $this->post('/v1/cvr/company-structure', ['cvr' => $cvr]) ?? [];
     }
 
+    /**
+     * Aktiepost-relationer (begge retninger) — SEPARAT endpoint fra structure,
+     * så relations aldrig blandes i ejendoms-/gæld-aggregering (Option B).
+     */
+    public function fetchCompanyRelations(string $cvr): array
+    {
+        return $this->post('/v1/cvr/company-relations', ['cvr' => $cvr]) ?? [];
+    }
+
     public function fetchFundingHistory(string $cvr): ?array
     {
         try {

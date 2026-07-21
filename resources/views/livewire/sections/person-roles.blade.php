@@ -116,6 +116,9 @@
                                 };
                                 $currentRoles = collect($company['roles'] ?? [])->filter(fn ($r) => $r['is_current'] ?? false);
                                 $roleLabels = $currentRoles->pluck('role_label')->filter()->map($prettyRole)->unique()->implode(', ');
+                                // Reel ejer (beneficial_owner) er regulatorisk vigtig → fremhæv
+                                // strukturelt via role_type (ikke skrøbelig fritekst-matchning).
+                                $isBeneficialOwner = $currentRoles->contains(fn ($r) => ($r['role_type'] ?? null) === 'beneficial_owner');
                             @endphp
                             <tr class="border-b border-zinc-100 dark:border-zinc-800">
                                 <td class="py-2 pr-4">
@@ -123,7 +126,12 @@
                                 </td>
                                 <td class="py-2 pr-4 text-zinc-500">{{ $company['cvr'] }}</td>
                                 <td class="py-2 pr-4">{{ $company['company_type'] ?? '-' }}</td>
-                                <td class="py-2 pr-4">{{ $roleLabels ?: '-' }}</td>
+                                <td class="py-2 pr-4">
+                                    @if($isBeneficialOwner)
+                                        <flux:badge size="sm" color="amber" class="mr-1">{{ __('Reel ejer') }}</flux:badge>
+                                    @endif
+                                    {{ $roleLabels ?: '-' }}
+                                </td>
                                 <td class="py-2">
                                     @if(($company['status'] ?? '') === 'NORMAL')
                                         <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
