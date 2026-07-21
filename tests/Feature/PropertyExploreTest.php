@@ -88,3 +88,48 @@ it('kvote-svar (429) viser kvote-besked', function () {
         ->assertSet('quotaExceeded', true)
         ->assertSee('dagens søgekvote');
 });
+
+// ---- Polygon-korttegning (frontend) ----
+
+it('setPolygon tæller som geo-filter og udløser søgning', function () {
+    Http::fake(['*/v1/property-explore' => Http::response(fakeExploreResponse())]);
+
+    $polygon = [
+        ['lat' => 55.60, 'lng' => 12.50],
+        ['lat' => 55.75, 'lng' => 12.50],
+        ['lat' => 55.75, 'lng' => 12.70],
+    ];
+
+    Livewire::test(PropertyExplore::class)
+        ->call('setPolygon', $polygon)
+        ->assertSet('missingGeo', false)
+        ->assertSee('Bredgade 40');
+
+    // Polygon sendes med i API-kaldet.
+    Http::assertSent(fn ($req) => str_contains($req->url(), 'property-explore')
+        && is_array($req->data()['polygon'] ?? null)
+        && count($req->data()['polygon']) === 3);
+});
+
+it('polygon med under 3 punkter tæller IKKE som geo (frafiltreres)', function () {
+    Http::fake();
+
+    Livewire::test(PropertyExplore::class)
+        ->call('setPolygon', [['lat' => 55.6, 'lng' => 12.5], ['lat' => 55.7, 'lng' => 12.6]]) // kun 2
+        ->assertSet('missingGeo', true);
+
+    Http::assertNothingSent();
+});
+
+it('clearPolygon rydder området', function () {
+    Http::fake(['*/v1/property-explore' => Http::response(fakeExploreResponse())]);
+
+    $polygon = [['lat' => 55.60, 'lng' => 12.50], ['lat' => 55.75, 'lng' => 12.50], ['lat' => 55.75, 'lng' => 12.70]];
+
+    Livewire::test(PropertyExplore::class)
+        ->call('setPolygon', $polygon)
+        ->assertSet('polygon', $polygon)
+        ->call('clearPolygon')
+        ->assertSet('polygon', [])
+        ->assertSet('missingGeo', true);
+});

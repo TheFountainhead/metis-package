@@ -26,6 +26,9 @@ class PropertyExplore extends Component
     public ?string $postalCodeTo = null;
     public ?string $municipalityCode = null;
 
+    /** Polygon drawn on the map: [['lat'=>..,'lng'=>..], ...] (min 3 points). */
+    public array $polygon = [];
+
     // Refine (optional, only meaningful on top of geo)
     public ?int $valuationMin = null;
     public ?int $valuationMax = null;
@@ -170,6 +173,7 @@ class PropertyExplore extends Component
 
     public function resetFilters(): void
     {
+        $this->polygon = [];
         $this->postalCodeFrom = null;
         $this->postalCodeTo = null;
         $this->municipalityCode = null;
@@ -201,6 +205,7 @@ class PropertyExplore extends Component
     protected function filters(): array
     {
         $filters = array_filter([
+            'polygon' => count($this->polygon) >= 3 ? $this->polygon : null,
             'postal_code_from' => $this->validPostalOrNull($this->postalCodeFrom),
             'postal_code_to' => $this->validPostalOrNull($this->postalCodeTo),
             'municipality_code' => $this->municipalityCode ?: null,
@@ -221,8 +226,35 @@ class PropertyExplore extends Component
 
     public function hasGeoFilter(): bool
     {
-        return $this->validPostalOrNull($this->postalCodeFrom) !== null
+        return count($this->polygon) >= 3
+            || $this->validPostalOrNull($this->postalCodeFrom) !== null
             || ! empty($this->municipalityCode);
+    }
+
+    /**
+     * Called from the map when the user finishes drawing a polygon. Triggers a
+     * search (polygon alone is a valid geo filter). updated() is not fired for
+     * array properties set via $wire, so we search explicitly.
+     */
+    public function setPolygon(array $points): void
+    {
+        $this->polygon = collect($points)
+            ->filter(fn ($p) => isset($p['lat'], $p['lng']))
+            ->map(fn ($p) => ['lat' => (float) $p['lat'], 'lng' => (float) $p['lng']])
+            ->values()
+            ->all();
+
+        $this->cursor = null;
+        $this->cursorHistory = [];
+        $this->search();
+    }
+
+    public function clearPolygon(): void
+    {
+        $this->polygon = [];
+        $this->cursor = null;
+        $this->cursorHistory = [];
+        $this->search();
     }
 
     private function validPostalOrNull(?string $value): ?string
