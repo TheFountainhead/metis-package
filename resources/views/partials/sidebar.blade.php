@@ -8,6 +8,7 @@
             'items' => [
                 ['route' => 'metis.home', 'label' => __('Hjem'), 'icon' => 'home'],
                 ['route' => 'metis.debt-search', 'label' => __('Søg gæld'), 'icon' => 'search-debt'],
+                ['route' => 'metis.property-explore', 'label' => __('Udforsk'), 'icon' => 'map-pin'],
                 ['route' => 'metis.alerts', 'label' => __('Mine alerts'), 'icon' => 'bell', 'requires_token' => true],
             ],
         ],
