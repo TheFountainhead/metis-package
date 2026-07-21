@@ -15,7 +15,7 @@
         @endif
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-[24rem_1fr] gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-[28rem_1fr] gap-6">
         <aside class="space-y-4">
             <div class="p-4 border rounded-lg bg-white dark:bg-zinc-800 dark:border-zinc-700 space-y-4">
                 <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 uppercase tracking-wide">{{ __('Område') }} <span class="text-red-500">*</span></h2>
@@ -78,7 +78,7 @@
                     }"
                     x-ref="drawmap"
                     class="w-full rounded border"
-                    style="height: 420px; z-index: 0;"
+                    style="height: 520px; z-index: 0;"
                 >
                     <template x-if="mapFailed">
                         <div class="flex items-center justify-center h-full text-xs text-zinc-500 text-center px-4">
