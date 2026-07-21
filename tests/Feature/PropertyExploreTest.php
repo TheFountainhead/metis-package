@@ -133,3 +133,32 @@ it('clearPolygon rydder området', function () {
         ->assertSet('polygon', [])
         ->assertSet('missingGeo', true);
 });
+
+// ---- UX: gensidigt udelukkende geo ----
+
+it('at tegne polygon rydder tekst-geo (postnr/kommune)', function () {
+    Http::fake(['*/v1/property-explore' => Http::response(fakeExploreResponse())]);
+
+    $polygon = [['lat' => 55.6, 'lng' => 12.5], ['lat' => 55.7, 'lng' => 12.5], ['lat' => 55.7, 'lng' => 12.7]];
+
+    Livewire::test(PropertyExplore::class)
+        ->set('postalCodeFrom', '2900')
+        ->set('postalCodeTo', '2930')
+        ->call('setPolygon', $polygon)
+        ->assertSet('postalCodeFrom', null)   // ryddet
+        ->assertSet('postalCodeTo', null)
+        ->assertSet('polygon', $polygon);
+});
+
+it('at skrive postnr rydder en tegnet polygon (+ beder kortet rydde)', function () {
+    Http::fake(['*/v1/property-explore' => Http::response(fakeExploreResponse())]);
+
+    $polygon = [['lat' => 55.6, 'lng' => 12.5], ['lat' => 55.7, 'lng' => 12.5], ['lat' => 55.7, 'lng' => 12.7]];
+
+    Livewire::test(PropertyExplore::class)
+        ->call('setPolygon', $polygon)
+        ->assertSet('polygon', $polygon)
+        ->set('postalCodeFrom', '2100')
+        ->assertSet('polygon', [])            // polygon ryddet
+        ->assertDispatched('property-explore:clear-map');
+});

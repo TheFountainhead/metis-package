@@ -70,8 +70,16 @@ class PropertyExplore extends Component
 
     public function updated(string $name): void
     {
-        if (in_array($name, ['cursor', 'cursorHistory', 'response', 'loading', 'error', 'hasSearched', 'quotaExceeded', 'missingGeo'], true)) {
+        if (in_array($name, ['cursor', 'cursorHistory', 'response', 'loading', 'error', 'hasSearched', 'quotaExceeded', 'missingGeo', 'polygon'], true)) {
             return;
+        }
+
+        // Gensidigt udelukkende geo: at skrive postnr/kommune rydder en tegnet
+        // polygon, så to modstridende geo-filtre aldrig giver et forvirrende
+        // tomt snit (polygon over KBH + postnr i Hellerup = 0 resultater).
+        if (in_array($name, ['postalCodeFrom', 'postalCodeTo', 'municipalityCode'], true) && ! empty($this->polygon)) {
+            $this->polygon = [];
+            $this->dispatch('property-explore:clear-map');
         }
 
         $this->cursor = null;
@@ -243,6 +251,12 @@ class PropertyExplore extends Component
             ->map(fn ($p) => ['lat' => (float) $p['lat'], 'lng' => (float) $p['lng']])
             ->values()
             ->all();
+
+        // Gensidigt udelukkende: en tegnet polygon rydder tekst-geo, så de to
+        // aldrig modsiger hinanden.
+        $this->postalCodeFrom = null;
+        $this->postalCodeTo = null;
+        $this->municipalityCode = null;
 
         $this->cursor = null;
         $this->cursorHistory = [];
