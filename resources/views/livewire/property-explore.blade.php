@@ -20,6 +20,77 @@
             <div class="p-4 border rounded-lg bg-white dark:bg-zinc-800 dark:border-zinc-700 space-y-4">
                 <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 uppercase tracking-wide">{{ __('Område') }} <span class="text-red-500">*</span></h2>
 
+                {{-- Kort med polygon-optegning (Leaflet + Leaflet.draw, CDN) --}}
+                <div
+                    wire:ignore
+                    x-data="{
+                        map: null, mapFailed: false,
+                        async init() {
+                            try {
+                                await this.loadDeps();
+                                this.initMap();
+                            } catch (e) {
+                                // CDN nede/blokeret/offline: fald tilbage til postnr/kommune
+                                // frem for at efterlade en tom grå boks der hænger for evigt.
+                                this.mapFailed = true;
+                            }
+                        },
+                        loadDeps() {
+                            return new Promise((resolve, reject) => {
+                                if (window.L && window.L.Control && window.L.Control.Draw) { resolve(); return; }
+                                // 8s timeout — resolver aldrig hvis onerror/onload aldrig fyrer.
+                                const timer = setTimeout(() => reject(new Error('leaflet-timeout')), 8000);
+                                const done = () => { if (window.L && window.L.Control && window.L.Control.Draw) { clearTimeout(timer); resolve(); } };
+                                const addCss = (href) => { if (document.querySelector(`link[href='${href}']`)) return; const l = document.createElement('link'); l.rel='stylesheet'; l.href=href; document.head.appendChild(l); };
+                                const addJs = (src, cb) => { const s = document.createElement('script'); s.src=src; s.onload=cb; s.onerror=() => { clearTimeout(timer); reject(new Error('leaflet-load-failed')); }; document.head.appendChild(s); };
+                                addCss('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+                                addCss('https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css');
+                                const loadDraw = () => addJs('https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js', done);
+                                if (window.L) { loadDraw(); } else { addJs('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', loadDraw); }
+                            });
+                        },
+                        initMap() {
+                            this.map = L.map(this.$refs.drawmap, { scrollWheelZoom: false }).setView([55.6761, 12.5683], 11);
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(this.map);
+
+                            const drawnItems = new L.FeatureGroup();
+                            this.map.addLayer(drawnItems);
+
+                            const drawControl = new L.Control.Draw({
+                                draw: { polygon: true, marker: false, circle: false, rectangle: true, polyline: false, circlemarker: false },
+                                edit: { featureGroup: drawnItems, edit: false },
+                            });
+                            this.map.addControl(drawControl);
+
+                            this.map.on(L.Draw.Event.CREATED, (e) => {
+                                drawnItems.clearLayers(); // kun ét område ad gangen
+                                drawnItems.addLayer(e.layer);
+                                const latlngs = e.layer.getLatLngs()[0].map((p) => ({ lat: p.lat, lng: p.lng }));
+                                $wire.setPolygon(latlngs);
+                            });
+
+                            this.map.on(L.Draw.Event.DELETED, () => { $wire.clearPolygon(); });
+                        },
+                    }"
+                    x-ref="drawmap"
+                    class="w-full rounded border"
+                    style="height: 200px; z-index: 0;"
+                >
+                    <template x-if="mapFailed">
+                        <div class="flex items-center justify-center h-full text-xs text-zinc-500 text-center px-4">
+                            {{ __('Kortet kunne ikke indlæses — brug postnummer eller kommune nedenfor.') }}
+                        </div>
+                    </template>
+                </div>
+                @if(count($polygon) >= 3)
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="text-emerald-600">✓ {{ __('Område optegnet (:n punkter)', ['n' => count($polygon)]) }}</span>
+                        <button wire:click="clearPolygon" type="button" class="text-zinc-500 hover:text-zinc-700 underline">{{ __('Ryd') }}</button>
+                    </div>
+                @else
+                    <p class="text-xs text-zinc-400">{{ __('Tegn et område på kortet, eller angiv postnummer/kommune nedenfor.') }}</p>
+                @endif
+
                 <div>
                     <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Postnummer-interval') }}</label>
                     <div class="flex gap-2">
