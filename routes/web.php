@@ -11,12 +11,14 @@ use TheFountainhead\Metis\Livewire\AlertDetail;
 use TheFountainhead\Metis\Livewire\AlertsInbox;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 use TheFountainhead\Metis\Livewire\Lookup;
+use TheFountainhead\Metis\Livewire\PropertyExplore;
 use TheFountainhead\Metis\Livewire\Search;
 
 // Public routes
 Route::get('/', Search::class)->name('metis.home')->middleware('throttle:20,1');
 Route::get('/lookup/{type}/{query}', Lookup::class)->name('metis.lookup')->where('query', '.*')->middleware('throttle:20,1');
 Route::get('/soeg', DebtSearch::class)->name('metis.debt-search')->middleware('throttle:20,1');
+Route::get('/udforsk', PropertyExplore::class)->name('metis.property-explore')->middleware('throttle:20,1');
 Route::get('/alerts', AlertsInbox::class)->name('metis.alerts')->middleware('throttle:60,1');
 Route::get('/alerts/{id}', AlertDetail::class)->name('metis.alert.detail')->middleware('throttle:60,1')->whereNumber('id');
 Route::get('/robots.txt', fn () => response("User-agent: *\nDisallow: /admin\n", 200, ['Content-Type' => 'text/plain']));

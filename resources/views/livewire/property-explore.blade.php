@@ -1,0 +1,154 @@
+<div x-data x-on:property-explore:download.window="window.location.href = $event.detail.url">
+    <div class="flex items-center justify-between py-2 mb-4 border-b">
+        <div class="flex items-center gap-3">
+            <h1 class="text-xl font-bold">{{ __('Udforsk ejendomme') }}</h1>
+            <span class="text-sm text-zinc-500">{{ __('Find ejendomme efter område og kriterier') }}</span>
+        </div>
+        @php
+            $backRoute = Route::has('metis.index') ? 'metis.index' : (Route::has('metis.home') ? 'metis.home' : null);
+        @endphp
+        @if($backRoute)
+            <a href="{{ route($backRoute) }}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
+                ← {{ __('Tilbage') }}
+            </a>
+        @endif
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[20rem_1fr] gap-6">
+        <aside class="space-y-4">
+            <div class="p-4 border rounded-lg bg-white dark:bg-zinc-800 dark:border-zinc-700 space-y-4">
+                <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 uppercase tracking-wide">{{ __('Område') }} <span class="text-red-500">*</span></h2>
+
+                <div>
+                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Postnummer-interval') }}</label>
+                    <div class="flex gap-2">
+                        <input type="text" inputmode="numeric" maxlength="4" placeholder="1000"
+                               wire:model.live.debounce.500ms="postalCodeFrom"
+                               class="w-1/2 px-2 py-1 text-sm border rounded">
+                        <input type="text" inputmode="numeric" maxlength="4" placeholder="2999"
+                               wire:model.live.debounce.500ms="postalCodeTo"
+                               class="w-1/2 px-2 py-1 text-sm border rounded">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Kommunekode') }}</label>
+                    <input type="text" inputmode="numeric" placeholder="{{ __('fx 101 (København)') }}"
+                           wire:model.live.debounce.500ms="municipalityCode"
+                           class="w-full px-2 py-1 text-sm border rounded">
+                </div>
+
+                <p class="text-xs text-zinc-400">{{ __('Kort-optegning af område kommer snart.') }}</p>
+
+                <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 uppercase tracking-wide pt-2 border-t dark:border-zinc-700">{{ __('Forfin (valgfri)') }}</h2>
+
+                <div>
+                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Offentlig vurdering (kr)') }}</label>
+                    <div class="flex gap-2">
+                        <input type="number" min="0" placeholder="{{ __('min') }}"
+                               wire:model.live.debounce.500ms="valuationMin"
+                               class="w-1/2 px-2 py-1 text-sm border rounded">
+                        <input type="number" min="0" placeholder="{{ __('max') }}"
+                               wire:model.live.debounce.500ms="valuationMax"
+                               class="w-1/2 px-2 py-1 text-sm border rounded">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-zinc-600 mb-1">{{ __('Byggeår') }}</label>
+                    <div class="flex gap-2">
+                        <input type="number" min="1000" max="2100" placeholder="{{ __('fra') }}"
+                               wire:model.live.debounce.500ms="yearBuiltFrom"
+                               class="w-1/2 px-2 py-1 text-sm border rounded">
+                        <input type="number" min="1000" max="2100" placeholder="{{ __('til') }}"
+                               wire:model.live.debounce.500ms="yearBuiltTo"
+                               class="w-1/2 px-2 py-1 text-sm border rounded">
+                    </div>
+                </div>
+
+                <label class="flex items-center gap-2 text-sm text-zinc-600">
+                    <input type="checkbox" wire:model.live="hasDebt" class="rounded">
+                    {{ __('Kun ejendomme med tinglyst gæld') }}
+                </label>
+
+                <button wire:click="resetFilters" type="button"
+                        class="w-full px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
+                    {{ __('Nulstil') }}
+                </button>
+            </div>
+        </aside>
+
+        <main>
+            @if($missingGeo)
+                <div class="p-8 text-center text-zinc-500 border rounded-lg">
+                    {{ __('Angiv et postnummer-interval eller en kommunekode for at søge.') }}
+                </div>
+            @elseif($loading)
+                <div class="p-8 text-center text-zinc-500 border rounded-lg">
+                    <span class="inline-block animate-pulse">{{ __('Henter ejendomme…') }}</span>
+                </div>
+            @elseif($quotaExceeded)
+                <div class="p-8 text-center text-amber-600 border rounded-lg">
+                    {{ __('Du har nået dagens søgekvote.') }}
+                </div>
+            @elseif($error)
+                <div class="p-8 text-center text-red-600 border rounded-lg">{{ $error }}</div>
+            @elseif($hasSearched && empty($response['data']['results'] ?? []))
+                <div class="p-8 text-center text-zinc-500 border rounded-lg">
+                    {{ __('Ingen ejendomme matcher dine kriterier i dette område.') }}
+                </div>
+            @elseif(! empty($response['data']['results'] ?? []))
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-sm text-zinc-500">{{ count($response['data']['results']) }} {{ __('ejendomme på denne side') }}</span>
+                    <button wire:click="downloadCsv" type="button"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
+                        ↓ {{ __('Eksportér CSV') }}
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto border rounded-lg">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b bg-zinc-50 dark:bg-zinc-800">
+                                <th class="text-left py-2 px-3 font-medium text-zinc-500">{{ __('Adresse') }}</th>
+                                <th class="text-left py-2 px-3 font-medium text-zinc-500">{{ __('Postnr') }}</th>
+                                <th class="text-left py-2 px-3 font-medium text-zinc-500 cursor-pointer" wire:click="sortBy('year')">{{ __('Byggeår') }} ⇅</th>
+                                <th class="text-right py-2 px-3 font-medium text-zinc-500">{{ __('Bygningsareal') }}</th>
+                                <th class="text-right py-2 px-3 font-medium text-zinc-500">{{ __('Off. vurdering') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($response['data']['results'] as $p)
+                                <tr class="border-b border-zinc-100 dark:border-zinc-800">
+                                    <td class="py-2 px-3">
+                                        @if($p['address'])
+                                            <x-metis-link type="address" :query="trim(($p['address'] ?? '') . ', ' . ($p['postal_code'] ?? '') . ' ' . ($p['city'] ?? ''), ', ')" />
+                                        @else
+                                            <span class="text-zinc-400">{{ __('BFE') }} {{ $p['matrikel_id'] ?? '?' }}</span>
+                                        @endif
+                                    </td>
+                                    <td class="py-2 px-3">{{ $p['postal_code'] ?? '-' }} {{ $p['city'] ?? '' }}</td>
+                                    <td class="py-2 px-3">{{ $p['year_built'] ?? '-' }}</td>
+                                    <td class="py-2 px-3 text-right">{{ $p['area_building'] ? number_format($p['area_building'], 0, ',', '.') . ' m²' : '-' }}</td>
+                                    <td class="py-2 px-3 text-right">{{ $p['valuation'] ? number_format($p['valuation'], 0, ',', '.') . ' kr.' : '-' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex items-center justify-between mt-3">
+                    <button wire:click="previousPage" @disabled(empty($cursorHistory))
+                            class="px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 disabled:opacity-40 transition">← {{ __('Forrige') }}</button>
+                    <button wire:click="nextPage" @disabled(empty($response['data']['has_more']))
+                            class="px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 disabled:opacity-40 transition">{{ __('Næste') }} →</button>
+                </div>
+            @else
+                <div class="p-8 text-center text-zinc-500 border rounded-lg">
+                    {{ __('Angiv et område for at begynde.') }}
+                </div>
+            @endif
+        </main>
+    </div>
+</div>

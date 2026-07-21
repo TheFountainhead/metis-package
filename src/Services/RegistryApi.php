@@ -527,6 +527,36 @@ class RegistryApi
         }
     }
 
+    /**
+     * "Udforsk" — geography-driven property search. POST (not GET) because the
+     * polygon filter is a nested array. Geo filter is required server-side.
+     */
+    public function propertyExplore(array $filters, ?string $source = null): array
+    {
+        $request = $this->client();
+        if ($source !== null) {
+            $request = $request->withHeaders(['X-Search-Source' => $source]);
+        }
+
+        try {
+            return $request->post('/v1/property-explore', $filters)->throw()->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
+    public function createPropertyExploreCsvLink(array $filters): array
+    {
+        try {
+            return $this->client()
+                ->post('/v1/property-explore/export-link', $filters)
+                ->throw()
+                ->json();
+        } catch (RequestException $e) {
+            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+        }
+    }
+
     // F1 Debt Alerts — watchlists + alerts endpoints
 
     public function listWatchlists(): array
