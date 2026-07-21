@@ -16,7 +16,7 @@ function fakeExploreResponse(?array $results = null): array
     return ['data' => [
         'results' => $results ?? [[
             'matrikel_id' => '123456', 'address' => 'Bredgade 40', 'postal_code' => '1260',
-            'city' => 'København K', 'year_built' => 1960, 'area_building' => 1200, 'valuation' => 50_000_000,
+            'city' => 'København K', 'year_built' => 1960, 'area_building' => 1200, 'valuation' => 50_000_000, 'total_debt' => 12_000_000, 'weighted_rate' => 2.5,
         ]],
         'cursor' => null,
         'has_more' => false,
@@ -161,4 +161,15 @@ it('at skrive postnr rydder en tegnet polygon (+ beder kortet rydde)', function 
         ->set('postalCodeFrom', '2100')
         ->assertSet('polygon', [])            // polygon ryddet
         ->assertDispatched('property-explore:clear-map');
+});
+
+it('viser tinglyst gæld + rente-kolonner i tabellen', function () {
+    Http::fake(['*/v1/property-explore' => Http::response(fakeExploreResponse())]);
+
+    Livewire::test(PropertyExplore::class)
+        ->set('postalCodeFrom', '1260')
+        ->assertSee('Tinglyst gæld')
+        ->assertSee('Rente')
+        ->assertSee('12.000.000 kr.')
+        ->assertSee('2,50 %');
 });

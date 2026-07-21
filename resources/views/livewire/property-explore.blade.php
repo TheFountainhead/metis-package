@@ -189,6 +189,8 @@
                                 <th class="text-left py-2 px-3 font-medium text-zinc-500 cursor-pointer" wire:click="sortBy('year')">{{ __('Byggeår') }} ⇅</th>
                                 <th class="text-right py-2 px-3 font-medium text-zinc-500">{{ __('Bygningsareal') }}</th>
                                 <th class="text-right py-2 px-3 font-medium text-zinc-500">{{ __('Off. vurdering') }}</th>
+                                <th class="text-right py-2 px-3 font-medium text-zinc-500" title="{{ __('Sum af aktive pantebreve') }}">{{ __('Tinglyst gæld') }}</th>
+                                <th class="text-right py-2 px-3 font-medium text-zinc-500" title="{{ __('Vægtet snit-rente efter hovedstol') }}">{{ __('Rente') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -205,6 +207,8 @@
                                     <td class="py-2 px-3">{{ $p['year_built'] ?? '-' }}</td>
                                     <td class="py-2 px-3 text-right">{{ $p['area_building'] ? number_format($p['area_building'], 0, ',', '.') . ' m²' : '-' }}</td>
                                     <td class="py-2 px-3 text-right">{{ $p['valuation'] ? number_format($p['valuation'], 0, ',', '.') . ' kr.' : '-' }}</td>
+                                    <td class="py-2 px-3 text-right {{ ($p['total_debt'] ?? 0) > 0 ? 'text-red-700 dark:text-red-400' : 'text-zinc-300' }}">{{ ($p['total_debt'] ?? 0) > 0 ? number_format($p['total_debt'], 0, ',', '.') . ' kr.' : '-' }}</td>
+                                    <td class="py-2 px-3 text-right">{{ isset($p['weighted_rate']) ? number_format($p['weighted_rate'], 2, ',', '.') . ' %' : '-' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
