@@ -15,7 +15,7 @@
         @endif
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-[24rem_1fr] gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-[28rem_1fr] gap-6">
         <aside class="space-y-4">
             <div class="p-4 border rounded-lg bg-white dark:bg-zinc-800 dark:border-zinc-700 space-y-4">
                 <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 uppercase tracking-wide">{{ __('Område') }} <span class="text-red-500">*</span></h2>
@@ -78,7 +78,7 @@
                     }"
                     x-ref="drawmap"
                     class="w-full rounded border"
-                    style="height: 420px; z-index: 0;"
+                    style="height: 520px; z-index: 0;"
                 >
                     <template x-if="mapFailed">
                         <div class="flex items-center justify-center h-full text-xs text-zinc-500 text-center px-4">
@@ -189,6 +189,8 @@
                                 <th class="text-left py-2 px-3 font-medium text-zinc-500 cursor-pointer" wire:click="sortBy('year')">{{ __('Byggeår') }} ⇅</th>
                                 <th class="text-right py-2 px-3 font-medium text-zinc-500">{{ __('Bygningsareal') }}</th>
                                 <th class="text-right py-2 px-3 font-medium text-zinc-500">{{ __('Off. vurdering') }}</th>
+                                <th class="text-right py-2 px-3 font-medium text-zinc-500" title="{{ __('Sum af aktive pantebreve') }}">{{ __('Tinglyst gæld') }}</th>
+                                <th class="text-right py-2 px-3 font-medium text-zinc-500" title="{{ __('Vægtet snit-rente efter hovedstol') }}">{{ __('Rente') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -205,6 +207,8 @@
                                     <td class="py-2 px-3">{{ $p['year_built'] ?? '-' }}</td>
                                     <td class="py-2 px-3 text-right">{{ $p['area_building'] ? number_format($p['area_building'], 0, ',', '.') . ' m²' : '-' }}</td>
                                     <td class="py-2 px-3 text-right">{{ $p['valuation'] ? number_format($p['valuation'], 0, ',', '.') . ' kr.' : '-' }}</td>
+                                    <td class="py-2 px-3 text-right {{ ($p['total_debt'] ?? 0) > 0 ? 'text-red-700 dark:text-red-400' : 'text-zinc-300' }}">{{ ($p['total_debt'] ?? 0) > 0 ? number_format($p['total_debt'], 0, ',', '.') . ' kr.' : '-' }}</td>
+                                    <td class="py-2 px-3 text-right">{{ isset($p['weighted_rate']) ? number_format($p['weighted_rate'], 2, ',', '.') . ' %' : '-' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
