@@ -24,15 +24,27 @@
                 $currentOwners = $allOwners->filter(fn ($o) => $o['is_current'] ?? true);
                 $historicalOwners = $allOwners->reject(fn ($o) => $o['is_current'] ?? true)->values();
 
-                $isReelEjer = fn ($o) => str_contains(mb_strtolower($o['role_label'] ?? ''), 'reelle ejere');
-                $isLegalEjer = fn ($o) => str_contains(mb_strtolower($o['role_label'] ?? ''), 'ejerregister');
+                // registry-api classifies each owner via owner_kind (reel|legal|other) from the
+                // CVR org name, so the split is authoritative — no string-guessing here. Legacy
+                // fallback: derive from role_label if owner_kind is absent (older cached payloads).
+                $ownerKind = function ($o) {
+                    if (isset($o['owner_kind'])) {
+                        return $o['owner_kind'];
+                    }
+                    $label = mb_strtolower($o['role_label'] ?? '');
+                    return match (true) {
+                        str_contains($label, 'reelle ejere') => 'reel',
+                        str_contains($label, 'ejerregister') => 'legal',
+                        default => 'other',
+                    };
+                };
 
-                $reelOwners = $currentOwners->filter($isReelEjer)->values();
-                $legalOwnersStrict = $currentOwners->filter($isLegalEjer)->values();
-                $unlabeled = $currentOwners->reject(fn ($o) => $isReelEjer($o) || $isLegalEjer($o))->values();
-
-                // Owners without an explicit role_label are treated as legal by default
-                $legalOwners = $legalOwnersStrict->merge($unlabeled)->values();
+                $reelOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'reel')->values();
+                $legalOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'legal')->values();
+                // 'other' = a participant that holds a share but is neither a registered UBO nor a
+                // direct legal shareholder (e.g. Direktion). Shown in its own neutral row so it is
+                // never mistaken for a legal owner.
+                $otherOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'other')->values();
             @endphp
 
             <div class="metis-org-chart">
@@ -75,6 +87,29 @@
                             @endforeach
                         </div>
                         <div class="org-bridge-row" style="--node-count: {{ $legalOwners->count() }}">
+                            <div class="org-bridge-line"></div>
+                        </div>
+                    @endif
+                    <div class="org-trunk"></div>
+                @endif
+
+                {{-- Other participants with a share (neither UBO nor direct legal shareholder,
+                     e.g. Direktion). Neutral row so they are never shown as legal owners. --}}
+                @if($otherOwners->count() > 0)
+                    <div class="org-section-label">{{ __('Other with ownership share') }}</div>
+                    <div class="org-row {{ $otherOwners->count() > 1 ? 'multi' : '' }}">
+                        @foreach($otherOwners as $owner)
+                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'zinc', 'expandedOwners' => $expandedOwners])
+                        @endforeach
+                    </div>
+
+                    @if($otherOwners->count() > 1)
+                        <div class="org-stem-row">
+                            @foreach($otherOwners as $owner)
+                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
+                            @endforeach
+                        </div>
+                        <div class="org-bridge-row" style="--node-count: {{ $otherOwners->count() }}">
                             <div class="org-bridge-line"></div>
                         </div>
                     @endif
