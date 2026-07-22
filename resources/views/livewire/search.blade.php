@@ -178,6 +178,9 @@
             {{-- Address: full section components --}}
             @if($resultType === 'address' && !$result)
             <div class="space-y-6">
+                {{-- Adresse-titel så man ved hvilken ejendom opslaget viser
+                     (som navnet på selskabs-/personopslag). Kristian 22/7. --}}
+                <h2 class="text-lg font-serif text-ink-800">{{ $query }}</h2>
                 <livewire:metis-map-panel :query="$query" lazy :key="'mp-'.$query" />
                 <livewire:metis-address-bbr :query="$query" lazy :key="'ab-'.$query" />
                 <livewire:metis-address-valuation :query="$query" lazy :key="'av-'.$query" />

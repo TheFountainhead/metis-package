@@ -29,3 +29,31 @@ it('renders EJERREGISTER as a readable role label in the visible role cell', fun
     // (EJERREGISTER kan stadig ligge i Livewire's hydration-snapshot, men vises ikke.)
     expect($html)->toContain('Direktion, Legal ejer, Reelle ejere');
 });
+
+it('hides companies without a current role by default, shows them via toggle', function () {
+    Http::fake(['*cvr/person-roles*' => Http::response(['data' => [
+        'person_name' => 'Test Person',
+        'companies' => [
+            [
+                'name' => 'Aktiv Holding ApS', 'cvr' => '11111111', 'company_type' => 'APS', 'status' => 'NORMAL',
+                'roles' => [['role_label' => 'Direktion', 'is_current' => true]],
+            ],
+            [
+                'name' => 'Ophørt Gammel ApS', 'cvr' => '22222222', 'company_type' => 'APS', 'status' => 'OPHOERT',
+                'roles' => [['role_label' => 'Direktion', 'is_current' => false]],
+            ],
+        ],
+    ]])]);
+
+    $component = Livewire::test(PersonRoles::class, ['query' => 'Test Person']);
+
+    // Default: kun selskabet med aktuel rolle vises; det ophørte er skjult + toggle tilbudt.
+    expect($component->html())->toContain('Aktiv Holding ApS')
+        ->not->toContain('Ophørt Gammel ApS');
+    $component->assertSee('Vis også tidligere roller');
+
+    // Slå toggle til → begge vises.
+    $component->set('showAllRoles', true);
+    expect($component->html())->toContain('Aktiv Holding ApS')
+        ->toContain('Ophørt Gammel ApS');
+});

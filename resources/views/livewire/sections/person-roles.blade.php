@@ -93,6 +93,13 @@
 
         {{-- Company Roles --}}
         @if(count($companies) > 0)
+            @php
+                // Default: kun selskaber hvor personen har en AKTUEL rolle. Gamle/
+                // ophørte roller støjer (Kristian 22/7) — de kan foldes ind via toggle.
+                $hasCurrentRole = fn ($c) => collect($c['roles'] ?? [])->contains(fn ($r) => $r['is_current'] ?? false);
+                $visibleCompanies = $showAllRoles ? $companies : array_values(array_filter($companies, $hasCurrentRole));
+                $hiddenCount = count($companies) - count($visibleCompanies);
+            @endphp
             <flux:heading size="lg" class="mb-3">{{ __('Company Roles') }}</flux:heading>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
@@ -106,7 +113,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach($companies as $company)
+                        @foreach($visibleCompanies as $company)
                             @php
                                 // CVR's rå register-navn "EJERREGISTER" er ikke en menneskelig
                                 // rolle men navnet på det legale ejer-register. Vis det læsbart.
@@ -146,6 +153,17 @@
                     </tbody>
                 </table>
             </div>
+            @if($showAllRoles && $hiddenCount === 0)
+                {{-- viser allerede alt, ingen skjulte — intet at slå til/fra --}}
+            @elseif($showAllRoles)
+                <button wire:click="$set('showAllRoles', false)" class="mt-3 text-sm text-warm-600 hover:text-warm-700 underline">
+                    {{ __('Vis kun aktuelle roller') }}
+                </button>
+            @elseif($hiddenCount > 0)
+                <button wire:click="$set('showAllRoles', true)" class="mt-3 text-sm text-warm-600 hover:text-warm-700 underline">
+                    {{ __('Vis også tidligere roller (:n)', ['n' => $hiddenCount]) }}
+                </button>
+            @endif
         @else
             <p class="text-sm text-zinc-500">{{ __('No company roles found for this person.') }}</p>
         @endif

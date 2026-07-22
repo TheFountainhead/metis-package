@@ -11,6 +11,9 @@ class PersonRoles extends MetisSection
     public array $companies = [];
     public array $properties = [];
 
+    /** Default: vis kun selskaber hvor personen har en aktuel rolle. */
+    public bool $showAllRoles = false;
+
     protected function sectionTitle(): string
     {
         return __('Person');
