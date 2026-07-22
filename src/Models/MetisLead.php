@@ -15,6 +15,7 @@ class MetisLead extends Model
 
     protected $fillable = [
         'email',
+        'name',
         'cvr',
         'company_name',
         'industry',

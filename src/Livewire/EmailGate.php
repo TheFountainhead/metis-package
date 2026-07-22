@@ -15,11 +15,15 @@ use TheFountainhead\Metis\Services\LeadNotifier;
 
 class EmailGate extends Component
 {
+    public string $name = '';
+
     public string $email = '';
 
     public string $code = '';
 
-    public string $step = 'email'; // email | cvr | company_confirm | verify
+    public string $step = 'email'; // email | verify
+
+    public bool $nameError = false;
 
     public bool $emailError = false;
 
@@ -35,20 +39,20 @@ class EmailGate extends Component
         $this->show = true;
     }
 
-    // Company resolution fields
+    // Firma-data resolves i baggrunden fra mail-domænet og gemmes på leaden.
     public string $cvr = '';
 
     public string $companyName = '';
 
-    public array $companyMatches = [];
-
-    public bool $showCvrField = false;
-
-    public bool $showCompanyConfirm = false;
-
     public function sendCode(): void
     {
-        $this->reset(['emailError', 'emailErrorMessage', 'codeError', 'showCvrField', 'showCompanyConfirm', 'companyMatches', 'cvr', 'companyName']);
+        $this->reset(['nameError', 'emailError', 'emailErrorMessage', 'codeError', 'companyName']);
+
+        if (trim($this->name) === '') {
+            $this->nameError = true;
+
+            return;
+        }
 
         if (! filter_var($this->email, FILTER_VALIDATE_EMAIL)) {
             $this->emailError = true;
@@ -61,6 +65,15 @@ class EmailGate extends Component
         if ((new DisposableEmail)->isDisposable($this->email)) {
             $this->emailError = true;
             $this->emailErrorMessage = 'disposable';
+
+            return;
+        }
+
+        // Kun arbejdsmail: afvis private mail-domæner (gmail/hotmail o.l.)
+        if (config('metis.gating.require_business_email')
+            && app(FreeEmailDetector::class)->isFreeEmail($this->email)) {
+            $this->emailError = true;
+            $this->emailErrorMessage = 'free_email';
 
             return;
         }
@@ -90,71 +103,19 @@ class EmailGate extends Component
             return;
         }
 
-        // Check free email → show CVR field
-        if (app(FreeEmailDetector::class)->isFreeEmail($this->email)) {
-            $this->showCvrField = true;
-            $this->step = 'cvr';
-
-            return;
+        // Slå firmaet op fra domænet i baggrunden (gemmes på leaden ved verificering).
+        // Brugeren ser intet firma-/CVR-trin — navn + arbejdsmail er nok. Et fejlende
+        // firma-opslag må aldrig blokere tilmeldingen, så det er best-effort.
+        try {
+            $matches = app(CompanyEmailResolver::class)->resolve($this->email);
+            if (count($matches) >= 1) {
+                $this->companyName = $matches[0]['name'];
+                $this->cvr = $matches[0]['cvr'];
+            }
+        } catch (\Throwable) {
+            // firma forbliver ukendt; navn + mail er tilstrækkeligt
         }
 
-        // Business email → try to resolve company
-        $resolver = app(CompanyEmailResolver::class);
-        $matches = $resolver->resolve($this->email);
-
-        if (count($matches) === 1) {
-            // Single match → show confirmation
-            $this->companyMatches = $matches;
-            $this->companyName = $matches[0]['name'];
-            $this->cvr = $matches[0]['cvr'];
-            $this->showCompanyConfirm = true;
-            $this->step = 'company_confirm';
-
-            return;
-        }
-
-        if (count($matches) > 1) {
-            // Multiple matches → show dropdown
-            $this->companyMatches = $matches;
-            $this->showCompanyConfirm = true;
-            $this->step = 'company_confirm';
-
-            return;
-        }
-
-        // No match → show CVR field
-        $this->showCvrField = true;
-        $this->step = 'cvr';
-    }
-
-    public function confirmCompany(): void
-    {
-        $this->sendVerificationCode();
-    }
-
-    public function selectCompany(string $cvr, string $name): void
-    {
-        $this->cvr = $cvr;
-        $this->companyName = $name;
-        $this->sendVerificationCode();
-    }
-
-    public function submitCvr(): void
-    {
-        if (! empty($this->cvr) && ! preg_match('/^\d{8}$/', $this->cvr)) {
-            $this->emailError = true;
-            $this->emailErrorMessage = 'invalid_cvr';
-
-            return;
-        }
-
-        $this->sendVerificationCode();
-    }
-
-    public function skipCvr(): void
-    {
-        $this->cvr = '';
-        $this->companyName = '';
         $this->sendVerificationCode();
     }
 
@@ -202,6 +163,7 @@ class EmailGate extends Component
         $lead = MetisLead::updateOrCreate(
             ['email' => $this->email],
             [
+                'name' => trim($this->name) ?: null,
                 'cvr' => $this->cvr ?: null,
                 'company_name' => $this->companyName ?: null,
                 'domain' => strtolower(substr($this->email, strrpos($this->email, '@') + 1)),
