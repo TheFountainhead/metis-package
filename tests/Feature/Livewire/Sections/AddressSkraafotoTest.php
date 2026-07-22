@@ -24,7 +24,7 @@ function fakeAnalysisWithCoordinates(?array $coordinates): array
     ];
 }
 
-it('embeds the skraafoto viewer centered on the property (WGS84 lon,lat)', function () {
+it('embeds the skraafoto viewer centered on the property (EPSG:25832 easting,northing)', function () {
     Http::fake([
         '*property/analysis*' => Http::response(fakeAnalysisWithCoordinates([
             'lat' => 55.683331,
@@ -32,10 +32,13 @@ it('embeds the skraafoto viewer centered on the property (WGS84 lon,lat)', funct
         ])),
     ]);
 
+    // Skråfoto forventer UTM zone 32N (meter), ikke WGS84-grader. WGS84
+    // (55.683331, 12.590114) → EPSG:25832 (725681.13, 6176679.01), verificeret
+    // mod PostGIS ST_Transform.
     Livewire::test(AddressSkraafoto::class, ['query' => 'Bredgade 40, 1260'])
         ->assertSet('lat', 55.683331)
         ->assertSet('lng', 12.590114)
-        ->assertSeeHtml('https://skraafoto.dataforsyningen.dk/?center=12.590114%2C55.683331&amp;orientation=north')
+        ->assertSeeHtml('https://skraafoto.dataforsyningen.dk/?center=725681.13%2C6176679.01&amp;orientation=north')
         ->assertSee(__('Åbn i nyt vindue'));
 });
 
