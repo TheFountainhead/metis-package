@@ -128,6 +128,9 @@
                                 </button>
                             @endforeach
                         </div>
+                    @elseif($suggestionType === 'address')
+                        <p class="text-ink-800 mb-1">Vi kunne ikke finde "{{ $query }}"</p>
+                        <p class="text-sand-300 text-sm">Skriv adressen med postnummer, fx Esrumvej 151, 3000.</p>
                     @else
                         <p class="text-ink-800 mb-1">Ingen resultater for "{{ $query }}"</p>
                         <p class="text-sand-300 text-sm">Prøv et andet søgeord.</p>

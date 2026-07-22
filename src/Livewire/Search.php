@@ -265,6 +265,19 @@ class Search extends Component
             }
         }
 
+        // En adresse uden postnummer kan ikke opløses til en unik matrikel
+        // (registry-api svarer 422 → alle sektioner står tomme uden forklaring).
+        // Vis i stedet autocomplete-forslagene, så brugeren vælger den fulde adresse.
+        if ($type === 'address' && empty(app(RegistryApi::class)->parseAddress($query)['zip'])) {
+            $suggestions = rescue(fn () => app(RegistryApi::class)->addressAutocomplete($query, 5), []) ?? [];
+            $this->error = true;
+            $this->errorMessage = 'no_results';
+            $this->suggestions = $suggestions;
+            $this->suggestionType = 'address';
+
+            return;
+        }
+
         // For CVR/address, show full sections inline (no redirect)
         if (in_array($type, ['cvr', 'address'])) {
             $this->resultType = $type;
