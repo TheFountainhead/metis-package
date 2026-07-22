@@ -313,7 +313,22 @@
                                     </li>
                                 @endforeach
                             </ul>
-                            @if(count($cursorHistory) > 0 || ($pagination['has_more'] ?? false))
+                            @if(($pagination['sample'] ?? false) && ($pagination['has_more'] ?? false))
+                                {{-- Sample-tilstand: brugeren ser de 10 øverste + det fulde
+                                     antal match, men får ikke hele lead-listen. Fuld adgang
+                                     er en kommerciel aftale (håndhæves server-side). --}}
+                                <div class="px-4 py-4 border-t dark:border-zinc-700 text-center">
+                                    <p class="text-sm text-zinc-600 dark:text-zinc-300">
+                                        {{ __('Viser de :n med højest gæld ud af', ['n' => count($response['results'] ?? [])]) }}
+                                        <span class="font-semibold tabular-nums">{{ number_format($summary['n_properties'] ?? 0, 0, ',', '.') }}</span>
+                                        {{ __('ejendomme.') }}
+                                    </p>
+                                    <a href="mailto:kontakt@frankston.io?subject=Metis%20gældssøgning%20—%20fuld%20adgang"
+                                       class="inline-block mt-2 text-sm font-medium text-warm-600 hover:text-warm-700 underline">
+                                        {{ __('Kontakt os for fuld adgang til hele listen') }}
+                                    </a>
+                                </div>
+                            @elseif(count($cursorHistory) > 0 || ($pagination['has_more'] ?? false))
                                 <div class="px-4 py-3 border-t dark:border-zinc-700 flex justify-between items-center">
                                     @if(count($cursorHistory) > 0)
                                         <button wire:click="previousPage" class="text-sm px-4 py-1.5 border rounded hover:bg-zinc-50">
