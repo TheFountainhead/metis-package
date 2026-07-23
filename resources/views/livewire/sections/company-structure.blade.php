@@ -16,7 +16,7 @@
             @endif
         </div>
 
-        @if(count($owners) === 0 && count($subsidiaries) === 0 && ! $enriching)
+        @if(count($owners) === 0 && count($subsidiaries) === 0 && count($ancestors) === 0 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
             @php
@@ -48,6 +48,32 @@
             @endphp
 
             <div class="metis-org-chart">
+
+                {{-- Ownership chain ancestors (Task 8): companies/persons above the searched
+                     company, deepest UBO at top down to the immediate owner just above OpCo.
+                     getOwnershipChain's BFS starts at the searched company, so its depth-1
+                     nodes ARE the immediate owners — already rendered by the reel/legal/other
+                     rows below. Only depth >= 2 (the chain ABOVE the immediate owners) belongs
+                     here, or every immediate owner would be shown twice. --}}
+                @php
+                    $chainAbove = collect($ancestors)->filter(fn ($a) => ($a['depth'] ?? 1) >= 2)->sortByDesc('depth');
+                @endphp
+                @if($chainAbove->count() > 0)
+                    <div class="org-section-label">{{ __('Ownership chain') }}</div>
+                    @foreach($chainAbove as $anc)
+                        <div class="org-row" style="margin-left: {{ (($anc['depth'] ?? 2) - 1) * 1.5 }}rem">
+                            @include('metis::livewire.sections.partials.owner-card', [
+                                'owner' => $anc,
+                                'badgeColor' => ($anc['owner_kind'] ?? 'other') === 'reel' ? 'emerald' : (($anc['owner_kind'] ?? 'other') === 'legal' ? 'sky' : 'zinc'),
+                                'expandedOwners' => $expandedOwners,
+                            ])
+                            @if($anc['foreign'] ?? false)<span class="text-xs text-zinc-500">{{ __('foreign owner') }}</span>@endif
+                            @if($anc['cycle'] ?? false)<span class="text-xs text-amber-600">{{ __('circular ownership') }}</span>@endif
+                            @if($anc['enriching'] ?? false)<span class="text-xs text-blue-500">{{ __('loading...') }}</span>@endif
+                        </div>
+                    @endforeach
+                    <div class="org-trunk"></div>
+                @endif
 
                 {{-- Reel ejer row (Reelle ejere = UBO via koncernkæde) --}}
                 @if($reelOwners->count() > 0)
