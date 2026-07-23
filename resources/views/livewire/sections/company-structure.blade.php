@@ -61,10 +61,10 @@
                 @if($chainAbove->count() > 0)
                     <div class="org-section-label">{{ __('Ownership chain') }}</div>
                     @foreach($chainAbove as $anc)
-                        <div class="org-row" style="margin-left: {{ ($anc['depth'] - 1) * 1.5 }}rem">
+                        <div class="org-row" style="margin-left: {{ (($anc['depth'] ?? 2) - 1) * 1.5 }}rem">
                             @include('metis::livewire.sections.partials.owner-card', [
                                 'owner' => $anc,
-                                'badgeColor' => $anc['owner_kind'] === 'reel' ? 'emerald' : ($anc['owner_kind'] === 'legal' ? 'sky' : 'zinc'),
+                                'badgeColor' => ($anc['owner_kind'] ?? 'other') === 'reel' ? 'emerald' : (($anc['owner_kind'] ?? 'other') === 'legal' ? 'sky' : 'zinc'),
                                 'expandedOwners' => $expandedOwners,
                             ])
                             @if($anc['foreign'] ?? false)<span class="text-xs text-zinc-500">{{ __('foreign owner') }}</span>@endif
