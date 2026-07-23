@@ -93,3 +93,23 @@ it('falls back to role_label when owner_kind is absent (stale cached payload)', 
     Livewire::test(CompanyStructure::class, ['query' => '99999999'])
         ->assertSeeInOrder(['Ultimate beneficial owner', 'OLD REEL', 'Legal owner', 'OLD LEGAL']);
 });
+
+it('exposes ancestors from the structure payload', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo',
+            'owners' => [],
+            'subsidiaries' => [],
+            'ancestors' => [
+                ['person_name' => 'HoldCo ApS', 'cvr' => '70000002', 'is_company' => true,
+                    'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 1,
+                    'parent_of_cvr' => null, 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'OpCo', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    Livewire::test(CompanyStructure::class, ['query' => '70000001'])
+        ->assertSet('ancestors', fn ($a) => count($a) === 1 && $a[0]['person_name'] === 'HoldCo ApS');
+});

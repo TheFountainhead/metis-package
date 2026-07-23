@@ -8,6 +8,7 @@ class CompanyStructure extends MetisSection
 {
     public array $owners = [];
     public array $subsidiaries = [];
+    public array $ancestors = [];
     public bool $enriching = false;
     public int $companiesFound = 0;
     public ?string $companyName = null;
@@ -74,6 +75,7 @@ class CompanyStructure extends MetisSection
         $result = rescue(fn () => $api->fetchCompanyStructure($query), []);
         $this->owners = $result['owners'] ?? [];
         $this->subsidiaries = $result['subsidiaries'] ?? [];
+        $this->ancestors = $result['ancestors'] ?? [];
         $this->companyName = $result['name'] ?? null;
 
         // Fallback: fetch owners + name from CVR Elasticsearch
@@ -119,6 +121,8 @@ class CompanyStructure extends MetisSection
             $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyStructure($this->query), []);
             // Owners don't change during subsidiary-enrichment — preserve the lifted shape
             $this->subsidiaries = $result['subsidiaries'] ?? $this->subsidiaries;
+            // Ancestors deepen as enrichment fills them in
+            $this->ancestors = $result['ancestors'] ?? $this->ancestors;
         }
     }
 
