@@ -113,3 +113,20 @@ it('exposes ancestors from the structure payload', function () {
     Livewire::test(CompanyStructure::class, ['query' => '70000001'])
         ->assertSet('ancestors', fn ($a) => count($a) === 1 && $a[0]['person_name'] === 'HoldCo ApS');
 });
+
+it('renders ancestors above the searched company, deepest at top', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo', 'owners' => [], 'subsidiaries' => [],
+            'ancestors' => [
+                ['person_name' => 'BidCo ApS', 'cvr' => '20000002', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 1, 'parent_of_cvr' => null, 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+                ['person_name' => 'Top Ejer', 'cvr' => null, 'is_company' => false, 'ownership_share' => 100.0, 'owner_kind' => 'reel', 'depth' => 2, 'parent_of_cvr' => '20000002', 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'OpCo', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    Livewire::test(CompanyStructure::class, ['query' => '70000001'])
+        ->assertSeeInOrder(['Top Ejer', 'BidCo ApS', 'OpCo']); // deepest UBO first, then down to searched company
+});

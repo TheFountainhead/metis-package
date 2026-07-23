@@ -16,7 +16,7 @@
             @endif
         </div>
 
-        @if(count($owners) === 0 && count($subsidiaries) === 0 && ! $enriching)
+        @if(count($owners) === 0 && count($subsidiaries) === 0 && count($ancestors) === 0 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
             @php
@@ -48,6 +48,25 @@
             @endphp
 
             <div class="metis-org-chart">
+
+                {{-- Ownership chain ancestors (Task 8): companies/persons above the searched
+                     company, deepest UBO at top down to the immediate owner just above OpCo. --}}
+                @if(count($ancestors) > 0)
+                    <div class="org-section-label">{{ __('Ownership chain') }}</div>
+                    @foreach(collect($ancestors)->sortByDesc('depth') as $anc)
+                        <div class="org-row" style="margin-left: {{ ($anc['depth'] - 1) * 1.5 }}rem">
+                            @include('metis::livewire.sections.partials.owner-card', [
+                                'owner' => $anc,
+                                'badgeColor' => $anc['owner_kind'] === 'reel' ? 'emerald' : ($anc['owner_kind'] === 'legal' ? 'sky' : 'zinc'),
+                                'expandedOwners' => $expandedOwners,
+                            ])
+                            @if($anc['foreign'] ?? false)<span class="text-xs text-zinc-500">{{ __('foreign owner') }}</span>@endif
+                            @if($anc['cycle'] ?? false)<span class="text-xs text-amber-600">{{ __('circular ownership') }}</span>@endif
+                            @if($anc['enriching'] ?? false)<span class="text-xs text-blue-500">{{ __('loading...') }}</span>@endif
+                        </div>
+                    @endforeach
+                    <div class="org-trunk"></div>
+                @endif
 
                 {{-- Reel ejer row (Reelle ejere = UBO via koncernkæde) --}}
                 @if($reelOwners->count() > 0)
