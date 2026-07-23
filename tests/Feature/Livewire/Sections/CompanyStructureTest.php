@@ -117,7 +117,16 @@ it('exposes ancestors from the structure payload', function () {
 it('renders ancestors above the searched company, deepest at top', function () {
     Http::fake([
         '*cvr/company-structure*' => Http::response(['data' => [
-            'name' => 'OpCo', 'owners' => [], 'subsidiaries' => [],
+            'name' => 'OpCo',
+            // BidCo ApS is the immediate (depth-1) owner: it is returned in BOTH
+            // $owners (rendered by the Legal owner row) and $ancestors (depth 1),
+            // mirroring the real API shape. The ancestors block only ever shows
+            // depth >= 2, so BidCo must render once — from $owners — not from
+            // the ancestors block above it.
+            'owners' => [
+                ['person_name' => 'BidCo ApS', 'is_company' => true, 'cvr' => '20000002', 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'is_current' => true],
+            ],
+            'subsidiaries' => [],
             'ancestors' => [
                 ['person_name' => 'BidCo ApS', 'cvr' => '20000002', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 1, 'parent_of_cvr' => null, 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
                 ['person_name' => 'Top Ejer', 'cvr' => null, 'is_company' => false, 'ownership_share' => 100.0, 'owner_kind' => 'reel', 'depth' => 2, 'parent_of_cvr' => '20000002', 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
@@ -129,4 +138,42 @@ it('renders ancestors above the searched company, deepest at top', function () {
 
     Livewire::test(CompanyStructure::class, ['query' => '70000001'])
         ->assertSeeInOrder(['Top Ejer', 'BidCo ApS', 'OpCo']); // deepest UBO first, then down to searched company
+});
+
+it('does not double-render the depth-1 immediate owner in the ancestors block (regression)', function () {
+    // getOwnershipChain's BFS starts at the searched company, so its depth-1 nodes
+    // ARE the immediate owners already rendered by the reel/legal/other rows below.
+    // Only depth >= 2 (the chain ABOVE the immediate owners) belongs in the ancestors block.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo',
+            'owners' => [
+                ['person_name' => 'BidCo ApS', 'is_company' => true, 'cvr' => '20000002', 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'is_current' => true],
+            ],
+            'subsidiaries' => [],
+            'ancestors' => [
+                // Same node as the immediate owner above (depth 1) — must NOT be rendered again.
+                ['person_name' => 'BidCo ApS', 'cvr' => '20000002', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 1, 'parent_of_cvr' => null, 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+                // Grandparent (depth 2) — belongs in the ancestors block above BidCo.
+                ['person_name' => 'Top Ejer', 'cvr' => null, 'is_company' => false, 'ownership_share' => 100.0, 'owner_kind' => 'reel', 'depth' => 2, 'parent_of_cvr' => '20000002', 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'OpCo', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    $html = Livewire::test(CompanyStructure::class, ['query' => '70000001'])->html();
+
+    // Strip Livewire's hidden wire:snapshot state blob (raw component-state JSON,
+    // not visible markup) before counting — it legitimately contains BidCo ApS
+    // twice (once from $owners, once from $ancestors state), which is not a
+    // rendering bug. Only the actual rendered HTML below the snapshot attribute
+    // proves whether the org-chart double-renders a node.
+    $visibleHtml = preg_replace('/wire:snapshot="[^"]*"/', '', $html);
+
+    // The depth-2 grandparent renders in the ancestors block above.
+    expect($visibleHtml)->toContain('Top Ejer');
+    // The depth-1 owner (BidCo ApS) appears exactly once in visible markup — in
+    // the Owners row — never a second time in the ancestors block above it.
+    expect(substr_count($visibleHtml, 'BidCo ApS'))->toBe(1);
 });

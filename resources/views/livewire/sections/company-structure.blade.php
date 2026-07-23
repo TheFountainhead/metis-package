@@ -50,10 +50,17 @@
             <div class="metis-org-chart">
 
                 {{-- Ownership chain ancestors (Task 8): companies/persons above the searched
-                     company, deepest UBO at top down to the immediate owner just above OpCo. --}}
-                @if(count($ancestors) > 0)
+                     company, deepest UBO at top down to the immediate owner just above OpCo.
+                     getOwnershipChain's BFS starts at the searched company, so its depth-1
+                     nodes ARE the immediate owners — already rendered by the reel/legal/other
+                     rows below. Only depth >= 2 (the chain ABOVE the immediate owners) belongs
+                     here, or every immediate owner would be shown twice. --}}
+                @php
+                    $chainAbove = collect($ancestors)->filter(fn ($a) => ($a['depth'] ?? 1) >= 2)->sortByDesc('depth');
+                @endphp
+                @if($chainAbove->count() > 0)
                     <div class="org-section-label">{{ __('Ownership chain') }}</div>
-                    @foreach(collect($ancestors)->sortByDesc('depth') as $anc)
+                    @foreach($chainAbove as $anc)
                         <div class="org-row" style="margin-left: {{ ($anc['depth'] - 1) * 1.5 }}rem">
                             @include('metis::livewire.sections.partials.owner-card', [
                                 'owner' => $anc,
