@@ -475,6 +475,14 @@
     .mgraph-node--reel    { border-color: var(--reel); }
     .mgraph-node--reel    .mgraph-node__name { color: var(--reel); }
     .mgraph-node--legal   { border-color: var(--legal); }
+    /* 'other' = a capped/pruned parent surfaced as a stub ("CVR <nr>", no name).
+       Dashed + dimmed so it reads as an incomplete link, not a confirmed owner. */
+    .mgraph-node--other {
+        border-style: dashed;
+        border-color: var(--rule-strong);
+        opacity: 0.72;
+    }
+    .mgraph-node--other .mgraph-node__name { color: var(--ink-3); font-style: italic; }
     .mgraph-node--foreign { border-color: var(--foreign); }
     .mgraph-node--foreign .mgraph-node__name { color: var(--foreign); }
     .mgraph-node--searched { background: var(--bg-2); border-color: var(--ink); border-width: 1.5px; }

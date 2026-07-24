@@ -192,27 +192,6 @@ class CompanyStructure extends MetisSection
     }
 
     /**
-     * Build a real nested ownership tree from the flat `ancestors` adjacency
-     * list. getOwnershipChain returns one row per (owner → owned) edge, each
-     * carrying `parent_of_cvr` = the CVR of the company this owner owns. So a
-     * node's children are every ancestor whose parent_of_cvr equals this node's
-     * cvr. The searched company (cvr) is the conceptual root; its direct
-     * owners are the rows with parent_of_cvr === null (depth 1) — these ARE
-     * included as the top-level tree roots (Variant A: one full tree, top to
-     * bottom, matching the CVR click-through — no separate reel/legal/other
-     * rows duplicating the immediate owners).
-     *
-     * Ancestor chains can arrive orphaned: a row's `parent_of_cvr` may
-     * reference a company that never has its own row in `$ancestors` (e.g.
-     * the immediate parent was capped/pruned/not-yet-enriched upstream, but
-     * its own owners were still returned). Such an orphaned parent-group is
-     * surfaced as its own top-level root too, so a partial chain never
-     * silently disappears.
-     *
-     * Returns a list of root-level owner nodes (depth 1 and any orphaned
-     * deeper group), each with a nested `children`.
-     */
-    /**
      * Flat {nodes, edges} model for the dagre graph render (fase 1). Built
      * directly from the flat `$ancestors` list: one node per owner plus a
      * `searched` node for the queried company, and one edge per owner→owned
@@ -229,6 +208,7 @@ class CompanyStructure extends MetisSection
         ];
         $seen = ['searched' => true];
         $edges = [];
+        $edgeSeen = [];
 
         foreach ($this->ancestors as $i => $a) {
             $isCompany = $a['is_company'] ?? false;
@@ -257,20 +237,32 @@ class CompanyStructure extends MetisSection
                 ];
             }
 
-            // Edge: this owner owns the company identified by parent_of_cvr
-            // (null parent_of_cvr = owns the searched company itself).
-            $ownedId = $a['parent_of_cvr'] ?? 'searched';
-            $edges[] = ['from' => $id, 'to' => $ownedId, 'label' => $this->shareLabel($a['ownership_share'] ?? null)];
+            // Edge: this owner owns the company identified by parent_of_cvr.
+            // A null parent_of_cvr — OR a parent_of_cvr equal to the searched cvr
+            // (some backend rows fill the searched company's own cvr instead of
+            // null for a direct owner) — means it owns the searched company, so
+            // the edge points at the synthetic 'searched' node. Normalising here
+            // also stops the orphan-stub pass below from minting a duplicate root
+            // node for the searched company.
+            $ownedId = $this->ownedTargetId($a['parent_of_cvr'] ?? null);
+            $edge = ['from' => $id, 'to' => $ownedId, 'label' => $this->shareLabel($a['ownership_share'] ?? null)];
+            // Dedup identical edges: a repeated ancestor row (backend BFS quirk)
+            // would otherwise draw two overlapping lines with stacked % labels.
+            if (! isset($edgeSeen[$id.'|'.$ownedId])) {
+                $edgeSeen[$id.'|'.$ownedId] = true;
+                $edges[] = $edge;
+            }
         }
 
         // Orphan-parent stubs: an ancestor's parent_of_cvr can point at a company
         // that was capped/pruned upstream and so has no row of its own. Without a
         // node, the render drops the edge and the owner floats detached, reading
         // as a top-UBO it is not. Synthesise a minimal stub for every referenced
-        // parent that isn't already a node, so the chain stays connected.
+        // parent that isn't already a node, so the chain stays connected. The
+        // searched company itself is never a stub (normalised to 'searched' above).
         foreach ($this->ancestors as $a) {
-            $parent = $a['parent_of_cvr'] ?? null;
-            if ($parent !== null && ! isset($seen[$parent])) {
+            $parent = $this->ownedTargetId($a['parent_of_cvr'] ?? null);
+            if ($parent !== 'searched' && ! isset($seen[$parent])) {
                 $seen[$parent] = true;
                 $nodes[] = [
                     'id' => $parent,
@@ -286,16 +278,39 @@ class CompanyStructure extends MetisSection
     }
 
     /**
-     * Content-derived key for the graph's Livewire wrapper. The graph lives in a
+     * Resolve an ancestor's parent_of_cvr to the node id it owns. Null, or the
+     * searched company's own cvr, both mean "owns the searched company" → the
+     * synthetic 'searched' node. Any other cvr is that company's node id.
+     */
+    protected function ownedTargetId(?string $parentOfCvr): string
+    {
+        if ($parentOfCvr === null || $parentOfCvr === $this->query) {
+            return 'searched';
+        }
+
+        return $parentOfCvr;
+    }
+
+    /**
+     * Topology key for the graph's Livewire wrapper. The graph lives in a
      * wire:ignore subtree, so Livewire only re-mounts (and Alpine only re-lays-out
      * via dagre) when the wire:key VALUE changes. Keying on the query alone freezes
-     * a stale partial graph after an enrichment poll deepens the ancestor chain;
-     * hashing the model makes the key change whenever nodes/edges change, so a
-     * fuller graph triggers a fresh layout.
+     * a stale partial graph after an enrichment poll deepens the ancestor chain.
+     *
+     * We hash only the SHAPE — node ids + kinds and the from/to edge topology —
+     * NOT labels or shares. A fuller graph (new node/edge) changes the key and
+     * triggers a fresh layout; a mere relabel (e.g. a late companyName fetch) or a
+     * share change does not, so the user's zoom/pan survives an enrichment poll
+     * that only refined text. Alpine updates those via x-text without a re-mount.
      */
     public function graphKey(array $graph): string
     {
-        return substr(md5(json_encode($graph)), 0, 12);
+        $topology = [
+            'n' => array_map(fn ($node) => [$node['id'], $node['kind']], $graph['nodes']),
+            'e' => array_map(fn ($edge) => [$edge['from'], $edge['to']], $graph['edges']),
+        ];
+
+        return substr(md5(json_encode($topology)), 0, 12);
     }
 
     /**
@@ -309,82 +324,6 @@ class CompanyStructure extends MetisSection
         }
 
         return (fmod($share, 1.0) === 0.0 ? (string) (int) $share : rtrim(rtrim(number_format($share, 2, ',', ''), '0'), ',')).' %';
-    }
-
-    public function ownershipTree(): array
-    {
-        // Group ancestor rows by the CVR of the company they own. Rows with a
-        // null parent_of_cvr are the searched company's direct owners (depth 1).
-        $rootKey = '__root__';
-        $byParentCvr = [];
-        foreach ($this->ancestors as $node) {
-            $key = $node['parent_of_cvr'] ?? $rootKey;
-            $byParentCvr[$key][] = $node;
-        }
-
-        // Direct owners (depth 1) are the top-level tree roots. Every
-        // parent-group cvr that ends up nested somewhere under a direct owner
-        // (however deep, cycles included) is marked "reached", so the orphan
-        // pass below never re-surfaces an already-attached subtree.
-        $tree = $this->buildOwnerChildren($rootKey, $byParentCvr, [$rootKey => true]);
-        $reached = $this->reachableParentCvrs($rootKey, $byParentCvr, [$rootKey => true]);
-
-        // Any parent-group not reachable from a direct owner is an orphaned
-        // chain fragment (e.g. the immediate parent was capped/pruned
-        // upstream) — surface it too rather than silently dropping it.
-        foreach (array_diff_key($byParentCvr, $reached) as $parentCvr => $nodes) {
-            $tree = array_merge($tree, $this->buildOwnerChildren($parentCvr, $byParentCvr, [$parentCvr => true]));
-        }
-
-        return $tree;
-    }
-
-    /**
-     * Recursively attach each owner's own owners. $seen guards against cycles
-     * (a company already on the current path is not expanded again).
-     *
-     * @param  array<string, list<array>>  $byParentCvr
-     * @param  array<string, true>  $seen  cvrs on the current path
-     * @return list<array>
-     */
-    protected function buildOwnerChildren(string $ownedKey, array $byParentCvr, array $seen): array
-    {
-        $out = [];
-        foreach ($byParentCvr[$ownedKey] ?? [] as $node) {
-            $cvr = $node['cvr'] ?? null;
-            // A person is a leaf; a company recurses unless already on this path.
-            $node['children'] = ($cvr && ! isset($seen[$cvr]))
-                ? $this->buildOwnerChildren($cvr, $byParentCvr, $seen + [$cvr => true])
-                : [];
-            $out[] = $node;
-        }
-
-        return $out;
-    }
-
-    /**
-     * Every parent-group cvr reachable by walking $byParentCvr from $ownedKey
-     * (i.e. every company cvr that appears somewhere in the subtree already
-     * built for $ownedKey). Used to tell the orphan-surfacing pass in
-     * ownershipTree() which groups are already attached, so it doesn't
-     * re-add them as duplicate top-level roots. Mirrors buildOwnerChildren's
-     * cycle guard ($seen) so it terminates on the same cyclic input.
-     *
-     * @param  array<string, list<array>>  $byParentCvr
-     * @param  array<string, true>  $seen
-     * @return array<string, true>
-     */
-    protected function reachableParentCvrs(string $ownedKey, array $byParentCvr, array $seen): array
-    {
-        $reached = [$ownedKey => true];
-        foreach ($byParentCvr[$ownedKey] ?? [] as $node) {
-            $cvr = $node['cvr'] ?? null;
-            if ($cvr && ! isset($seen[$cvr])) {
-                $reached += $this->reachableParentCvrs($cvr, $byParentCvr, $seen + [$cvr => true]);
-            }
-        }
-
-        return $reached;
     }
 
     public function render()
