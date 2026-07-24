@@ -20,126 +20,50 @@
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
             @php
+                // The ownership tree (below) is now the single source for the
+                // searched company's current owners — reel/legal/other rows were
+                // removed (Variant A: they duplicated the tree's depth-1 roots).
+                // $owners is still consulted for HISTORICAL owners only, which the
+                // tree (built from current-only `ancestors` edges) doesn't cover.
                 $allOwners = collect($owners);
                 $currentOwners = $allOwners->filter(fn ($o) => $o['is_current'] ?? true);
                 $historicalOwners = $allOwners->reject(fn ($o) => $o['is_current'] ?? true)->values();
-
-                // registry-api classifies each owner via owner_kind (reel|legal|other) from the
-                // CVR org name, so the split is authoritative — no string-guessing here. Legacy
-                // fallback: derive from role_label if owner_kind is absent (older cached payloads).
-                $ownerKind = function ($o) {
-                    if (isset($o['owner_kind'])) {
-                        return $o['owner_kind'];
-                    }
-                    $label = mb_strtolower($o['role_label'] ?? '');
-                    return match (true) {
-                        str_contains($label, 'reelle ejere') => 'reel',
-                        str_contains($label, 'ejerregister') => 'legal',
-                        default => 'other',
-                    };
-                };
-
-                $reelOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'reel')->values();
-                $legalOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'legal')->values();
-                // 'other' = a participant that holds a share but is neither a registered UBO nor a
-                // direct legal shareholder (e.g. Direktion). Shown in its own neutral row so it is
-                // never mistaken for a legal owner.
-                $otherOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'other')->values();
             @endphp
 
             <div class="metis-org-chart">
 
-                {{-- Ownership chain ancestors (Task 8): companies/persons above the searched
-                     company, deepest UBO at top down to the immediate owner just above OpCo.
-                     getOwnershipChain's BFS starts at the searched company, so its depth-1
-                     nodes ARE the immediate owners — already rendered by the reel/legal/other
-                     rows below. Only depth >= 2 (the chain ABOVE the immediate owners) belongs
-                     here, or every immediate owner would be shown twice. --}}
+                {{-- Ownership hierarchy: a real org-chart in frankston.io editorial
+                     style. Built top-down in HTML — render-root is the searched
+                     company itself (a synthetic node wrapping $ownershipTree() as
+                     its children), each owner recursively nesting ITS OWN owners
+                     beneath it — then the whole .org container is flipped with
+                     transform:scaleY(-1) (and each .card counter-flipped) so
+                     owners render at the TOP and the searched company at the
+                     BOTTOM, matching how ownership actually flows. This supersedes
+                     the old separate "Ultimate beneficial owner" / "Legal owner" /
+                     "Other" rows, which would otherwise duplicate the same direct
+                     owners the tree already renders (Variant A). --}}
                 @php
-                    $chainAbove = collect($ancestors)->filter(fn ($a) => ($a['depth'] ?? 1) >= 2)->sortByDesc('depth');
+                    $ownershipTree = $this->ownershipTree();
+                    $searchedRoot = [
+                        'person_name' => $companyName ?? $query,
+                        'cvr' => $query,
+                        'is_company' => true,
+                        'children' => $ownershipTree,
+                    ];
                 @endphp
-                @if($chainAbove->count() > 0)
-                    <div class="org-section-label">{{ __('Ownership chain') }}</div>
-                    @foreach($chainAbove as $anc)
-                        <div class="org-row" style="margin-left: {{ (($anc['depth'] ?? 2) - 1) * 1.5 }}rem">
-                            @include('metis::livewire.sections.partials.owner-card', [
-                                'owner' => $anc,
-                                'badgeColor' => ($anc['owner_kind'] ?? 'other') === 'reel' ? 'emerald' : (($anc['owner_kind'] ?? 'other') === 'legal' ? 'sky' : 'zinc'),
-                                'expandedOwners' => $expandedOwners,
-                            ])
-                            @if($anc['foreign'] ?? false)<span class="text-xs text-zinc-500">{{ __('foreign owner') }}</span>@endif
-                            @if($anc['cycle'] ?? false)<span class="text-xs text-amber-600">{{ __('circular ownership') }}</span>@endif
-                            @if($anc['enriching'] ?? false)<span class="text-xs text-blue-500">{{ __('loading...') }}</span>@endif
+                @if(count($ownershipTree) > 0)
+                    <div class="org-section-label">{{ __('Ownership structure') }}</div>
+                    <div class="frankston-org-scroll">
+                        <div class="org">
+                            <ul class="root">
+                                @include('metis::livewire.sections.partials.ownership-tree-node', [
+                                    'node' => $searchedRoot,
+                                    'searched' => true,
+                                ])
+                            </ul>
                         </div>
-                    @endforeach
-                    <div class="org-trunk"></div>
-                @endif
-
-                {{-- Reel ejer row (Reelle ejere = UBO via koncernkæde) --}}
-                @if($reelOwners->count() > 0)
-                    <div class="org-section-label">{{ __('Ultimate beneficial owner') }}</div>
-                    <div class="org-row {{ $reelOwners->count() > 1 ? 'multi' : '' }}">
-                        @foreach($reelOwners as $owner)
-                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'emerald', 'expandedOwners' => $expandedOwners])
-                        @endforeach
                     </div>
-
-                    @if($reelOwners->count() > 1)
-                        <div class="org-stem-row">
-                            @foreach($reelOwners as $owner)
-                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
-                            @endforeach
-                        </div>
-                        <div class="org-bridge-row" style="--node-count: {{ $reelOwners->count() }}">
-                            <div class="org-bridge-line"></div>
-                        </div>
-                    @endif
-                    <div class="org-trunk"></div>
-                @endif
-
-                {{-- Legal ejer row (EJERREGISTER = direct legal shareholders) --}}
-                @if($legalOwners->count() > 0)
-                    <div class="org-section-label">{{ $reelOwners->count() > 0 ? __('Legal owner') : __('Owners') }}</div>
-                    <div class="org-row {{ $legalOwners->count() > 1 ? 'multi' : '' }}">
-                        @foreach($legalOwners as $owner)
-                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'sky', 'expandedOwners' => $expandedOwners])
-                        @endforeach
-                    </div>
-
-                    @if($legalOwners->count() > 1)
-                        <div class="org-stem-row">
-                            @foreach($legalOwners as $owner)
-                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
-                            @endforeach
-                        </div>
-                        <div class="org-bridge-row" style="--node-count: {{ $legalOwners->count() }}">
-                            <div class="org-bridge-line"></div>
-                        </div>
-                    @endif
-                    <div class="org-trunk"></div>
-                @endif
-
-                {{-- Other participants with a share (neither UBO nor direct legal shareholder,
-                     e.g. Direktion). Neutral row so they are never shown as legal owners. --}}
-                @if($otherOwners->count() > 0)
-                    <div class="org-section-label">{{ __('Other with ownership share') }}</div>
-                    <div class="org-row {{ $otherOwners->count() > 1 ? 'multi' : '' }}">
-                        @foreach($otherOwners as $owner)
-                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'zinc', 'expandedOwners' => $expandedOwners])
-                        @endforeach
-                    </div>
-
-                    @if($otherOwners->count() > 1)
-                        <div class="org-stem-row">
-                            @foreach($otherOwners as $owner)
-                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
-                            @endforeach
-                        </div>
-                        <div class="org-bridge-row" style="--node-count: {{ $otherOwners->count() }}">
-                            <div class="org-bridge-line"></div>
-                        </div>
-                    @endif
-                    <div class="org-trunk"></div>
                 @endif
 
                 {{-- Historical owners (collapsible) --}}
@@ -417,5 +341,66 @@
         text-align: center;
         width: 100%;
     }
+
+    /* ---- Frankston.io editorial org-chart ------------------------------
+       Deliberately its own light-palette styled section (frankston.io brand
+       chart), independent of metis's own dark-mode surface. Technique:
+       classic CSS ::before/::after org-chart connectors, built top-down with
+       the searched company as the render-root and its owners as recursive
+       children, then the WHOLE .org container is flipped vertically with
+       transform:scaleY(-1) so owners land at the top (ownership flows
+       downward to the searched company) — each .card counter-flips so its
+       text stays upright. */
+    /* Same-origin fonts (metis-host serves these from public/fonts/). Cross-origin
+       from frankston.io lacks a CORS header, so the browser would block them and
+       silently fall back to Georgia/system fonts — killing the editorial look. */
+    @font-face { font-family:'Spectral'; src:url('/fonts/spectral-v15-latin-600.woff2') format('woff2'); font-weight:600; font-display:swap; }
+    @font-face { font-family:'IBM Plex Sans'; src:url('/fonts/ibm-plex-sans-v23-latin-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'IBM Plex Sans'; src:url('/fonts/ibm-plex-sans-v23-latin-500.woff2') format('woff2'); font-weight:500; font-display:swap; }
+    @font-face { font-family:'IBM Plex Mono'; src:url('/fonts/ibm-plex-mono-v20-latin-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+
+    .frankston-org-scroll {
+        --bg:#f6efe3; --bg-2:#efe6d4; --rule-strong:#b8a884; --ink:#1a1a1a; --ink-2:#3a3a3a; --ink-3:#6b6457;
+        --fd:"Spectral",Georgia,serif; --fb:"IBM Plex Sans",sans-serif; --fm:"IBM Plex Mono",monospace;
+        width: 100%;
+        overflow-x: auto;
+        background: var(--bg);
+        border: 1px solid var(--rule-strong);
+        border-radius: 0.5rem;
+        padding: 32px 24px 24px;
+        color: var(--ink);
+        font-family: var(--fb);
+    }
+
+    .frankston-org-scroll .org { overflow-x: auto; padding-bottom: 8px; transform: scaleY(-1); }
+    .frankston-org-scroll .org .card { transform: scaleY(-1); }
+    .frankston-org-scroll .org ul { position: relative; padding-top: 24px; display: flex; justify-content: center; gap: 20px; list-style: none; margin: 0; }
+    .frankston-org-scroll .org li { position: relative; padding: 24px 10px 0; }
+    .frankston-org-scroll .org li::before,
+    .frankston-org-scroll .org li::after { content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 24px; border-top: 1px solid var(--rule-strong); }
+    .frankston-org-scroll .org li::after { right: auto; left: 50%; }
+    .frankston-org-scroll .org li:only-child::before,
+    .frankston-org-scroll .org li:only-child::after { display: none; }
+    .frankston-org-scroll .org li:only-child { padding-top: 24px; }
+    .frankston-org-scroll .org li:only-child::before { display: block; left: 50%; right: auto; width: 0; border-top: 0; border-left: 1px solid var(--rule-strong); height: 24px; }
+    .frankston-org-scroll .org li:first-child::before,
+    .frankston-org-scroll .org li:last-child::after { border: 0; }
+    .frankston-org-scroll .org ul ul::before { content: ''; position: absolute; top: 0; left: 50%; height: 24px; border-left: 1px solid var(--rule-strong); }
+    .frankston-org-scroll .org > ul > li { padding-top: 0; }
+    .frankston-org-scroll .org > ul > li::before,
+    .frankston-org-scroll .org > ul > li::after { display: none; }
+
+    .frankston-org-scroll .node { display: flex; justify-content: center; }
+    .frankston-org-scroll .card { display: inline-block; background: var(--bg); border: 1px solid var(--rule-strong); padding: 10px 14px 11px; min-width: 152px; text-align: left; }
+    .frankston-org-scroll .cname { font-family: var(--fd); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; line-height: 1.2; white-space: nowrap; }
+    .frankston-org-scroll .cname a { color: inherit; text-decoration: none; }
+    .frankston-org-scroll .cname a:hover { text-decoration: underline; }
+    .frankston-org-scroll .cmeta { display: flex; align-items: baseline; gap: 12px; margin-top: 5px; }
+    .frankston-org-scroll .ckind { font-family: var(--fm); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--m); }
+    .frankston-org-scroll .ckind.you { color: var(--ink); }
+    .frankston-org-scroll .cshare { font-family: var(--fm); font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-left: auto; }
+    .frankston-org-scroll .cflag { font-family: var(--fm); font-size: 10px; color: var(--ink-3); margin-top: 4px; }
+    .frankston-org-scroll .searched { background: var(--bg-2); border-color: var(--ink); border-width: 1.5px; }
+    .frankston-org-scroll .searched .cname { font-size: 16.5px; }
 </style>
 </div>

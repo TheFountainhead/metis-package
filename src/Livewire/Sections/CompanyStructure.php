@@ -191,6 +191,103 @@ class CompanyStructure extends MetisSection
             : 'person:'.md5($owner['person_name'] ?? '');
     }
 
+    /**
+     * Build a real nested ownership tree from the flat `ancestors` adjacency
+     * list. getOwnershipChain returns one row per (owner → owned) edge, each
+     * carrying `parent_of_cvr` = the CVR of the company this owner owns. So a
+     * node's children are every ancestor whose parent_of_cvr equals this node's
+     * cvr. The searched company (cvr) is the conceptual root; its direct
+     * owners are the rows with parent_of_cvr === null (depth 1) — these ARE
+     * included as the top-level tree roots (Variant A: one full tree, top to
+     * bottom, matching the CVR click-through — no separate reel/legal/other
+     * rows duplicating the immediate owners).
+     *
+     * Ancestor chains can arrive orphaned: a row's `parent_of_cvr` may
+     * reference a company that never has its own row in `$ancestors` (e.g.
+     * the immediate parent was capped/pruned/not-yet-enriched upstream, but
+     * its own owners were still returned). Such an orphaned parent-group is
+     * surfaced as its own top-level root too, so a partial chain never
+     * silently disappears.
+     *
+     * Returns a list of root-level owner nodes (depth 1 and any orphaned
+     * deeper group), each with a nested `children`.
+     */
+    public function ownershipTree(): array
+    {
+        // Group ancestor rows by the CVR of the company they own. Rows with a
+        // null parent_of_cvr are the searched company's direct owners (depth 1).
+        $rootKey = '__root__';
+        $byParentCvr = [];
+        foreach ($this->ancestors as $node) {
+            $key = $node['parent_of_cvr'] ?? $rootKey;
+            $byParentCvr[$key][] = $node;
+        }
+
+        // Direct owners (depth 1) are the top-level tree roots. Every
+        // parent-group cvr that ends up nested somewhere under a direct owner
+        // (however deep, cycles included) is marked "reached", so the orphan
+        // pass below never re-surfaces an already-attached subtree.
+        $tree = $this->buildOwnerChildren($rootKey, $byParentCvr, [$rootKey => true]);
+        $reached = $this->reachableParentCvrs($rootKey, $byParentCvr, [$rootKey => true]);
+
+        // Any parent-group not reachable from a direct owner is an orphaned
+        // chain fragment (e.g. the immediate parent was capped/pruned
+        // upstream) — surface it too rather than silently dropping it.
+        foreach (array_diff_key($byParentCvr, $reached) as $parentCvr => $nodes) {
+            $tree = array_merge($tree, $this->buildOwnerChildren($parentCvr, $byParentCvr, [$parentCvr => true]));
+        }
+
+        return $tree;
+    }
+
+    /**
+     * Recursively attach each owner's own owners. $seen guards against cycles
+     * (a company already on the current path is not expanded again).
+     *
+     * @param  array<string, list<array>>  $byParentCvr
+     * @param  array<string, true>  $seen  cvrs on the current path
+     * @return list<array>
+     */
+    protected function buildOwnerChildren(string $ownedKey, array $byParentCvr, array $seen): array
+    {
+        $out = [];
+        foreach ($byParentCvr[$ownedKey] ?? [] as $node) {
+            $cvr = $node['cvr'] ?? null;
+            // A person is a leaf; a company recurses unless already on this path.
+            $node['children'] = ($cvr && ! isset($seen[$cvr]))
+                ? $this->buildOwnerChildren($cvr, $byParentCvr, $seen + [$cvr => true])
+                : [];
+            $out[] = $node;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Every parent-group cvr reachable by walking $byParentCvr from $ownedKey
+     * (i.e. every company cvr that appears somewhere in the subtree already
+     * built for $ownedKey). Used to tell the orphan-surfacing pass in
+     * ownershipTree() which groups are already attached, so it doesn't
+     * re-add them as duplicate top-level roots. Mirrors buildOwnerChildren's
+     * cycle guard ($seen) so it terminates on the same cyclic input.
+     *
+     * @param  array<string, list<array>>  $byParentCvr
+     * @param  array<string, true>  $seen
+     * @return array<string, true>
+     */
+    protected function reachableParentCvrs(string $ownedKey, array $byParentCvr, array $seen): array
+    {
+        $reached = [$ownedKey => true];
+        foreach ($byParentCvr[$ownedKey] ?? [] as $node) {
+            $cvr = $node['cvr'] ?? null;
+            if ($cvr && ! isset($seen[$cvr])) {
+                $reached += $this->reachableParentCvrs($cvr, $byParentCvr, $seen + [$cvr => true]);
+            }
+        }
+
+        return $reached;
+    }
+
     public function render()
     {
         return view('metis::livewire.sections.company-structure');
