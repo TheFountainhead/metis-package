@@ -229,3 +229,124 @@ it('does not warn on the indent-margin calculation for a depth-2+ ancestor (defe
         ->assertOk()
         ->assertSee('Legacy Top Ejer');
 });
+
+it('nests company B under company A and both persons under B (ownershipTree)', function () {
+    // Root's direct owner is A (depth 1, parent_of_cvr null). A is owned by B
+    // (depth 2, parent_of_cvr = A's cvr). B is owned by two people (depth 3,
+    // parent_of_cvr = B's cvr). Depth-1 nodes (A) are suppressed by design (see
+    // ownershipTree() docblock) — B is the visible top-level tree root, with
+    // the two people nested under it. Nothing should be flat here: the tree
+    // must reflect real parent→child nesting, not a depth-sorted sibling list.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo',
+            'owners' => [],
+            'subsidiaries' => [],
+            'ancestors' => [
+                ['person_name' => 'A Holding ApS', 'cvr' => 'A1', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 1, 'parent_of_cvr' => null, 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+                ['person_name' => 'B Holding ApS', 'cvr' => 'B1', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 2, 'parent_of_cvr' => 'A1', 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+                ['person_name' => 'Person One', 'cvr' => null, 'is_company' => false, 'ownership_share' => 60.0, 'owner_kind' => 'reel', 'depth' => 3, 'parent_of_cvr' => 'B1', 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+                ['person_name' => 'Person Two', 'cvr' => null, 'is_company' => false, 'ownership_share' => 40.0, 'owner_kind' => 'reel', 'depth' => 3, 'parent_of_cvr' => 'B1', 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'OpCo', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    $tree = Livewire::test(CompanyStructure::class, ['query' => '70000001'])
+        ->instance()
+        ->ownershipTree();
+
+    // A itself is not a visible tree node (already shown by the Legal owner
+    // row below) — B is promoted to the top level in A's place.
+    expect($tree)->toHaveCount(1);
+    expect($tree[0]['person_name'])->toBe('B Holding ApS');
+    expect($tree[0]['children'])->toHaveCount(2);
+
+    $childNames = collect($tree[0]['children'])->pluck('person_name')->all();
+    expect($childNames)->toEqualCanonicalizing(['Person One', 'Person Two']);
+
+    // Persons are leaves.
+    foreach ($tree[0]['children'] as $child) {
+        expect($child['children'])->toBe([]);
+    }
+});
+
+it('surfaces a shared owner X under both companies it owns, not as a single deduped node', function () {
+    // X owns BOTH the root's direct owner (A) and an unrelated company (C),
+    // which C itself does not connect to the searched company at all in this
+    // fixture — it exists purely to prove X is not collapsed into one node.
+    // Since A is a depth-1 direct owner (suppressed), X (A's owner) is promoted
+    // to a visible top-level root. X owning C separately is captured by X's
+    // OWN children list being independent of which company is asking — X must
+    // appear once per company it owns (under A here), which is correct nesting,
+    // not a "duplicate" to be merged away.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo',
+            'owners' => [],
+            'subsidiaries' => [],
+            'ancestors' => [
+                ['person_name' => 'A Holding ApS', 'cvr' => 'A1', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 1, 'parent_of_cvr' => null, 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+                ['person_name' => 'X Holding ApS', 'cvr' => 'X1', 'is_company' => true, 'ownership_share' => 50.0, 'owner_kind' => 'legal', 'depth' => 2, 'parent_of_cvr' => 'A1', 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+                // X also owns C, an entirely separate company not otherwise
+                // linked to the searched company — an orphaned parent-group
+                // from OpCo's perspective, surfaced as its own top-level root.
+                ['person_name' => 'C ApS', 'cvr' => 'C1', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 1, 'parent_of_cvr' => 'X1', 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'OpCo', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    $tree = Livewire::test(CompanyStructure::class, ['query' => '70000001'])
+        ->instance()
+        ->ownershipTree();
+
+    // X appears as A's child (A itself suppressed, so X is the top-level root).
+    $xUnderA = collect($tree)->firstWhere('cvr', 'X1');
+    expect($xUnderA)->not->toBeNull();
+    expect(collect($xUnderA['children'])->pluck('cvr')->all())->toContain('C1');
+
+    // C is nested under X — not flattened to the top level as a sibling of X.
+    expect(collect($tree)->pluck('cvr')->all())->not->toContain('C1');
+});
+
+it('terminates on a cycle (A owns B, B owns A) instead of recursing infinitely', function () {
+    // A cycle in the flat ancestors list: A's parent_of_cvr chain eventually
+    // points back to A itself. buildOwnerChildren's $seen guard (cvrs on the
+    // current path) must stop expanding once a company reappears, or this
+    // would recurse forever / stack-overflow.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo',
+            'owners' => [],
+            'subsidiaries' => [],
+            'ancestors' => [
+                ['person_name' => 'A ApS', 'cvr' => 'A1', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 1, 'parent_of_cvr' => null, 'enriching' => false, 'capped' => false, 'cycle' => false, 'foreign' => false],
+                ['person_name' => 'B ApS', 'cvr' => 'B1', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 2, 'parent_of_cvr' => 'A1', 'enriching' => false, 'capped' => false, 'cycle' => true, 'foreign' => false],
+                // B "owns" A again — the cycle edge back to the start.
+                ['person_name' => 'A ApS', 'cvr' => 'A1', 'is_company' => true, 'ownership_share' => 100.0, 'owner_kind' => 'legal', 'depth' => 3, 'parent_of_cvr' => 'B1', 'enriching' => false, 'capped' => false, 'cycle' => true, 'foreign' => false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'OpCo', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    // If the $seen guard failed, this call would never return (infinite
+    // recursion / stack overflow) and the test would hang or crash rather
+    // than fail an assertion — completing at all IS the primary proof.
+    $tree = Livewire::test(CompanyStructure::class, ['query' => '70000001'])
+        ->instance()
+        ->ownershipTree();
+
+    // A (depth 1) is suppressed; B is promoted to the top level.
+    expect($tree)->toHaveCount(1);
+    expect($tree[0]['person_name'])->toBe('B ApS');
+
+    // B's child is A again, but A's own children are cut short by $seen
+    // (A is already on the path), so A does not re-expand B under itself.
+    expect($tree[0]['children'])->toHaveCount(1);
+    expect($tree[0]['children'][0]['person_name'])->toBe('A ApS');
+    expect($tree[0]['children'][0]['children'])->toBe([]);
+});

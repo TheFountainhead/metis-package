@@ -57,14 +57,16 @@
                 @php $ownershipTree = $this->ownershipTree(); @endphp
                 @if(count($ownershipTree) > 0)
                     <div class="org-section-label">{{ __('Ownership structure') }}</div>
-                    <div class="metis-ownership-tree">
-                        @foreach($ownershipTree as $rootOwner)
-                            @include('metis::livewire.sections.partials.ownership-tree-node', [
-                                'node' => $rootOwner,
-                                'depth' => 0,
-                                'expandedOwners' => $expandedOwners,
-                            ])
-                        @endforeach
+                    <div class="metis-ownership-tree-scroll">
+                        <div class="metis-ownership-tree">
+                            @foreach($ownershipTree as $rootOwner)
+                                @include('metis::livewire.sections.partials.ownership-tree-node', [
+                                    'node' => $rootOwner,
+                                    'depth' => 0,
+                                    'expandedOwners' => $expandedOwners,
+                                ])
+                            @endforeach
+                        </div>
                     </div>
                     <div class="org-trunk"></div>
                 @endif
@@ -410,6 +412,76 @@
         margin: 0.5rem 0;
         text-align: center;
         width: 100%;
+    }
+
+    /* Ownership tree: a real nested org-chart (parent above, owners nested
+       beneath it) instead of the old flat depth-indented list. Deep chains
+       (6+ levels) can run wide, so the tree scrolls horizontally inside its
+       own container rather than the page. */
+    .metis-org-chart .metis-ownership-tree-scroll {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .metis-org-chart .metis-ownership-tree {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        min-width: 100%;
+        padding: 0.25rem 0;
+    }
+
+    .metis-org-chart .metis-tree-node {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .metis-org-chart .metis-tree-row {
+        display: flex;
+        align-items: stretch;
+    }
+
+    /* The connector is a short horizontal branch reaching from the parent's
+       vertical trunk (drawn by .metis-tree-children's border-left) into the
+       card, so nesting reads as a real hierarchy rather than plain
+       left-margin indentation. */
+    .metis-org-chart .metis-tree-connector {
+        position: relative;
+        width: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .metis-org-chart .metis-tree-connector::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 50%;
+        width: 100%;
+        height: 2px;
+        background: var(--org-line);
+    }
+
+    .metis-org-chart .metis-tree-card {
+        padding: 0.375rem 0;
+    }
+
+    .metis-org-chart .metis-tree-card .org-cell {
+        justify-content: flex-start;
+    }
+
+    .metis-org-chart .metis-tree-card .org-node {
+        text-align: left;
+        min-width: 12rem;
+    }
+
+    /* Children hang beneath their parent; the border-left is the vertical
+       trunk each child's connector branches off from. Removed on the last
+       child so the trunk doesn't overshoot past the final branch. */
+    .metis-org-chart .metis-tree-children {
+        display: flex;
+        flex-direction: column;
+        margin-left: 0.75rem;
+        border-left: 2px solid var(--org-line);
     }
 </style>
 </div>
