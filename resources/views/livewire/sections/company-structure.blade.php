@@ -52,27 +52,21 @@
                 @if(count($graph['nodes']) > 1)
                     <div class="org-section-label">{{ __('Ownership structure') }}</div>
 
-                    {{-- Live model carrier (OUTSIDE wire:ignore). Livewire re-renders
-                         this tiny node on every enrichment poll, so its x-init fires
-                         with the fresh @js($graph) and dispatches it to the graph. The
-                         graph itself stays wire:ignore'd with a STABLE key, so it is
-                         never re-mounted mid-pan — refreshModel() re-lays-out in place,
-                         preserving the user's zoom/pan (and defers while dragging).
-                         The carrier's wire:key IS the model hash, so it re-inits (and
-                         re-dispatches) exactly when the model changes. --}}
-                    <div
-                        wire:key="ownership-graph-feed-{{ $query }}-{{ $this->graphKey($graph) }}"
-                        x-data="{}"
-                        x-init="$dispatch('graph-model-updated', @js($graph))"
-                        hidden
-                    ></div>
-
+                    {{-- The graph lives in a wire:ignore subtree with a STABLE
+                         wire:key (query only), so Livewire never re-mounts it — the
+                         user's zoom/pan is Alpine state that must survive an
+                         enrichment poll. Instead the component watches the Livewire
+                         `graphModel` property ($wire.$watch in init()): when a poll
+                         deepens the chain, graphModel changes, and refreshModel()
+                         re-lays-out in place (deferring while the user is mid-pan).
+                         This is the canonical Livewire→Alpine bridge for "react to
+                         server state without re-mounting" — no carrier node, no
+                         dispatch-before-listener race. --}}
                     <div
                         wire:ignore
                         wire:key="ownership-graph-{{ $query }}"
                         class="mgraph"
                         x-data="ownershipGraph(@js($graph))"
-                        @graph-model-updated.window="refreshModel($event.detail)"
                     >
                         <div class="mgraph-frame"
                              x-ref="frame"

@@ -440,12 +440,12 @@ it('gives two same-named persons owning the same company distinct node ids (P2 i
     expect($edges)->toHaveCount(2);
 });
 
-it('feeds model changes via a hashed carrier while the graph keeps a stable key (P1 stale-graph, no mid-pan remount)', function () {
-    // The graph wrapper has a STABLE wire:key (query only) so it is never
-    // re-mounted mid-interaction. A separate carrier node, keyed on the model
-    // hash, re-inits on each enrichment poll and dispatches the fresh model to
-    // the graph (which re-lays-out in place). So: graph key stable, carrier key
-    // = content hash, and the graph listens for graph-model-updated.
+it('exposes the graph model as watchable Livewire state with a stable graph key (P1 stale-graph, no mid-pan remount)', function () {
+    // The graph wrapper has a STABLE wire:key (query only) so Livewire never
+    // re-mounts it — the user's zoom/pan is Alpine state that must survive an
+    // enrichment poll. The model is a public `graphModel` property; the Alpine
+    // graph does $wire.$watch('graphModel', …) to re-lay-out in place when a poll
+    // deepens the chain. No carrier node, no dispatch-before-listener race.
     Http::fake([
         '*cvr/company-structure*' => Http::response(['data' => [
             'name'=>'OpCo','owners'=>[],'subsidiaries'=>[],
@@ -456,19 +456,16 @@ it('feeds model changes via a hashed carrier while the graph keeps a stable key 
     ]);
 
     $test = Livewire::test(CompanyStructure::class, ['query'=>'20000001']);
-    $html = $test->html();
 
-    // hash still changes when the model grows (drives the carrier re-init)
-    $shallow = $test->instance()->ownershipGraphData();
-    $deep = ['nodes' => array_merge($shallow['nodes'], [['id'=>'99','label'=>'New Owner','cvr'=>'99','kind'=>'legal','share'=>50.0]]), 'edges' => $shallow['edges']];
-    expect($test->instance()->graphKey($shallow))->not->toBe($test->instance()->graphKey($deep));
+    // graphModel is populated public state (so $wire.$watch has something to see)
+    // and equals the built model.
+    $test->assertSet('graphModel', fn ($m) => is_array($m) && count($m['nodes']) === 2);
+    expect($test->instance()->graphModel)->toBe($test->instance()->ownershipGraphData());
 
     // graph wrapper: STABLE key (query only) — never re-mounted mid-pan
-    expect($html)->toContain('wire:key="ownership-graph-20000001"');
-    // carrier: hashed key + dispatches the fresh model; graph listens for it
-    expect($html)->toContain('wire:key="ownership-graph-feed-20000001-'.$test->instance()->graphKey($shallow).'"');
-    expect($html)->toContain('graph-model-updated');
-    expect($html)->toContain('refreshModel($event.detail)');
+    expect($test->html())->toContain('wire:key="ownership-graph-20000001"');
+    // the carrier/dispatch bridge is gone
+    expect($test->html())->not->toContain('graph-model-updated');
 });
 
 // ---- Review-fund #2 (fase 1 PR-review): 3×P2 ----
@@ -524,31 +521,35 @@ it('deduplicates identical repeated ancestor edges so no double line or overlapp
     expect(collect($g['edges'])->where('from', '40000001')->where('to', 'searched')->count())->toBe(1);
 });
 
-it('keys the graph on topology only, so relabelling without a shape change does not churn the wire:key (P2 graphKey)', function () {
-    // graphKey must change when the graph SHAPE grows (new node/edge), but not when
-    // only a label/share changes — else a reorder or late companyName fetch re-mounts
-    // the wire:ignore subtree and resets the user's zoom/pan mid-enrichment.
+it('rebuilds graphModel when an enrichment poll deepens the chain, so the watcher fires (P1 stale-graph)', function () {
+    // Mid-enrichment: mount returns a shallow chain, then pollForUpdates on
+    // completion refetches a deeper one. graphModel must be rebuilt from the
+    // deeper chain so the Alpine $wire.$watch('graphModel') fires and re-lays-out.
     Http::fake([
-        '*cvr/company-structure*' => Http::response(['data' => [
-            'name'=>'OpCo','owners'=>[],'subsidiaries'=>[],
-            'ancestors'=>[['person_name'=>'HoldCo ApS','cvr'=>'20000002','is_company'=>true,'ownership_share'=>100.0,'owner_kind'=>'legal','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false]],
-        ]]),
+        '*cvr/company-structure*' => Http::sequence()
+            // mount: still enriching, shallow chain (1 owner → 2-node model)
+            ->push(['data' => [
+                'name'=>'OpCo','owners'=>[],'subsidiaries'=>[],
+                'ancestors'=>[['person_name'=>'HoldCo ApS','cvr'=>'20000002','is_company'=>true,'ownership_share'=>100.0,'owner_kind'=>'legal','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false]],
+            ]])
+            // poll: completed, deeper chain (2 owners → 3-node model)
+            ->push(['data' => [
+                'name'=>'OpCo','owners'=>[],'subsidiaries'=>[],
+                'ancestors'=>[
+                    ['person_name'=>'HoldCo ApS','cvr'=>'20000002','is_company'=>true,'ownership_share'=>100.0,'owner_kind'=>'legal','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false],
+                    ['person_name'=>'Top Ejer','cvr'=>null,'is_company'=>false,'ownership_share'=>100.0,'owner_kind'=>'reel','depth'=>2,'parent_of_cvr'=>'20000002','foreign'=>false,'cycle'=>false,'enriching'=>false],
+                ],
+            ]]),
         '*cvr/company/*' => Http::response(['data'=>['company'=>['name'=>'OpCo','owners'=>[]]]]),
-        '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
+        // mount sees enrichment running so pollForUpdates does real work; poll sees completed.
+        '*enrichment*' => Http::sequence()
+            ->push(['data'=>['status'=>'running']])
+            ->push(['data'=>['status'=>'completed']]),
     ]);
 
-    $inst = Livewire::test(CompanyStructure::class, ['query'=>'20000001'])->instance();
-    $graph = $inst->ownershipGraphData();
+    $test = Livewire::test(CompanyStructure::class, ['query'=>'20000001']);
+    expect(count($test->instance()->graphModel['nodes']))->toBe(2);   // shallow at mount
 
-    // same topology, only a label + share differ → SAME key (no churn)
-    $relabelled = $graph;
-    $relabelled['nodes'][1]['label'] = 'HoldCo Renamed ApS';
-    $relabelled['nodes'][1]['share'] = 99.0;
-    expect($inst->graphKey($relabelled))->toBe($inst->graphKey($graph));
-
-    // added node (shape change) → DIFFERENT key (re-mount + fresh layout)
-    $grown = $graph;
-    $grown['nodes'][] = ['id'=>'88','label'=>'New','cvr'=>'88','kind'=>'legal','share'=>10.0];
-    $grown['edges'][] = ['from'=>'88','to'=>'20000002','label'=>'10 %'];
-    expect($inst->graphKey($grown))->not->toBe($inst->graphKey($graph));
+    $test->call('pollForUpdates');
+    expect(count($test->instance()->graphModel['nodes']))->toBe(3);   // deepened → watcher fires
 });
