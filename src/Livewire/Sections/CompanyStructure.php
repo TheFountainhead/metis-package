@@ -212,6 +212,70 @@ class CompanyStructure extends MetisSection
      * Returns a list of root-level owner nodes (depth 1 and any orphaned
      * deeper group), each with a nested `children`.
      */
+    /**
+     * Flat {nodes, edges} model for the dagre graph render (fase 1). Built
+     * directly from the flat `$ancestors` list: one node per owner plus a
+     * `searched` node for the queried company, and one edge per owner→owned
+     * relation. dagre lays this out; the Blade renders nodes as frankston
+     * cards and edges as SVG lines. Node ids: cvr for companies, `person:<md5>`
+     * for persons/foreign entities without a cvr, `searched` for the queried co.
+     *
+     * @return array{nodes: list<array>, edges: list<array>}
+     */
+    public function ownershipGraphData(): array
+    {
+        $nodes = [
+            ['id' => 'searched', 'label' => $this->companyName ?? __('Searched company'), 'cvr' => $this->query, 'kind' => 'searched', 'share' => null],
+        ];
+        $seen = ['searched' => true];
+        $edges = [];
+
+        foreach ($this->ancestors as $a) {
+            $isCompany = $a['is_company'] ?? false;
+            $foreign = $a['foreign'] ?? false;
+            $cvr = $a['cvr'] ?? null;
+
+            // Stable id: real cvr for DK companies, else a name hash (persons,
+            // foreign entities). Foreign owners have no cvr but are companies.
+            $id = $cvr ?: 'person:'.md5(($a['person_name'] ?? '').'|'.($a['parent_of_cvr'] ?? ''));
+
+            // A non-company owner is a physical person → the dark person-node.
+            // Companies carry their owner_kind (legal/reel/other); foreign wins.
+            $kind = $foreign ? 'foreign' : (! $isCompany ? 'person' : ($a['owner_kind'] ?? 'legal'));
+
+            if (! isset($seen[$id])) {
+                $seen[$id] = true;
+                $nodes[] = [
+                    'id' => $id,
+                    'label' => $a['person_name'] ?? '',
+                    'cvr' => $cvr,
+                    'kind' => $kind,
+                    'share' => $a['ownership_share'] ?? null,
+                ];
+            }
+
+            // Edge: this owner owns the company identified by parent_of_cvr
+            // (null parent_of_cvr = owns the searched company itself).
+            $ownedId = $a['parent_of_cvr'] ?? 'searched';
+            $edges[] = ['from' => $id, 'to' => $ownedId, 'label' => $this->shareLabel($a['ownership_share'] ?? null)];
+        }
+
+        return ['nodes' => $nodes, 'edges' => $edges];
+    }
+
+    /**
+     * Format an ownership share for an edge label. A single percentage for now;
+     * fase 2 can swap in the CVR interval band (e.g. "20-24,99%").
+     */
+    protected function shareLabel(?float $share): string
+    {
+        if ($share === null) {
+            return '';
+        }
+
+        return (fmod($share, 1.0) === 0.0 ? (string) (int) $share : rtrim(rtrim(number_format($share, 2, ',', ''), '0'), ',')).' %';
+    }
+
     public function ownershipTree(): array
     {
         // Group ancestor rows by the CVR of the company they own. Rows with a

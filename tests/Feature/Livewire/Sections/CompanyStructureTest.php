@@ -455,3 +455,53 @@ it('renders the foreign marker for a nested foreign co-owner node in the org-cha
     expect($html)->toContain('--m: #7a1f1f');
     expect($html)->not->toMatch('/\.card\s*\{[^}]*border-left/');
 });
+
+// ---- Fase 1: graf-model (nodes + edges) til dagre-render ----
+
+it('builds a flat graph model with nodes and edges from ancestors', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo', 'owners' => [], 'subsidiaries' => [],
+            'ancestors' => [
+                ['person_name'=>'HoldCo ApS','cvr'=>'20000002','is_company'=>true,'ownership_share'=>100.0,'owner_kind'=>'legal','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false],
+                ['person_name'=>'Top Ejer','cvr'=>null,'is_company'=>false,'ownership_share'=>100.0,'owner_kind'=>'reel','depth'=>2,'parent_of_cvr'=>'20000002','foreign'=>false,'cycle'=>false,'enriching'=>false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data'=>['company'=>['name'=>'OpCo','owners'=>[]]]]),
+        '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
+    ]);
+
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'20000001'])->instance()->ownershipGraphData();
+
+    $ids = collect($g['nodes'])->pluck('id');
+    // searched company + HoldCo (cvr id) + a person node
+    expect($ids)->toContain('searched');
+    expect($ids)->toContain('20000002');
+    expect(collect($g['nodes'])->firstWhere('kind', 'person'))->not->toBeNull();
+    // edge: HoldCo owns the searched company (parent_of_cvr null => owns searched)
+    $edgeToSearched = collect($g['edges'])->firstWhere('to', 'searched');
+    expect($edgeToSearched['from'])->toBe('20000002');
+    // edge label carries a percentage/interval
+    expect($edgeToSearched['label'])->toContain('%');
+    // no duplicate node ids (dedup)
+    expect($ids->count())->toBe($ids->unique()->count());
+});
+
+it('graph model marks a foreign owner node as foreign kind', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name'=>'OpCo','owners'=>[],'subsidiaries'=>[],
+            'ancestors'=>[
+                ['person_name'=>'DK Holding ApS','cvr'=>'30000001','is_company'=>true,'ownership_share'=>50.0,'owner_kind'=>'legal','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false],
+                ['person_name'=>'Standout Capital II AB','cvr'=>null,'is_company'=>true,'ownership_share'=>50.0,'owner_kind'=>'legal','depth'=>1,'parent_of_cvr'=>null,'foreign'=>true,'cycle'=>false,'enriching'=>false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data'=>['company'=>['name'=>'OpCo','owners'=>[]]]]),
+        '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
+    ]);
+
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'30000000'])->instance()->ownershipGraphData();
+    $foreign = collect($g['nodes'])->firstWhere('label', 'Standout Capital II AB');
+    expect($foreign)->not->toBeNull();
+    expect($foreign['kind'])->toBe('foreign');
+});
