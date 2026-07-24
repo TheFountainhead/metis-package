@@ -2,11 +2,23 @@
 
 namespace TheFountainhead\Metis\Tests;
 
+use Illuminate\Support\Facades\Http;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 use TheFountainhead\Metis\MetisServiceProvider;
 
 abstract class TestCase extends BaseTestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Enhver ikke-fake'et HTTP-request fejler straks i stedet for at ramme
+        // netvaerket. Uden denne guard bliver en endpoint-omdoebning til en
+        // 10s DNS-timeout mod registry-api.test frem for en praecis fejl, og
+        // driften opdages foerst i CI paa en urelateret branch.
+        Http::preventStrayRequests();
+    }
+
     protected function getPackageProviders($app): array
     {
         return [

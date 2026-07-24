@@ -5,16 +5,16 @@ use TheFountainhead\Metis\Services\RegistryApi;
 
 it('fetches company by CVR', function () {
     Http::fake([
-        '*/v1/cvr/roles-by-cvr' => Http::response([
+        // get()/post() unwrapper svaret via ->json('data'), saa fixturen
+        // skal wrappes i en data-noegle for at naa frem til koden.
+        '*/v1/cvr/company/*' => Http::response([
             'data' => [
-                'companies' => [
-                    [
-                        'cvr' => '12345678',
-                        'name' => 'Frankston ApS',
-                        'company_type' => 'ApS',
-                        'status' => 'NORMAL',
-                        'roles' => [],
-                    ],
+                'company' => [
+                    'cvr' => '12345678',
+                    'name' => 'Frankston ApS',
+                    'company_type' => 'ApS',
+                    'status' => 'NORMAL',
+                    'roles' => [],
                 ],
             ],
         ]),
@@ -66,7 +66,7 @@ it('fetches property analysis by address', function () {
 
 it('returns error structure on API failure', function () {
     Http::fake([
-        '*/v1/cvr/roles-by-cvr' => Http::response('Server error', 500),
+        '*/v1/cvr/company/*' => Http::response('Server error', 500),
     ]);
 
     $api = new RegistryApi;
@@ -76,6 +76,11 @@ it('returns error structure on API failure', function () {
 });
 
 it('returns empty array for person name search', function () {
+    // Tomt data-objekt = intet match i registret.
+    Http::fake([
+        '*/v1/cvr/person-roles' => Http::response(['data' => []]),
+    ]);
+
     $api = new RegistryApi;
     $result = $api->searchPersonByName('Anders Hansen');
 
