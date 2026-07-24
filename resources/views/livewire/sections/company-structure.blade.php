@@ -20,40 +20,27 @@
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
             @php
+                // The ownership tree (below) is now the single source for the
+                // searched company's current owners — reel/legal/other rows were
+                // removed (Variant A: they duplicated the tree's depth-1 roots).
+                // $owners is still consulted for HISTORICAL owners only, which the
+                // tree (built from current-only `ancestors` edges) doesn't cover.
                 $allOwners = collect($owners);
                 $currentOwners = $allOwners->filter(fn ($o) => $o['is_current'] ?? true);
                 $historicalOwners = $allOwners->reject(fn ($o) => $o['is_current'] ?? true)->values();
-
-                // registry-api classifies each owner via owner_kind (reel|legal|other) from the
-                // CVR org name, so the split is authoritative — no string-guessing here. Legacy
-                // fallback: derive from role_label if owner_kind is absent (older cached payloads).
-                $ownerKind = function ($o) {
-                    if (isset($o['owner_kind'])) {
-                        return $o['owner_kind'];
-                    }
-                    $label = mb_strtolower($o['role_label'] ?? '');
-                    return match (true) {
-                        str_contains($label, 'reelle ejere') => 'reel',
-                        str_contains($label, 'ejerregister') => 'legal',
-                        default => 'other',
-                    };
-                };
-
-                $reelOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'reel')->values();
-                $legalOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'legal')->values();
-                // 'other' = a participant that holds a share but is neither a registered UBO nor a
-                // direct legal shareholder (e.g. Direktion). Shown in its own neutral row so it is
-                // never mistaken for a legal owner.
-                $otherOwners = $currentOwners->filter(fn ($o) => $ownerKind($o) === 'other')->values();
             @endphp
 
             <div class="metis-org-chart">
 
-                {{-- Ownership hierarchy: a real nested tree built from the flat
+                {{-- Ownership hierarchy: ONE full nested tree built from the flat
                      `ancestors` adjacency list (via parent_of_cvr), mirroring the
-                     CVR click-through — each company shown once under the company
-                     it owns, its own owners nested beneath. Replaces the old flat
-                     depth-sorted list where everything looked like a sibling. --}}
+                     CVR click-through top to bottom — the searched company as the
+                     conceptual root, its direct owners nested beneath it as tree
+                     roots, and THEIR owners nested further, each company shown
+                     once under the company it owns. This supersedes the old
+                     separate "Ultimate beneficial owner" / "Legal owner" / "Other"
+                     rows below the tree, which would otherwise duplicate the same
+                     direct owners the tree already renders (Variant A). --}}
                 @php $ownershipTree = $this->ownershipTree(); @endphp
                 @if(count($ownershipTree) > 0)
                     <div class="org-section-label">{{ __('Ownership structure') }}</div>
@@ -68,73 +55,6 @@
                             @endforeach
                         </div>
                     </div>
-                    <div class="org-trunk"></div>
-                @endif
-
-                {{-- Reel ejer row (Reelle ejere = UBO via koncernkæde) --}}
-                @if($reelOwners->count() > 0)
-                    <div class="org-section-label">{{ __('Ultimate beneficial owner') }}</div>
-                    <div class="org-row {{ $reelOwners->count() > 1 ? 'multi' : '' }}">
-                        @foreach($reelOwners as $owner)
-                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'emerald', 'expandedOwners' => $expandedOwners])
-                        @endforeach
-                    </div>
-
-                    @if($reelOwners->count() > 1)
-                        <div class="org-stem-row">
-                            @foreach($reelOwners as $owner)
-                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
-                            @endforeach
-                        </div>
-                        <div class="org-bridge-row" style="--node-count: {{ $reelOwners->count() }}">
-                            <div class="org-bridge-line"></div>
-                        </div>
-                    @endif
-                    <div class="org-trunk"></div>
-                @endif
-
-                {{-- Legal ejer row (EJERREGISTER = direct legal shareholders) --}}
-                @if($legalOwners->count() > 0)
-                    <div class="org-section-label">{{ $reelOwners->count() > 0 ? __('Legal owner') : __('Owners') }}</div>
-                    <div class="org-row {{ $legalOwners->count() > 1 ? 'multi' : '' }}">
-                        @foreach($legalOwners as $owner)
-                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'sky', 'expandedOwners' => $expandedOwners])
-                        @endforeach
-                    </div>
-
-                    @if($legalOwners->count() > 1)
-                        <div class="org-stem-row">
-                            @foreach($legalOwners as $owner)
-                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
-                            @endforeach
-                        </div>
-                        <div class="org-bridge-row" style="--node-count: {{ $legalOwners->count() }}">
-                            <div class="org-bridge-line"></div>
-                        </div>
-                    @endif
-                    <div class="org-trunk"></div>
-                @endif
-
-                {{-- Other participants with a share (neither UBO nor direct legal shareholder,
-                     e.g. Direktion). Neutral row so they are never shown as legal owners. --}}
-                @if($otherOwners->count() > 0)
-                    <div class="org-section-label">{{ __('Other with ownership share') }}</div>
-                    <div class="org-row {{ $otherOwners->count() > 1 ? 'multi' : '' }}">
-                        @foreach($otherOwners as $owner)
-                            @include('metis::livewire.sections.partials.owner-card', ['owner' => $owner, 'badgeColor' => 'zinc', 'expandedOwners' => $expandedOwners])
-                        @endforeach
-                    </div>
-
-                    @if($otherOwners->count() > 1)
-                        <div class="org-stem-row">
-                            @foreach($otherOwners as $owner)
-                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
-                            @endforeach
-                        </div>
-                        <div class="org-bridge-row" style="--node-count: {{ $otherOwners->count() }}">
-                            <div class="org-bridge-line"></div>
-                        </div>
-                    @endif
                     <div class="org-trunk"></div>
                 @endif
 

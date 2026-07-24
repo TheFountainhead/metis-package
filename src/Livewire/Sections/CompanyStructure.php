@@ -196,32 +196,21 @@ class CompanyStructure extends MetisSection
      * list. getOwnershipChain returns one row per (owner → owned) edge, each
      * carrying `parent_of_cvr` = the CVR of the company this owner owns. So a
      * node's children are every ancestor whose parent_of_cvr equals this node's
-     * cvr. The searched company (cvr) is the root; its direct owners are the
-     * rows with parent_of_cvr === null (depth 1). This mirrors the CVR
-     * click-through hierarchy: each company appears once under each company it
-     * owns, never a flat depth-sorted list where everything looks like a sibling.
+     * cvr. The searched company (cvr) is the conceptual root; its direct
+     * owners are the rows with parent_of_cvr === null (depth 1) — these ARE
+     * included as the top-level tree roots (Variant A: one full tree, top to
+     * bottom, matching the CVR click-through — no separate reel/legal/other
+     * rows duplicating the immediate owners).
      *
-     * The depth-1 direct owners are DELIBERATELY NOT included as visible nodes
-     * here — they are already rendered by the reel/legal/other rows in the
-     * blade (see company-structure.blade.php), which is the authoritative,
-     * owner_kind-aware rendering for direct owners. Re-showing them as tree
-     * roots would duplicate every immediate owner (same regression the old
-     * flat "ancestors" block had to guard against via a `depth >= 2` filter —
-     * see git history 2a3f90f). Instead this method promotes each depth-1
-     * root's OWN children (depth >= 2, the chain above the immediate owners)
-     * to the top level of the returned tree.
-     *
-     * Ancestor chains can also arrive orphaned: a row's `parent_of_cvr` may
+     * Ancestor chains can arrive orphaned: a row's `parent_of_cvr` may
      * reference a company that never has its own row in `$ancestors` (e.g.
      * the immediate parent was capped/pruned/not-yet-enriched upstream, but
-     * its own owners were still returned). The old flat renderer showed every
-     * `depth >= 2` row regardless of whether the full chain back to the root
-     * was intact; this method preserves that behaviour by also surfacing any
-     * such orphaned parent-group as extra top-level roots, so a partial chain
-     * never silently disappears.
+     * its own owners were still returned). Such an orphaned parent-group is
+     * surfaced as its own top-level root too, so a partial chain never
+     * silently disappears.
      *
-     * Returns a list of root-level owner nodes (depth >= 2 only), each with a
-     * nested `children`.
+     * Returns a list of root-level owner nodes (depth 1 and any orphaned
+     * deeper group), each with a nested `children`.
      */
     public function ownershipTree(): array
     {
@@ -234,24 +223,15 @@ class CompanyStructure extends MetisSection
             $byParentCvr[$key][] = $node;
         }
 
-        // Depth-1 nodes themselves are suppressed (already shown below), but
-        // their children (depth >= 2) become top-level tree roots. Every
+        // Direct owners (depth 1) are the top-level tree roots. Every
         // parent-group cvr that ends up nested somewhere under a direct owner
         // (however deep, cycles included) is marked "reached", so the orphan
         // pass below never re-surfaces an already-attached subtree.
-        $reached = [$rootKey => true];
-        $tree = [];
-        foreach ($byParentCvr[$rootKey] ?? [] as $owner) {
-            $cvr = $owner['cvr'] ?? null;
-            if (! $cvr) {
-                continue;
-            }
-            $tree = array_merge($tree, $this->buildOwnerChildren($cvr, $byParentCvr, [$cvr => true]));
-            $reached += $this->reachableParentCvrs($cvr, $byParentCvr, [$cvr => true]);
-        }
+        $tree = $this->buildOwnerChildren($rootKey, $byParentCvr, [$rootKey => true]);
+        $reached = $this->reachableParentCvrs($rootKey, $byParentCvr, [$rootKey => true]);
 
-        // Any parent-group not reachable from a direct owner (or root) is an
-        // orphaned chain fragment (e.g. the immediate parent was capped/pruned
+        // Any parent-group not reachable from a direct owner is an orphaned
+        // chain fragment (e.g. the immediate parent was capped/pruned
         // upstream) — surface it too rather than silently dropping it.
         foreach (array_diff_key($byParentCvr, $reached) as $parentCvr => $nodes) {
             $tree = array_merge($tree, $this->buildOwnerChildren($parentCvr, $byParentCvr, [$parentCvr => true]));
