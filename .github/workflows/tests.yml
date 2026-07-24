@@ -1,0 +1,46 @@
+name: tests
+
+# Non-blocking to start (metis-package CI-enablement): this package has never
+# had CI. The suite is currently near-green — 205 passing, 3 pre-existing red
+# (Tests\Unit\RegistryApiTest, which make real outbound HTTP calls that time out
+# in a sandbox; they need Http::fake, tracked separately). Per the same pattern
+# as registry-api's tests.yml (compound_frankston_master_ci_enablement_19apr):
+# land the workflow first so every PR gets visibility, fix the 3 red piecemeal,
+# then make this a required check in branch protection once green. Until then it
+# reports red/green without gating merges.
+#
+# PR-only (push to main gets nothing extra) to avoid double-billing merged PRs.
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Package requires php ^8.2; test on the floor so we catch anything
+          # that silently depends on a newer runtime.
+          php-version: 8.2
+          # sqlite: the RefreshDatabase tests (EmailGate*, LeadNotifier) run
+          # against Testbench's default in-memory sqlite connection.
+          extensions: pdo_sqlite, sqlite3
+          tools: composer:v2
+          coverage: none
+
+      - name: Install Dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Run Tests
+        run: ./vendor/bin/pest
