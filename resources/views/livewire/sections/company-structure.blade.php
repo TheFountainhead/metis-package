@@ -51,11 +51,28 @@
                 @endphp
                 @if(count($graph['nodes']) > 1)
                     <div class="org-section-label">{{ __('Ownership structure') }}</div>
+
+                    {{-- Live model carrier (OUTSIDE wire:ignore). Livewire re-renders
+                         this tiny node on every enrichment poll, so its x-init fires
+                         with the fresh @js($graph) and dispatches it to the graph. The
+                         graph itself stays wire:ignore'd with a STABLE key, so it is
+                         never re-mounted mid-pan — refreshModel() re-lays-out in place,
+                         preserving the user's zoom/pan (and defers while dragging).
+                         The carrier's wire:key IS the model hash, so it re-inits (and
+                         re-dispatches) exactly when the model changes. --}}
+                    <div
+                        wire:key="ownership-graph-feed-{{ $query }}-{{ $this->graphKey($graph) }}"
+                        x-data="{}"
+                        x-init="$dispatch('graph-model-updated', @js($graph))"
+                        hidden
+                    ></div>
+
                     <div
                         wire:ignore
-                        wire:key="ownership-graph-{{ $query }}-{{ $this->graphKey($graph) }}"
+                        wire:key="ownership-graph-{{ $query }}"
                         class="mgraph"
                         x-data="ownershipGraph(@js($graph))"
+                        @graph-model-updated.window="refreshModel($event.detail)"
                     >
                         <div class="mgraph-frame"
                              x-ref="frame"

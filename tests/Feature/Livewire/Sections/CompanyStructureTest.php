@@ -190,20 +190,18 @@ it('does not double-render the depth-1 immediate owner in the ancestors block (r
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    $html = Livewire::test(CompanyStructure::class, ['query' => '70000001'])->html();
+    $test = Livewire::test(CompanyStructure::class, ['query' => '70000001']);
 
-    // Strip Livewire's hidden wire:snapshot state blob (raw component-state JSON,
-    // not visible markup) before counting — it legitimately contains BidCo ApS
-    // twice (once from $owners, once from $ancestors state), which is not a
-    // rendering bug. Only the actual rendered HTML below the snapshot attribute
-    // proves whether the org-chart double-renders a node.
-    $visibleHtml = preg_replace('/wire:snapshot="[^"]*"/', '', $html);
-
-    // The depth-2 grandparent renders, nested under BidCo in the tree.
-    expect($visibleHtml)->toContain('Top Ejer');
-    // The depth-1 owner (BidCo ApS) appears exactly once in visible markup — as
-    // the tree root — never a second time anywhere else.
-    expect(substr_count($visibleHtml, 'BidCo ApS'))->toBe(1);
+    // The graph is JS-rendered from ownershipGraphData(), so "no double-render"
+    // is now a model-level property: each owner is one node, not two. (Labels
+    // appear in the x-data + carrier JSON payloads, which is not a visual render.)
+    $g = $test->instance()->ownershipGraphData();
+    expect(collect($g['nodes'])->where('label', 'BidCo ApS'))->toHaveCount(1);
+    expect(collect($g['nodes'])->where('label', 'Top Ejer'))->toHaveCount(1);
+    // BidCo owns searched (depth 1); Top Ejer owns BidCo (depth 2) — distinct edges.
+    expect(collect($g['edges'])->firstWhere('from', '20000002')['to'])->toBe('searched');
+    $topEjer = collect($g['nodes'])->firstWhere('label', 'Top Ejer');
+    expect(collect($g['edges'])->firstWhere('from', $topEjer['id'])['to'])->toBe('20000002');
 });
 
 it('renders a tree node missing owner_kind without erroring (stale cached payload)', function () {
@@ -442,10 +440,12 @@ it('gives two same-named persons owning the same company distinct node ids (P2 i
     expect($edges)->toHaveCount(2);
 });
 
-it('binds the graph wire:key to the model so enrichment re-mounts the graph (P1 stale-graph)', function () {
-    // wire:key must change when the ownership model grows, else wire:ignore
-    // freezes a stale partial graph after an enrichment poll. A shallow model
-    // and a deeper model for the SAME query must produce different keys.
+it('feeds model changes via a hashed carrier while the graph keeps a stable key (P1 stale-graph, no mid-pan remount)', function () {
+    // The graph wrapper has a STABLE wire:key (query only) so it is never
+    // re-mounted mid-interaction. A separate carrier node, keyed on the model
+    // hash, re-inits on each enrichment poll and dispatches the fresh model to
+    // the graph (which re-lays-out in place). So: graph key stable, carrier key
+    // = content hash, and the graph listens for graph-model-updated.
     Http::fake([
         '*cvr/company-structure*' => Http::response(['data' => [
             'name'=>'OpCo','owners'=>[],'subsidiaries'=>[],
@@ -456,16 +456,19 @@ it('binds the graph wire:key to the model so enrichment re-mounts the graph (P1 
     ]);
 
     $test = Livewire::test(CompanyStructure::class, ['query'=>'20000001']);
-    $shallowHtml = $test->html();
+    $html = $test->html();
 
-    // key is derived from the graph content, not the query alone
+    // hash still changes when the model grows (drives the carrier re-init)
     $shallow = $test->instance()->ownershipGraphData();
     $deep = ['nodes' => array_merge($shallow['nodes'], [['id'=>'99','label'=>'New Owner','cvr'=>'99','kind'=>'legal','share'=>50.0]]), 'edges' => $shallow['edges']];
+    expect($test->instance()->graphKey($shallow))->not->toBe($test->instance()->graphKey($deep));
 
-    expect($test->instance()->graphKey($shallow))
-        ->not->toBe($test->instance()->graphKey($deep));
-    // and the rendered key contains that content hash (not just the query)
-    expect($shallowHtml)->toContain('wire:key="ownership-graph-20000001-'.$test->instance()->graphKey($shallow).'"');
+    // graph wrapper: STABLE key (query only) — never re-mounted mid-pan
+    expect($html)->toContain('wire:key="ownership-graph-20000001"');
+    // carrier: hashed key + dispatches the fresh model; graph listens for it
+    expect($html)->toContain('wire:key="ownership-graph-feed-20000001-'.$test->instance()->graphKey($shallow).'"');
+    expect($html)->toContain('graph-model-updated');
+    expect($html)->toContain('refreshModel($event.detail)');
 });
 
 // ---- Review-fund #2 (fase 1 PR-review): 3×P2 ----
