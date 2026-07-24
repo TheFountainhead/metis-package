@@ -32,36 +32,51 @@
 
             <div class="metis-org-chart">
 
-                {{-- Ownership hierarchy: a real org-chart in frankston.io editorial
-                     style. Built top-down in HTML — render-root is the searched
-                     company itself (a synthetic node wrapping $ownershipTree() as
-                     its children), each owner recursively nesting ITS OWN owners
-                     beneath it — then the whole .org container is flipped with
-                     transform:scaleY(-1) (and each .card counter-flipped) so
-                     owners render at the TOP and the searched company at the
-                     BOTTOM, matching how ownership actually flows. This supersedes
-                     the old separate "Ultimate beneficial owner" / "Legal owner" /
-                     "Other" rows, which would otherwise duplicate the same direct
-                     owners the tree already renders (Variant A). --}}
+                {{-- Ownership relations graph (fase 1). Free-form dagre layout in
+                     frankston.io editorial style: owners on top, searched company
+                     at the bottom, ownership flowing downward. Replaces the old
+                     CSS org-chart. Node positions + edge coordinates are computed
+                     in JS (dagre) from ownershipGraphData(); nodes are absolutely-
+                     positioned HTML cards, edges are SVG lines.
+
+                     Wrapped in wire:ignore so Livewire's DOM morphing never touches
+                     the dagre-rendered subtree — a data refresh (enrichment poll)
+                     re-inits the Alpine component via the :key on the query instead.
+                     wire:ignore is the fallback per the chosen fase-1 approach. --}}
                 @php
-                    $ownershipTree = $this->ownershipTree();
-                    $searchedRoot = [
-                        'person_name' => $companyName ?? $query,
-                        'cvr' => $query,
-                        'is_company' => true,
-                        'children' => $ownershipTree,
-                    ];
+                    $graph = $this->ownershipGraphData();
                 @endphp
-                @if(count($ownershipTree) > 0)
+                @if(count($graph['nodes']) > 1)
                     <div class="org-section-label">{{ __('Ownership structure') }}</div>
-                    <div class="frankston-org-scroll">
-                        <div class="org">
-                            <ul class="root">
-                                @include('metis::livewire.sections.partials.ownership-tree-node', [
-                                    'node' => $searchedRoot,
-                                    'searched' => true,
-                                ])
-                            </ul>
+                    <div
+                        wire:ignore
+                        wire:key="ownership-graph-{{ $query }}"
+                        class="mgraph"
+                        x-data="ownershipGraph(@js($graph))"
+                    >
+                        <div class="mgraph-frame"
+                             x-ref="frame"
+                             @mousedown="startPan($event)"
+                             @mousemove.window="onPan($event)"
+                             @mouseup.window="endPan()"
+                             @wheel.prevent="onWheel($event)"
+                        >
+                            <div class="mgraph-canvas" :style="`transform:${transform}; transform-origin:0 0;`">
+                                <svg class="mgraph-edges" :width="graphW" :height="graphH">
+                                    <template x-for="(edge, i) in edges" :key="i">
+                                        <g>
+                                            <line :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2" class="mgraph-edge-line" />
+                                            <text :x="edge.mx" :y="edge.my" class="mgraph-edge-label" x-show="edge.label" x-text="edge.label"></text>
+                                        </g>
+                                    </template>
+                                </svg>
+                                @include('metis::livewire.sections.partials.graph-node')
+                            </div>
+                        </div>
+                        <div class="mgraph-controls">
+                            <button type="button" @click="zoomBy(1.2)" aria-label="{{ __('Zoom in') }}">+</button>
+                            <button type="button" @click="fit()" aria-label="{{ __('Fit') }}" x-text="zoomPct + '%'"></button>
+                            <button type="button" @click="zoomBy(0.8)" aria-label="{{ __('Zoom out') }}">−</button>
                         </div>
                     </div>
                 @endif
@@ -402,5 +417,84 @@
     .frankston-org-scroll .cflag { font-family: var(--fm); font-size: 10px; color: var(--ink-3); margin-top: 4px; }
     .frankston-org-scroll .searched { background: var(--bg-2); border-color: var(--ink); border-width: 1.5px; }
     .frankston-org-scroll .searched .cname { font-size: 16.5px; }
+
+    /* ── Ownership relations graph (fase 1) ───────────────────────────
+       Free-form dagre layout. Same editorial tokens as the org-chart.
+       Node kinds carry colour; NO left-stripe (banned AI-tell). */
+    .mgraph {
+        --bg:#f6efe3; --bg-2:#efe6d4; --rule-strong:#b8a884; --ink:#1a1a1a; --ink-2:#3a3a3a; --ink-3:#6b6457;
+        --reel:#0a5c4a; --legal:#3e5e63; --foreign:#7a1f1f; --person:#2b2333;
+        --fd:"Spectral",Georgia,serif; --fb:"IBM Plex Sans",sans-serif; --fm:"IBM Plex Mono",monospace;
+        position: relative;
+        border: 1px solid var(--rule-strong);
+        border-radius: 0.5rem;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--fb);
+    }
+    .mgraph-frame {
+        position: relative;
+        width: 100%;
+        height: 520px;
+        overflow: hidden;
+        cursor: grab;
+        border-radius: 0.5rem;
+    }
+    .mgraph-frame:active { cursor: grabbing; }
+    .mgraph-canvas { position: absolute; top: 0; left: 0; will-change: transform; }
+    .mgraph-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+    .mgraph-edge-line { stroke: var(--rule-strong); stroke-width: 1; }
+    .mgraph-edge-label {
+        font-family: var(--fm); font-size: 10.5px; fill: var(--ink-2);
+        text-anchor: middle; dominant-baseline: middle;
+        paint-order: stroke; stroke: var(--bg); stroke-width: 4px;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .mgraph-node {
+        position: absolute; box-sizing: border-box;
+        display: flex; flex-direction: column; justify-content: center;
+        gap: 3px; padding: 8px 12px;
+        background: var(--bg); border: 1px solid var(--rule-strong);
+        overflow: hidden;
+    }
+    .mgraph-node__name {
+        font-family: var(--fd); font-weight: 600; font-size: 14px;
+        letter-spacing: -0.01em; line-height: 1.2;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .mgraph-node__meta { display: flex; align-items: baseline; gap: 6px; }
+    .mgraph-node__cvr {
+        font-family: var(--fm); font-size: 11px; color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+    }
+    /* kind accents — border + a small hue on the name, no fill stripe */
+    .mgraph-node--reel    { border-color: var(--reel); }
+    .mgraph-node--reel    .mgraph-node__name { color: var(--reel); }
+    .mgraph-node--legal   { border-color: var(--legal); }
+    .mgraph-node--foreign { border-color: var(--foreign); }
+    .mgraph-node--foreign .mgraph-node__name { color: var(--foreign); }
+    .mgraph-node--searched { background: var(--bg-2); border-color: var(--ink); border-width: 1.5px; }
+    .mgraph-node--person {
+        background: var(--person); border-color: var(--person);
+    }
+    .mgraph-node--person .mgraph-node__name { color: #f6efe3; }
+    .mgraph-node--person .mgraph-node__cvr  { color: #cfc7bd; }
+
+    .mgraph-controls {
+        position: absolute; right: 12px; bottom: 12px;
+        display: flex; flex-direction: column; gap: 4px;
+    }
+    .mgraph-controls button {
+        min-width: 34px; height: 30px; padding: 0 6px;
+        background: var(--bg-2); border: 1px solid var(--rule-strong);
+        font-family: var(--fm); font-size: 12px; color: var(--ink);
+        cursor: pointer; line-height: 1;
+    }
+    .mgraph-controls button:hover { background: var(--bg); }
+
+    @media (prefers-reduced-motion: reduce) {
+        .mgraph-canvas { will-change: auto; }
+    }
 </style>
 </div>

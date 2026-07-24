@@ -52,9 +52,14 @@ it('renders the companys own subsidiaries when present', function () {
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    Livewire::test(CompanyStructure::class, ['query' => '99999999'])
-        ->assertSee('EGEN DATTER ApS')
-        ->assertSee('EJER A/S');
+    // Subsidiaries still render as server-side HTML rows (org-chart trunk).
+    // The owner now lives in the graph's @js payload (x-data), not a text row,
+    // so assert against the mounted graph model instead of visible text.
+    $test = Livewire::test(CompanyStructure::class, ['query' => '99999999'])
+        ->assertSee('EGEN DATTER ApS');
+
+    $graph = $test->instance()->ownershipGraphData();
+    expect(collect($graph['nodes'])->pluck('label'))->toContain('EJER A/S');
 });
 
 it('shows all owner kinds (reel, legal, other) as tree roots — no separate rows (Variant A)', function () {
@@ -80,13 +85,17 @@ it('shows all owner kinds (reel, legal, other) as tree roots — no separate row
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    Livewire::test(CompanyStructure::class, ['query' => '99999999'])
-        ->assertSee('UBO PERSON')
-        ->assertSee('LEGAL HOLDING')
-        ->assertSee('DIREKTØR MED ANDEL')
+    // All three depth-1 owners become graph nodes (the tree/graph is the single
+    // source); the old separate role rows stay gone.
+    $test = Livewire::test(CompanyStructure::class, ['query' => '99999999'])
         ->assertDontSee('Ultimate beneficial owner')
         ->assertDontSee('Legal owner')
         ->assertDontSee('Other with ownership share');
+
+    $labels = collect($test->instance()->ownershipGraphData()['nodes'])->pluck('label');
+    expect($labels)->toContain('UBO PERSON')
+        ->and($labels)->toContain('LEGAL HOLDING ApS')
+        ->and($labels)->toContain('DIREKTØR MED ANDEL');
 });
 
 it('renders a depth-1 owner from the tree even when owner_kind is absent (stale cached payload)', function () {
@@ -424,10 +433,10 @@ it('nests a foreign co-owner under the mid-chain company it owns (Standout Capit
     expect($standout['children'])->toBe([]);
 });
 
-it('renders the foreign marker for a nested foreign co-owner node in the org-chart card', function () {
-    // The org-chart marks a foreign co-owner via its mono kind-label
-    // ("Udenlandsk", oxblood #7a1f1f) inside the card — not a left-stripe
-    // border and not a separate "foreign owner" text marker.
+it('marks a nested foreign co-owner as a foreign graph node with oxblood styling and no left-stripe', function () {
+    // The graph marks a foreign co-owner via kind='foreign' on its node; the
+    // .mgraph-node--foreign CSS applies the oxblood accent (#7a1f1f) as border
+    // + name colour — never as a left-stripe border (banned AI-tell).
     Http::fake([
         '*cvr/company-structure*' => Http::response(['data' => [
             'name' => 'Resights ApS',
@@ -442,18 +451,16 @@ it('renders the foreign marker for a nested foreign co-owner node in the org-cha
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    $html = Livewire::test(CompanyStructure::class, ['query' => '99000001'])
-        ->assertSee('RS HoldCo ApS')
-        ->assertSee('Standout Capital II AB')
-        ->assertSee('Udenlandsk')
-        ->html();
+    $test = Livewire::test(CompanyStructure::class, ['query' => '99000001']);
+    $nodes = collect($test->instance()->ownershipGraphData()['nodes']);
 
-    // Foreign owner_kind color (oxblood) is applied via the --m CSS var on the
-    // mono .ckind label — never as a left-stripe border on the card itself
-    // (banned AI-tell). `.org ul...::before` legitimately uses border-left for
-    // the classic org-chart connector lines, so assert on `.card` specifically.
-    expect($html)->toContain('--m: #7a1f1f');
-    expect($html)->not->toMatch('/\.card\s*\{[^}]*border-left/');
+    $standout = $nodes->firstWhere('label', 'Standout Capital II AB');
+    expect($standout['kind'])->toBe('foreign');
+
+    // oxblood accent defined; no left-stripe on the node card.
+    $html = $test->html();
+    expect($html)->toContain('--foreign:#7a1f1f');
+    expect($html)->not->toMatch('/\.mgraph-node\s*\{[^}]*border-left/');
 });
 
 // ---- Fase 1: graf-model (nodes + edges) til dagre-render ----
@@ -504,4 +511,24 @@ it('graph model marks a foreign owner node as foreign kind', function () {
     $foreign = collect($g['nodes'])->firstWhere('label', 'Standout Capital II AB');
     expect($foreign)->not->toBeNull();
     expect($foreign['kind'])->toBe('foreign');
+});
+
+it('renders the ownership graph container mounting Alpine with node data', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name'=>'OpCo','owners'=>[],'subsidiaries'=>[],
+            'ancestors'=>[['person_name'=>'HoldCo ApS','cvr'=>'20000002','is_company'=>true,'ownership_share'=>100.0,'owner_kind'=>'legal','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data'=>['company'=>['name'=>'OpCo','owners'=>[]]]]),
+        '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
+    ]);
+
+    $html = Livewire::test(CompanyStructure::class, ['query'=>'20000001'])->html();
+
+    // graph container mounts the Alpine component with the model
+    expect($html)->toContain('x-data="ownershipGraph(');
+    // wire:ignore so Livewire morphing never touches the dagre-rendered DOM
+    expect($html)->toContain('wire:ignore');
+    // node label present in the mounted data
+    expect($html)->toContain('HoldCo ApS');
 });
