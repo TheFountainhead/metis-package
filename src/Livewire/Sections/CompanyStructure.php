@@ -246,8 +246,10 @@ class CompanyStructure extends MetisSection
             // node for the searched company.
             $ownedId = $this->ownedTargetId($a['parent_of_cvr'] ?? null);
             $edge = ['from' => $id, 'to' => $ownedId, 'label' => $this->shareLabel($a['ownership_share'] ?? null)];
-            // Dedup identical edges: a repeated ancestor row (backend BFS quirk)
-            // would otherwise draw two overlapping lines with stacked % labels.
+            // Dedup edges on from|to (share excluded, keeping the first). Safe
+            // because registry-api guarantees one share per owner→target (CompanyRole
+            // is unique on company_id|parent_company_id|role). If that ever changes
+            // to separate capital/voting rows, fold share into the key.
             if (! isset($edgeSeen[$id.'|'.$ownedId])) {
                 $edgeSeen[$id.'|'.$ownedId] = true;
                 $edges[] = $edge;
