@@ -32,7 +32,7 @@ jobs:
         with:
           # Package requires php ^8.2; test on the floor so we catch anything
           # that silently depends on a newer runtime.
-          php-version: 8.2
+          php-version: 8.4
           # sqlite: the RefreshDatabase tests (EmailGate*, LeadNotifier) run
           # against Testbench's default in-memory sqlite connection.
           extensions: pdo_sqlite, sqlite3
