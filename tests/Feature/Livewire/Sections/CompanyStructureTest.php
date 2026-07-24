@@ -532,3 +532,86 @@ it('renders the ownership graph container mounting Alpine with node data', funct
     // node label present in the mounted data
     expect($html)->toContain('HoldCo ApS');
 });
+
+// ---- Review-fund fase 1: 2×P1 + 1×P2 ----
+
+it('synthesises a stub node for an orphaned parent_of_cvr so the chain stays connected (P1 orphan-edge)', function () {
+    // A deep owner references a parent company (44444444) that has NO row of its
+    // own in $ancestors (capped/pruned upstream). Without a stub node, the JS
+    // edge-filter drops the edge and the owner floats detached, reading as a
+    // top-UBO it is not. The model must synthesise a stub so every edge endpoint
+    // is a real node.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo', 'owners' => [], 'subsidiaries' => [],
+            'ancestors' => [
+                ['person_name'=>'Deep Owner ApS','cvr'=>'55555555','is_company'=>true,'ownership_share'=>100.0,'owner_kind'=>'legal','depth'=>2,'parent_of_cvr'=>'44444444','foreign'=>false,'cycle'=>false,'enriching'=>false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data'=>['company'=>['name'=>'OpCo','owners'=>[]]]]),
+        '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
+    ]);
+
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'11111111'])->instance()->ownershipGraphData();
+
+    $ids = collect($g['nodes'])->pluck('id');
+    // the orphan parent now exists as a node (stub) → its edge endpoint is real
+    expect($ids)->toContain('44444444');
+    // every edge endpoint resolves to a node (no dangling edge → no detached node)
+    foreach ($g['edges'] as $e) {
+        expect($ids)->toContain($e['from']);
+        expect($ids)->toContain($e['to']);
+    }
+});
+
+it('gives two same-named persons owning the same company distinct node ids (P2 id-collision)', function () {
+    // Two distinct "Jens Hansen" each own 50% of the searched company. Keying a
+    // person node on name|parent alone collapses them into one node and drops
+    // the second owner. Each ancestor row must yield its own node.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'OpCo', 'owners' => [], 'subsidiaries' => [],
+            'ancestors' => [
+                ['person_name'=>'Jens Hansen','cvr'=>null,'is_company'=>false,'ownership_share'=>50.0,'owner_kind'=>'reel','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false],
+                ['person_name'=>'Jens Hansen','cvr'=>null,'is_company'=>false,'ownership_share'=>50.0,'owner_kind'=>'reel','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false],
+            ],
+        ]]),
+        '*cvr/company/*' => Http::response(['data'=>['company'=>['name'=>'OpCo','owners'=>[]]]]),
+        '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
+    ]);
+
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'22222222'])->instance()->ownershipGraphData();
+
+    // both persons survive as distinct nodes
+    $persons = collect($g['nodes'])->where('label', 'Jens Hansen');
+    expect($persons)->toHaveCount(2);
+    // and both own the searched company (two distinct edges)
+    $edges = collect($g['edges'])->where('to', 'searched');
+    expect($edges)->toHaveCount(2);
+});
+
+it('binds the graph wire:key to the model so enrichment re-mounts the graph (P1 stale-graph)', function () {
+    // wire:key must change when the ownership model grows, else wire:ignore
+    // freezes a stale partial graph after an enrichment poll. A shallow model
+    // and a deeper model for the SAME query must produce different keys.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name'=>'OpCo','owners'=>[],'subsidiaries'=>[],
+            'ancestors'=>[['person_name'=>'HoldCo ApS','cvr'=>'20000002','is_company'=>true,'ownership_share'=>100.0,'owner_kind'=>'legal','depth'=>1,'parent_of_cvr'=>null,'foreign'=>false,'cycle'=>false,'enriching'=>false]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data'=>['company'=>['name'=>'OpCo','owners'=>[]]]]),
+        '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
+    ]);
+
+    $test = Livewire::test(CompanyStructure::class, ['query'=>'20000001']);
+    $shallowHtml = $test->html();
+
+    // key is derived from the graph content, not the query alone
+    $shallow = $test->instance()->ownershipGraphData();
+    $deep = ['nodes' => array_merge($shallow['nodes'], [['id'=>'99','label'=>'New Owner','cvr'=>'99','kind'=>'legal','share'=>50.0]]), 'edges' => $shallow['edges']];
+
+    expect($test->instance()->graphKey($shallow))
+        ->not->toBe($test->instance()->graphKey($deep));
+    // and the rendered key contains that content hash (not just the query)
+    expect($shallowHtml)->toContain('wire:key="ownership-graph-20000001-'.$test->instance()->graphKey($shallow).'"');
+});

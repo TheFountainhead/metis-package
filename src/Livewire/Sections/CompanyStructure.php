@@ -230,14 +230,17 @@ class CompanyStructure extends MetisSection
         $seen = ['searched' => true];
         $edges = [];
 
-        foreach ($this->ancestors as $a) {
+        foreach ($this->ancestors as $i => $a) {
             $isCompany = $a['is_company'] ?? false;
             $foreign = $a['foreign'] ?? false;
             $cvr = $a['cvr'] ?? null;
 
-            // Stable id: real cvr for DK companies, else a name hash (persons,
-            // foreign entities). Foreign owners have no cvr but are companies.
-            $id = $cvr ?: 'person:'.md5(($a['person_name'] ?? '').'|'.($a['parent_of_cvr'] ?? ''));
+            // Stable id: real cvr for DK companies (a genuine unique key), else a
+            // per-row hash. The row index $i is folded in so two distinct people
+            // sharing a name+parent (common in CVR data, e.g. two "Jens Hansen"
+            // owning the same company) never collapse into one node and drop an
+            // owner. cvr'd companies still dedup correctly across rows.
+            $id = $cvr ?: 'person:'.md5($i.'|'.($a['person_name'] ?? '').'|'.($a['parent_of_cvr'] ?? ''));
 
             // A non-company owner is a physical person → the dark person-node.
             // Companies carry their owner_kind (legal/reel/other); foreign wins.
@@ -260,7 +263,39 @@ class CompanyStructure extends MetisSection
             $edges[] = ['from' => $id, 'to' => $ownedId, 'label' => $this->shareLabel($a['ownership_share'] ?? null)];
         }
 
+        // Orphan-parent stubs: an ancestor's parent_of_cvr can point at a company
+        // that was capped/pruned upstream and so has no row of its own. Without a
+        // node, the render drops the edge and the owner floats detached, reading
+        // as a top-UBO it is not. Synthesise a minimal stub for every referenced
+        // parent that isn't already a node, so the chain stays connected.
+        foreach ($this->ancestors as $a) {
+            $parent = $a['parent_of_cvr'] ?? null;
+            if ($parent !== null && ! isset($seen[$parent])) {
+                $seen[$parent] = true;
+                $nodes[] = [
+                    'id' => $parent,
+                    'label' => 'CVR '.$parent,
+                    'cvr' => $parent,
+                    'kind' => 'other',
+                    'share' => null,
+                ];
+            }
+        }
+
         return ['nodes' => $nodes, 'edges' => $edges];
+    }
+
+    /**
+     * Content-derived key for the graph's Livewire wrapper. The graph lives in a
+     * wire:ignore subtree, so Livewire only re-mounts (and Alpine only re-lays-out
+     * via dagre) when the wire:key VALUE changes. Keying on the query alone freezes
+     * a stale partial graph after an enrichment poll deepens the ancestor chain;
+     * hashing the model makes the key change whenever nodes/edges change, so a
+     * fuller graph triggers a fresh layout.
+     */
+    public function graphKey(array $graph): string
+    {
+        return substr(md5(json_encode($graph)), 0, 12);
     }
 
     /**

@@ -40,9 +40,12 @@
                      positioned HTML cards, edges are SVG lines.
 
                      Wrapped in wire:ignore so Livewire's DOM morphing never touches
-                     the dagre-rendered subtree — a data refresh (enrichment poll)
-                     re-inits the Alpine component via the :key on the query instead.
-                     wire:ignore is the fallback per the chosen fase-1 approach. --}}
+                     the dagre-rendered subtree. The wire:key is derived from the
+                     graph CONTENT (query + model hash), so when an enrichment poll
+                     deepens the ancestor chain the key changes, Livewire re-mounts
+                     the element, and Alpine re-runs the dagre layout with the fuller
+                     graph. Keying on the query alone would freeze a stale partial
+                     graph — that is the bug this hash fixes. --}}
                 @php
                     $graph = $this->ownershipGraphData();
                 @endphp
@@ -50,7 +53,7 @@
                     <div class="org-section-label">{{ __('Ownership structure') }}</div>
                     <div
                         wire:ignore
-                        wire:key="ownership-graph-{{ $query }}"
+                        wire:key="ownership-graph-{{ $query }}-{{ $this->graphKey($graph) }}"
                         class="mgraph"
                         x-data="ownershipGraph(@js($graph))"
                     >
