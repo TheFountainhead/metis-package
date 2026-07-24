@@ -49,29 +49,23 @@
 
             <div class="metis-org-chart">
 
-                {{-- Ownership chain ancestors (Task 8): companies/persons above the searched
-                     company, deepest UBO at top down to the immediate owner just above OpCo.
-                     getOwnershipChain's BFS starts at the searched company, so its depth-1
-                     nodes ARE the immediate owners — already rendered by the reel/legal/other
-                     rows below. Only depth >= 2 (the chain ABOVE the immediate owners) belongs
-                     here, or every immediate owner would be shown twice. --}}
-                @php
-                    $chainAbove = collect($ancestors)->filter(fn ($a) => ($a['depth'] ?? 1) >= 2)->sortByDesc('depth');
-                @endphp
-                @if($chainAbove->count() > 0)
-                    <div class="org-section-label">{{ __('Ownership chain') }}</div>
-                    @foreach($chainAbove as $anc)
-                        <div class="org-row" style="margin-left: {{ (($anc['depth'] ?? 2) - 1) * 1.5 }}rem">
-                            @include('metis::livewire.sections.partials.owner-card', [
-                                'owner' => $anc,
-                                'badgeColor' => ($anc['owner_kind'] ?? 'other') === 'reel' ? 'emerald' : (($anc['owner_kind'] ?? 'other') === 'legal' ? 'sky' : 'zinc'),
+                {{-- Ownership hierarchy: a real nested tree built from the flat
+                     `ancestors` adjacency list (via parent_of_cvr), mirroring the
+                     CVR click-through — each company shown once under the company
+                     it owns, its own owners nested beneath. Replaces the old flat
+                     depth-sorted list where everything looked like a sibling. --}}
+                @php $ownershipTree = $this->ownershipTree(); @endphp
+                @if(count($ownershipTree) > 0)
+                    <div class="org-section-label">{{ __('Ownership structure') }}</div>
+                    <div class="metis-ownership-tree">
+                        @foreach($ownershipTree as $rootOwner)
+                            @include('metis::livewire.sections.partials.ownership-tree-node', [
+                                'node' => $rootOwner,
+                                'depth' => 0,
                                 'expandedOwners' => $expandedOwners,
                             ])
-                            @if($anc['foreign'] ?? false)<span class="text-xs text-zinc-500">{{ __('foreign owner') }}</span>@endif
-                            @if($anc['cycle'] ?? false)<span class="text-xs text-amber-600">{{ __('circular ownership') }}</span>@endif
-                            @if($anc['enriching'] ?? false)<span class="text-xs text-blue-500">{{ __('loading...') }}</span>@endif
-                        </div>
-                    @endforeach
+                        @endforeach
+                    </div>
                     <div class="org-trunk"></div>
                 @endif
 

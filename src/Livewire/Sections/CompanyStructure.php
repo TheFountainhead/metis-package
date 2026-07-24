@@ -191,6 +191,55 @@ class CompanyStructure extends MetisSection
             : 'person:'.md5($owner['person_name'] ?? '');
     }
 
+    /**
+     * Build a real nested ownership tree from the flat `ancestors` adjacency
+     * list. getOwnershipChain returns one row per (owner → owned) edge, each
+     * carrying `parent_of_cvr` = the CVR of the company this owner owns. So a
+     * node's children are every ancestor whose parent_of_cvr equals this node's
+     * cvr. The searched company (cvr) is the root; its direct owners are the
+     * rows with parent_of_cvr === null. This mirrors the CVR click-through
+     * hierarchy: each company appears once under each company it owns, never a
+     * flat depth-sorted list where everything looks like a sibling.
+     *
+     * Returns a list of root-level owner nodes, each with a nested `children`.
+     */
+    public function ownershipTree(): array
+    {
+        // Group ancestor rows by the CVR of the company they own. Rows with a
+        // null parent_of_cvr are the searched company's direct owners (roots).
+        $rootKey = '__root__';
+        $byParentCvr = [];
+        foreach ($this->ancestors as $node) {
+            $key = $node['parent_of_cvr'] ?? $rootKey;
+            $byParentCvr[$key][] = $node;
+        }
+
+        return $this->buildOwnerChildren($rootKey, $byParentCvr, []);
+    }
+
+    /**
+     * Recursively attach each owner's own owners. $seen guards against cycles
+     * (a company already on the current path is not expanded again).
+     *
+     * @param  array<string, list<array>>  $byParentCvr
+     * @param  array<string, true>  $seen  cvrs on the current path
+     * @return list<array>
+     */
+    protected function buildOwnerChildren(string $ownedKey, array $byParentCvr, array $seen): array
+    {
+        $out = [];
+        foreach ($byParentCvr[$ownedKey] ?? [] as $node) {
+            $cvr = $node['cvr'] ?? null;
+            // A person is a leaf; a company recurses unless already on this path.
+            $node['children'] = ($cvr && ! isset($seen[$cvr]))
+                ? $this->buildOwnerChildren($cvr, $byParentCvr, $seen + [$cvr => true])
+                : [];
+            $out[] = $node;
+        }
+
+        return $out;
+    }
+
     public function render()
     {
         return view('metis::livewire.sections.company-structure');
