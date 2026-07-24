@@ -424,7 +424,10 @@ it('nests a foreign co-owner under the mid-chain company it owns (Standout Capit
     expect($standout['children'])->toBe([]);
 });
 
-it('renders the foreign marker for a nested foreign co-owner node in the tree partial', function () {
+it('renders the foreign marker for a nested foreign co-owner node in the org-chart card', function () {
+    // The org-chart marks a foreign co-owner via its mono kind-label
+    // ("Udenlandsk", oxblood #7a1f1f) inside the card — not a left-stripe
+    // border and not a separate "foreign owner" text marker.
     Http::fake([
         '*cvr/company-structure*' => Http::response(['data' => [
             'name' => 'Resights ApS',
@@ -439,8 +442,16 @@ it('renders the foreign marker for a nested foreign co-owner node in the tree pa
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    Livewire::test(CompanyStructure::class, ['query' => '99000001'])
+    $html = Livewire::test(CompanyStructure::class, ['query' => '99000001'])
         ->assertSee('RS HoldCo ApS')
         ->assertSee('Standout Capital II AB')
-        ->assertSee('foreign owner');
+        ->assertSee('Udenlandsk')
+        ->html();
+
+    // Foreign owner_kind color (oxblood) is applied via the --m CSS var on the
+    // mono .ckind label — never as a left-stripe border on the card itself
+    // (banned AI-tell). `.org ul...::before` legitimately uses border-left for
+    // the classic org-chart connector lines, so assert on `.card` specifically.
+    expect($html)->toContain('--m: #7a1f1f');
+    expect($html)->not->toMatch('/\.card\s*\{[^}]*border-left/');
 });

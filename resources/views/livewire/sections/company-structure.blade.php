@@ -32,30 +32,38 @@
 
             <div class="metis-org-chart">
 
-                {{-- Ownership hierarchy: ONE full nested tree built from the flat
-                     `ancestors` adjacency list (via parent_of_cvr), mirroring the
-                     CVR click-through top to bottom — the searched company as the
-                     conceptual root, its direct owners nested beneath it as tree
-                     roots, and THEIR owners nested further, each company shown
-                     once under the company it owns. This supersedes the old
-                     separate "Ultimate beneficial owner" / "Legal owner" / "Other"
-                     rows below the tree, which would otherwise duplicate the same
-                     direct owners the tree already renders (Variant A). --}}
-                @php $ownershipTree = $this->ownershipTree(); @endphp
+                {{-- Ownership hierarchy: a real org-chart in frankston.io editorial
+                     style. Built top-down in HTML — render-root is the searched
+                     company itself (a synthetic node wrapping $ownershipTree() as
+                     its children), each owner recursively nesting ITS OWN owners
+                     beneath it — then the whole .org container is flipped with
+                     transform:scaleY(-1) (and each .card counter-flipped) so
+                     owners render at the TOP and the searched company at the
+                     BOTTOM, matching how ownership actually flows. This supersedes
+                     the old separate "Ultimate beneficial owner" / "Legal owner" /
+                     "Other" rows, which would otherwise duplicate the same direct
+                     owners the tree already renders (Variant A). --}}
+                @php
+                    $ownershipTree = $this->ownershipTree();
+                    $searchedRoot = [
+                        'person_name' => $companyName ?? $query,
+                        'cvr' => $query,
+                        'is_company' => true,
+                        'children' => $ownershipTree,
+                    ];
+                @endphp
                 @if(count($ownershipTree) > 0)
                     <div class="org-section-label">{{ __('Ownership structure') }}</div>
-                    <div class="metis-ownership-tree-scroll">
-                        <div class="metis-ownership-tree">
-                            @foreach($ownershipTree as $rootOwner)
+                    <div class="frankston-org-scroll">
+                        <div class="org">
+                            <ul class="root">
                                 @include('metis::livewire.sections.partials.ownership-tree-node', [
-                                    'node' => $rootOwner,
-                                    'depth' => 0,
-                                    'expandedOwners' => $expandedOwners,
+                                    'node' => $searchedRoot,
+                                    'searched' => true,
                                 ])
-                            @endforeach
+                            </ul>
                         </div>
                     </div>
-                    <div class="org-trunk"></div>
                 @endif
 
                 {{-- Historical owners (collapsible) --}}
@@ -334,74 +342,62 @@
         width: 100%;
     }
 
-    /* Ownership tree: a real nested org-chart (parent above, owners nested
-       beneath it) instead of the old flat depth-indented list. Deep chains
-       (6+ levels) can run wide, so the tree scrolls horizontally inside its
-       own container rather than the page. */
-    .metis-org-chart .metis-ownership-tree-scroll {
+    /* ---- Frankston.io editorial org-chart ------------------------------
+       Deliberately its own light-palette styled section (frankston.io brand
+       chart), independent of metis's own dark-mode surface. Technique:
+       classic CSS ::before/::after org-chart connectors, built top-down with
+       the searched company as the render-root and its owners as recursive
+       children, then the WHOLE .org container is flipped vertically with
+       transform:scaleY(-1) so owners land at the top (ownership flows
+       downward to the searched company) — each .card counter-flips so its
+       text stays upright. */
+    @font-face { font-family:'Spectral'; src:url('https://frankston.io/assets/fonts/spectral-v15-latin-600.woff2') format('woff2'); font-weight:600; font-display:swap; }
+    @font-face { font-family:'IBM Plex Sans'; src:url('https://frankston.io/assets/fonts/ibm-plex-sans-v23-latin-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'IBM Plex Sans'; src:url('https://frankston.io/assets/fonts/ibm-plex-sans-v23-latin-500.woff2') format('woff2'); font-weight:500; font-display:swap; }
+    @font-face { font-family:'IBM Plex Mono'; src:url('https://frankston.io/assets/fonts/ibm-plex-mono-v20-latin-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+
+    .frankston-org-scroll {
+        --bg:#f6efe3; --bg-2:#efe6d4; --rule-strong:#b8a884; --ink:#1a1a1a; --ink-2:#3a3a3a; --ink-3:#6b6457;
+        --fd:"Spectral",Georgia,serif; --fb:"IBM Plex Sans",sans-serif; --fm:"IBM Plex Mono",monospace;
         width: 100%;
         overflow-x: auto;
+        background: var(--bg);
+        border: 1px solid var(--rule-strong);
+        border-radius: 0.5rem;
+        padding: 32px 24px 24px;
+        color: var(--ink);
+        font-family: var(--fb);
     }
 
-    .metis-org-chart .metis-ownership-tree {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: flex-start;
-        min-width: 100%;
-        padding: 0.25rem 0;
-    }
+    .frankston-org-scroll .org { overflow-x: auto; padding-bottom: 8px; transform: scaleY(-1); }
+    .frankston-org-scroll .org .card { transform: scaleY(-1); }
+    .frankston-org-scroll .org ul { position: relative; padding-top: 24px; display: flex; justify-content: center; gap: 20px; list-style: none; margin: 0; }
+    .frankston-org-scroll .org li { position: relative; padding: 24px 10px 0; }
+    .frankston-org-scroll .org li::before,
+    .frankston-org-scroll .org li::after { content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 24px; border-top: 1px solid var(--rule-strong); }
+    .frankston-org-scroll .org li::after { right: auto; left: 50%; }
+    .frankston-org-scroll .org li:only-child::before,
+    .frankston-org-scroll .org li:only-child::after { display: none; }
+    .frankston-org-scroll .org li:only-child { padding-top: 24px; }
+    .frankston-org-scroll .org li:only-child::before { display: block; left: 50%; right: auto; width: 0; border-top: 0; border-left: 1px solid var(--rule-strong); height: 24px; }
+    .frankston-org-scroll .org li:first-child::before,
+    .frankston-org-scroll .org li:last-child::after { border: 0; }
+    .frankston-org-scroll .org ul ul::before { content: ''; position: absolute; top: 0; left: 50%; height: 24px; border-left: 1px solid var(--rule-strong); }
+    .frankston-org-scroll .org > ul > li { padding-top: 0; }
+    .frankston-org-scroll .org > ul > li::before,
+    .frankston-org-scroll .org > ul > li::after { display: none; }
 
-    .metis-org-chart .metis-tree-node {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .metis-org-chart .metis-tree-row {
-        display: flex;
-        align-items: stretch;
-    }
-
-    /* The connector is a short horizontal branch reaching from the parent's
-       vertical trunk (drawn by .metis-tree-children's border-left) into the
-       card, so nesting reads as a real hierarchy rather than plain
-       left-margin indentation. */
-    .metis-org-chart .metis-tree-connector {
-        position: relative;
-        width: 1.25rem;
-        flex-shrink: 0;
-    }
-
-    .metis-org-chart .metis-tree-connector::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 50%;
-        width: 100%;
-        height: 2px;
-        background: var(--org-line);
-    }
-
-    .metis-org-chart .metis-tree-card {
-        padding: 0.375rem 0;
-    }
-
-    .metis-org-chart .metis-tree-card .org-cell {
-        justify-content: flex-start;
-    }
-
-    .metis-org-chart .metis-tree-card .org-node {
-        text-align: left;
-        min-width: 12rem;
-    }
-
-    /* Children hang beneath their parent; the border-left is the vertical
-       trunk each child's connector branches off from. Removed on the last
-       child so the trunk doesn't overshoot past the final branch. */
-    .metis-org-chart .metis-tree-children {
-        display: flex;
-        flex-direction: column;
-        margin-left: 0.75rem;
-        border-left: 2px solid var(--org-line);
-    }
+    .frankston-org-scroll .node { display: flex; justify-content: center; }
+    .frankston-org-scroll .card { display: inline-block; background: var(--bg); border: 1px solid var(--rule-strong); padding: 10px 14px 11px; min-width: 152px; text-align: left; }
+    .frankston-org-scroll .cname { font-family: var(--fd); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; line-height: 1.2; white-space: nowrap; }
+    .frankston-org-scroll .cname a { color: inherit; text-decoration: none; }
+    .frankston-org-scroll .cname a:hover { text-decoration: underline; }
+    .frankston-org-scroll .cmeta { display: flex; align-items: baseline; gap: 12px; margin-top: 5px; }
+    .frankston-org-scroll .ckind { font-family: var(--fm); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--m); }
+    .frankston-org-scroll .ckind.you { color: var(--ink); }
+    .frankston-org-scroll .cshare { font-family: var(--fm); font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-left: auto; }
+    .frankston-org-scroll .cflag { font-family: var(--fm); font-size: 10px; color: var(--ink-3); margin-top: 4px; }
+    .frankston-org-scroll .searched { background: var(--bg-2); border-color: var(--ink); border-width: 1.5px; }
+    .frankston-org-scroll .searched .cname { font-size: 16.5px; }
 </style>
 </div>
