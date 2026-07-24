@@ -351,10 +351,13 @@
        transform:scaleY(-1) so owners land at the top (ownership flows
        downward to the searched company) — each .card counter-flips so its
        text stays upright. */
-    @font-face { font-family:'Spectral'; src:url('https://frankston.io/assets/fonts/spectral-v15-latin-600.woff2') format('woff2'); font-weight:600; font-display:swap; }
-    @font-face { font-family:'IBM Plex Sans'; src:url('https://frankston.io/assets/fonts/ibm-plex-sans-v23-latin-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
-    @font-face { font-family:'IBM Plex Sans'; src:url('https://frankston.io/assets/fonts/ibm-plex-sans-v23-latin-500.woff2') format('woff2'); font-weight:500; font-display:swap; }
-    @font-face { font-family:'IBM Plex Mono'; src:url('https://frankston.io/assets/fonts/ibm-plex-mono-v20-latin-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+    /* Same-origin fonts (metis-host serves these from public/fonts/). Cross-origin
+       from frankston.io lacks a CORS header, so the browser would block them and
+       silently fall back to Georgia/system fonts — killing the editorial look. */
+    @font-face { font-family:'Spectral'; src:url('/fonts/spectral-v15-latin-600.woff2') format('woff2'); font-weight:600; font-display:swap; }
+    @font-face { font-family:'IBM Plex Sans'; src:url('/fonts/ibm-plex-sans-v23-latin-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'IBM Plex Sans'; src:url('/fonts/ibm-plex-sans-v23-latin-500.woff2') format('woff2'); font-weight:500; font-display:swap; }
+    @font-face { font-family:'IBM Plex Mono'; src:url('/fonts/ibm-plex-mono-v20-latin-regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
 
     .frankston-org-scroll {
         --bg:#f6efe3; --bg-2:#efe6d4; --rule-strong:#b8a884; --ink:#1a1a1a; --ink-2:#3a3a3a; --ink-3:#6b6457;
