@@ -16,7 +16,7 @@
             @endif
         </div>
 
-        @if(count($owners) === 0 && count($subsidiaries) === 0 && count($ancestors) === 0 && ! $enriching)
+        @if(count($owners) === 0 && count($graphModel['nodes'] ?? []) <= 1 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
             @php
@@ -139,42 +139,15 @@
                     </div>
                 @endif
 
-                {{-- The searched company is already rendered as the graph's own
-                     'searched' node (sand card + thick ink border, frankston-styled)
-                     at the bottom of the ownership graph. The old org-chart's
-                     amber "Searched company" box was a duplicate AND off-brand
-                     (Tailwind amber-100/300 — an AI-tell), so it is removed. --}}
-
-                @if(count($subsidiaries) > 0)
-                    <div class="org-trunk"></div>
-                    @if(count($subsidiaries) > 1)
-                        <div class="org-bridge-row" style="--node-count: {{ count($subsidiaries) }}">
-                            <div class="org-bridge-line"></div>
-                        </div>
-                        <div class="org-stem-row">
-                            @foreach($subsidiaries as $sub)
-                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
-                            @endforeach
-                        </div>
-                    @endif
-
-                    <div class="org-row {{ count($subsidiaries) > 1 ? 'multi' : '' }}">
-                        @foreach($subsidiaries as $sub)
-                            <div class="org-cell">
-                                <div class="org-node">
-                                    <x-metis-link type="cvr" :query="$sub['cvr']" :label="$sub['name'] ?? $sub['cvr']" />
-                                    @if($sub['ownership_share'] ?? null)
-                                        <div class="org-meta">
-                                            <flux:badge size="sm" color="zinc">{{ $sub['ownership_share'] }}%</flux:badge>
-                                        </div>
-                                    @endif
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-
-                    <div class="org-section-label">{{ __('Subsidiaries') }}</div>
-                @endif
+                {{-- The searched company AND its subsidiaries are already rendered
+                     as graph nodes above (sand card + thick ink border for
+                     'searched'; subsidiary cards below it) — the old CSS
+                     org-chart trunk/subsidiary rows are superseded by the graph
+                     and removed (subsidiaries are no longer public state; the
+                     builder reads them from protected $structureData). Task 8
+                     owns the full Blade rebuild around the new $propertiesStatus
+                     states — this file only had its dead references to the
+                     removed public properties stripped. --}}
 
             </div>
         @endif

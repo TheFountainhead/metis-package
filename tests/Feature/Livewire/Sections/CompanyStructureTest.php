@@ -13,6 +13,74 @@ beforeEach(function () {
     }
 });
 
+/**
+ * Fakes company-structure (3-level subsidiary tree fixture from Task 3:
+ * 44507781 -> 44018942 -> 44027992) + a completed enrichment status, so
+ * expandNode('sub:44018942') has a real depth-3 child to reveal.
+ */
+function fakeRegistryStructure(): void
+{
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [],
+            'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0,
+                'children' => [[
+                    'cvr' => '44018942', 'name' => 'Trygve 1 ApS', 'ownership_share' => 100.0,
+                    'children' => [[
+                        'cvr' => '44027992', 'name' => 'Schneidereit Trygve 1 A/S', 'ownership_share' => 67.0, 'children' => [],
+                    ]],
+                ]],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+}
+
+/**
+ * Fakes the property-portfolio + properties/batch endpoints. Response shape
+ * matches RegistryApi::fetchCompanyPropertyPortfolio's real payload: the
+ * properties/count live under data.portfolio (see CompanyOverview/CompanyProperties,
+ * which consume the same method the same way) — NOT flat on the outer array.
+ *
+ * $batchUsage, when set, attaches a single primary building (BBR code 130 —
+ * "Bolig" per BbrUsageCategory) to each property's batch response so
+ * usageMapFor() has something to resolve; the param only toggles whether a
+ * building is present (BbrUsageCategory always maps 130 -> 'Bolig', it does
+ * not echo back an arbitrary string).
+ */
+function fakeRegistryPortfolio(array $properties = [], ?string $batchUsage = null, ?int $propertyCount = null): void
+{
+    $count = $propertyCount ?? count($properties);
+
+    Http::fake([
+        '*/property-portfolio*' => Http::response(['data' => [
+            'portfolio' => [
+                'properties' => $properties,
+                'property_count' => $count,
+                'total_count' => $count,
+            ],
+        ]]),
+        '*/properties/batch*' => Http::response(['data' => collect($properties)->map(fn ($p) => [
+            'matrikel_id' => $p['matrikel_id'] ?? null,
+            'bbr' => ['buildings' => $batchUsage === null ? [] : [
+                ['usage' => 130, 'total_area' => 150],
+            ]],
+        ])->all()]),
+    ]);
+}
+
+function fdlPortfolioProperty(array $overrides = []): array
+{
+    return array_merge([
+        'owner_cvr' => '38653806', 'matrikel_id' => '2573669', 'is_matriculated' => true,
+        'address' => 'Kongshøjvej 2', 'city' => 'Store Heddinge', 'valuation' => 534000,
+    ], $overrides);
+}
+
 it('does not present the owners subsidiaries as the searched companys own', function () {
     // Scenariet fra JEUDAN-buggen: søgt selskab har ejere men (transient) tomme
     // subsidiaries; ejerens struktur har en portefølje af andre selskaber.
@@ -28,9 +96,10 @@ it('does not present the owners subsidiaries as the searched companys own', func
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    Livewire::test(CompanyStructure::class, ['query' => '99999999'])
-        ->assertSet('subsidiaries', [])
+    $test = Livewire::test(CompanyStructure::class, ['query' => '99999999'])
         ->assertDontSee('FREMMED DATTER');
+
+    expect(collect($test->get('graphModel')['nodes'])->pluck('label'))->not->toContain('FREMMED DATTER A/S');
 });
 
 it('renders the companys own subsidiaries when present', function () {
@@ -52,14 +121,14 @@ it('renders the companys own subsidiaries when present', function () {
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    // Subsidiaries still render as server-side HTML rows (org-chart trunk).
-    // The owner now lives in the graph's @js payload (x-data), not a text row,
-    // so assert against the mounted graph model instead of visible text.
-    $test = Livewire::test(CompanyStructure::class, ['query' => '99999999'])
-        ->assertSee('EGEN DATTER ApS');
+    // Subsidiaries and owners now live only in the graph's @js payload
+    // (x-data), not as separate text rows — assert against the mounted
+    // graph model instead of visible text.
+    $test = Livewire::test(CompanyStructure::class, ['query' => '99999999']);
 
-    $graph = $test->instance()->ownershipGraphData();
-    expect(collect($graph['nodes'])->pluck('label'))->toContain('EJER A/S');
+    $graph = $test->instance()->graphModel;
+    expect(collect($graph['nodes'])->pluck('label'))->toContain('EJER A/S')
+        ->and(collect($graph['nodes'])->pluck('label'))->toContain('EGEN DATTER ApS');
 });
 
 it('shows all owner kinds (reel, legal, other) as tree roots — no separate rows (Variant A)', function () {
@@ -92,7 +161,7 @@ it('shows all owner kinds (reel, legal, other) as tree roots — no separate row
         ->assertDontSee('Legal owner')
         ->assertDontSee('Other with ownership share');
 
-    $labels = collect($test->instance()->ownershipGraphData()['nodes'])->pluck('label');
+    $labels = collect($test->instance()->graphModel['nodes'])->pluck('label');
     expect($labels)->toContain('UBO PERSON')
         ->and($labels)->toContain('LEGAL HOLDING ApS')
         ->and($labels)->toContain('DIREKTØR MED ANDEL');
@@ -137,11 +206,12 @@ it('exposes ancestors from the structure payload', function () {
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    Livewire::test(CompanyStructure::class, ['query' => '70000001'])
-        ->assertSet('ancestors', fn ($a) => count($a) === 1 && $a[0]['person_name'] === 'HoldCo ApS');
+    $test = Livewire::test(CompanyStructure::class, ['query' => '70000001']);
+
+    expect(collect($test->get('graphModel')['nodes'])->pluck('label'))->toContain('HoldCo ApS');
 });
 
-it('renders ancestors above the searched company, deepest at top', function () {
+it('chains ancestors above the searched company via edges, deepest owner at the top', function () {
     Http::fake([
         '*cvr/company-structure*' => Http::response(['data' => [
             'name' => 'OpCo',
@@ -163,8 +233,16 @@ it('renders ancestors above the searched company, deepest at top', function () {
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    Livewire::test(CompanyStructure::class, ['query' => '70000001'])
-        ->assertSeeInOrder(['Top Ejer', 'BidCo ApS', 'OpCo']); // deepest UBO first, then down to searched company
+    // Graph layout is now computed client-side (dagre/Alpine), so "deepest at
+    // top" is no longer a server-rendered text order — assert the underlying
+    // ownership chain instead: BidCo owns 'searched', Top Ejer owns BidCo.
+    $g = Livewire::test(CompanyStructure::class, ['query' => '70000001'])->instance()->graphModel;
+
+    $bidco = collect($g['nodes'])->firstWhere('label', 'BidCo ApS');
+    $topEjer = collect($g['nodes'])->firstWhere('label', 'Top Ejer');
+    expect($bidco)->not->toBeNull()->and($topEjer)->not->toBeNull();
+    expect(collect($g['edges'])->firstWhere('from', $bidco['id'])['to'])->toBe('searched');
+    expect(collect($g['edges'])->firstWhere('from', $topEjer['id'])['to'])->toBe($bidco['id']);
 });
 
 it('does not double-render the depth-1 immediate owner in the ancestors block (regression)', function () {
@@ -192,10 +270,10 @@ it('does not double-render the depth-1 immediate owner in the ancestors block (r
 
     $test = Livewire::test(CompanyStructure::class, ['query' => '70000001']);
 
-    // The graph is JS-rendered from ownershipGraphData(), so "no double-render"
+    // The graph is JS-rendered from graphModel, so "no double-render"
     // is now a model-level property: each owner is one node, not two. (Labels
     // appear in the x-data + carrier JSON payloads, which is not a visual render.)
-    $g = $test->instance()->ownershipGraphData();
+    $g = $test->instance()->graphModel;
     expect(collect($g['nodes'])->where('label', 'BidCo ApS'))->toHaveCount(1);
     expect(collect($g['nodes'])->where('label', 'Top Ejer'))->toHaveCount(1);
     // BidCo owns searched (depth 1); Top Ejer owns BidCo (depth 2) — distinct edges.
@@ -272,7 +350,7 @@ it('builds a cycle-containing graph model without infinite recursion (A owns B, 
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
     ]);
 
-    $g = Livewire::test(CompanyStructure::class, ['query' => '70000001'])->instance()->ownershipGraphData();
+    $g = Livewire::test(CompanyStructure::class, ['query' => '70000001'])->instance()->graphModel;
 
     // A and B each appear once (cvr dedup across the cycle rows); no runaway.
     $ids = collect($g['nodes'])->pluck('id');
@@ -302,7 +380,7 @@ it('marks a nested foreign co-owner as a foreign graph node with oxblood styling
     ]);
 
     $test = Livewire::test(CompanyStructure::class, ['query' => '99000001']);
-    $nodes = collect($test->instance()->ownershipGraphData()['nodes']);
+    $nodes = collect($test->instance()->graphModel['nodes']);
 
     $standout = $nodes->firstWhere('label', 'Standout Capital II AB');
     expect($standout['kind'])->toBe('foreign');
@@ -328,7 +406,7 @@ it('builds a flat graph model with nodes and edges from ancestors', function () 
         '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
     ]);
 
-    $g = Livewire::test(CompanyStructure::class, ['query'=>'20000001'])->instance()->ownershipGraphData();
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'20000001'])->instance()->graphModel;
 
     $ids = collect($g['nodes'])->pluck('id');
     // searched company + HoldCo (cvr id) + a person node
@@ -357,7 +435,7 @@ it('graph model marks a foreign owner node as foreign kind', function () {
         '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
     ]);
 
-    $g = Livewire::test(CompanyStructure::class, ['query'=>'30000000'])->instance()->ownershipGraphData();
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'30000000'])->instance()->graphModel;
     $foreign = collect($g['nodes'])->firstWhere('label', 'Standout Capital II AB');
     expect($foreign)->not->toBeNull();
     expect($foreign['kind'])->toBe('foreign');
@@ -402,7 +480,7 @@ it('synthesises a stub node for an orphaned parent_of_cvr so the chain stays con
         '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
     ]);
 
-    $g = Livewire::test(CompanyStructure::class, ['query'=>'11111111'])->instance()->ownershipGraphData();
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'11111111'])->instance()->graphModel;
 
     $ids = collect($g['nodes'])->pluck('id');
     // the orphan parent now exists as a node (stub) → its edge endpoint is real
@@ -430,7 +508,7 @@ it('gives two same-named persons owning the same company distinct node ids (P2 i
         '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
     ]);
 
-    $g = Livewire::test(CompanyStructure::class, ['query'=>'22222222'])->instance()->ownershipGraphData();
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'22222222'])->instance()->graphModel;
 
     // both persons survive as distinct nodes
     $persons = collect($g['nodes'])->where('label', 'Jens Hansen');
@@ -457,10 +535,8 @@ it('exposes the graph model as watchable Livewire state with a stable graph key 
 
     $test = Livewire::test(CompanyStructure::class, ['query'=>'20000001']);
 
-    // graphModel is populated public state (so $wire.$watch has something to see)
-    // and equals the built model.
+    // graphModel is populated public state (so $wire.$watch has something to see).
     $test->assertSet('graphModel', fn ($m) => is_array($m) && count($m['nodes']) === 2);
-    expect($test->instance()->graphModel)->toBe($test->instance()->ownershipGraphData());
 
     // graph wrapper: STABLE key (query only) — never re-mounted mid-pan
     expect($test->html())->toContain('wire:key="ownership-graph-20000001"');
@@ -488,7 +564,7 @@ it('treats a depth-1 owner whose parent_of_cvr equals the searched cvr as owning
     ]);
 
     // query IS the parent_of_cvr → the owner really owns the searched company
-    $g = Livewire::test(CompanyStructure::class, ['query'=>'33333333'])->instance()->ownershipGraphData();
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'33333333'])->instance()->graphModel;
 
     $ids = collect($g['nodes'])->pluck('id');
     // no duplicate root: '33333333' must NOT appear as a separate node (only 'searched')
@@ -514,7 +590,7 @@ it('deduplicates identical repeated ancestor edges so no double line or overlapp
         '*enrichment*' => Http::response(['data'=>['status'=>'completed']]),
     ]);
 
-    $g = Livewire::test(CompanyStructure::class, ['query'=>'40000000'])->instance()->ownershipGraphData();
+    $g = Livewire::test(CompanyStructure::class, ['query'=>'40000000'])->instance()->graphModel;
 
     // one node (already deduped) AND one edge (new dedup)
     expect(collect($g['nodes'])->where('id', '40000001')->count())->toBe(1);
@@ -552,4 +628,129 @@ it('rebuilds graphModel when an enrichment poll deepens the chain, so the watche
 
     $test->call('pollForUpdates');
     expect(count($test->instance()->graphModel['nodes']))->toBe(3);   // deepened → watcher fires
+});
+
+// ---- Task 7: declarative builder integration ----
+
+it('rebuilds the graph declaratively when a node is expanded — poll cannot wipe it', function () {
+    fakeRegistryStructure();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('expandNode', 'sub:44018942');
+
+    expect(collect($c->get('graphModel')['nodes'])->pluck('id'))->toContain('44027992');
+
+    // A subsequent poll (rebuild from source) must NOT lose the expansion:
+    $c->call('pollForUpdates');
+    expect(collect($c->get('graphModel')['nodes'])->pluck('id'))->toContain('44027992');
+});
+
+it('loads properties async and merges them via rebuild', function () {
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'Fritliggende enfamiliehus');
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('loaded')
+        ->and(collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->not->toBeNull();
+});
+
+it('reports building when the portfolio is still assembling — never silently empty', function () {
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [], propertyCount: 13);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('building');
+});
+
+it('reports failed when the portfolio call errors — never silently empty', function () {
+    fakeRegistryStructure();
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+        '*/property-portfolio*' => Http::response(null, 500),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('failed');
+});
+
+it('rehydrates structureData before expanding after a fresh request (protected state does not survive hydration)', function () {
+    // Two SEPARATE Livewire::test() calls simulate two separate requests: the
+    // second call's component instance starts with $structureData === [] since
+    // protected properties are not part of the wire payload. expandNode must
+    // detect that and refresh from source before rebuilding, or the expansion
+    // would silently build against an empty structure.
+    fakeRegistryStructure();
+    $first = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    fakeRegistryStructure();
+    $second = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('expandNode', 'sub:44018942');
+
+    expect(collect($second->get('graphModel')['nodes'])->pluck('id'))->toContain('44027992');
+});
+
+it('rehydrates structureData before loading properties after a fresh request', function () {
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'Fritliggende enfamiliehus');
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    // Subsidiaries from structureData must still be present in the rebuilt
+    // graph alongside the newly-loaded property — proving loadProperties()
+    // rebuilt from a non-empty structureData, not an empty one.
+    $ids = collect($c->get('graphModel')['nodes'])->pluck('id');
+    expect($ids)->toContain('44507781'); // top-level subsidiary from the fixture
+});
+
+it('casts an integer matrikel_id from the portfolio payload to string in the usage map (builder/usage-map robustness)', function () {
+    fakeRegistryStructure();
+    // matrikel_id arrives as an INT in the portfolio payload (backend quirk).
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty(['matrikel_id' => 2573669])], batchUsage: 'present');
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('loaded');
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop)->not->toBeNull()
+        ->and($prop['id'])->toBe('bfe:2573669')
+        ->and($prop['meta']['usage'])->toBe('Bolig'); // BBR code 130 -> 'Bolig' via BbrUsageCategory
+});
+
+it('treats a properties/batch failure as usage-less (not a portfolio failure) — properties still render, propertiesStatus stays loaded', function () {
+    fakeRegistryStructure();
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+        '*/property-portfolio*' => Http::response(['data' => [
+            'portfolio' => [
+                'properties' => [fdlPortfolioProperty(['owner_cvr' => '44507781'])],
+                'property_count' => 1,
+                'total_count' => 1,
+            ],
+        ]]),
+        '*/properties/batch*' => Http::response(null, 500),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('loaded');
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop)->not->toBeNull()
+        ->and($prop['meta']['usage'])->toBeNull();
 });

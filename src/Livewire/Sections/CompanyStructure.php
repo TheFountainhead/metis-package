@@ -2,32 +2,52 @@
 
 namespace TheFountainhead\Metis\Livewire\Sections;
 
+use TheFountainhead\Metis\Services\BbrUsageCategory;
+use TheFountainhead\Metis\Services\OwnershipGraphBuilder;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 class CompanyStructure extends MetisSection
 {
+    /**
+     * Historical-owner data only — the ownership tree (built from ancestors
+     * inside $structureData, via the builder) is the single source for
+     * CURRENT owners. $owners still feeds the Blade's "Historical" block.
+     */
     public array $owners = [];
-    public array $subsidiaries = [];
-    public array $ancestors = [];
     public bool $enriching = false;
     public int $companiesFound = 0;
     public ?string $companyName = null;
 
     /**
-     * Per-owner expansion state for the inline "Udfold struktur"-toggle.
-     * Keyed by ownerKey() (cvr or person_name slug). Value: array of
-     * companies the owner is currently active in.
-     */
-    public array $expandedOwners = [];
-
-    /**
      * The flat {nodes, edges} graph model, kept as public state so the Alpine
      * graph can `$wire.$watch('graphModel', …)` it: an enrichment poll deepens
      * the chain, this property changes, and the graph re-lays-out in place
-     * WITHOUT a wire:ignore re-mount (so the user's zoom/pan survives). Rebuilt
-     * from $ancestors wherever $ancestors is assigned (mount + pollForUpdates).
+     * WITHOUT a wire:ignore re-mount (so the user's zoom/pan survives). Every
+     * code path (mount, poll, expand, property-load) REBUILDS this through
+     * OwnershipGraphBuilder — nothing ever appends to it directly.
      */
     public array $graphModel = ['nodes' => [], 'edges' => []];
+
+    /** 'sub:<cvr>' / 'props:<cvr>' node ids the user has expanded past the cap. */
+    public array $expandedNodeIds = [];
+
+    /** @var 'pending'|'building'|'loaded'|'empty'|'failed' */
+    public string $propertiesStatus = 'pending';
+
+    public int $propertiesAttempts = 0;
+
+    /**
+     * Builder input, held as PROTECTED state (not part of the Livewire wire
+     * payload — never re-sent to/from the browser). Rebuilt from the API
+     * (cached where possible) whenever it's empty at the start of an action,
+     * because protected properties do NOT survive Livewire hydration across
+     * requests: each request gets a fresh component instance built only from
+     * public state, so $structureData/$propertyData start empty again unless
+     * explicitly re-fetched.
+     */
+    protected array $structureData = [];
+
+    protected array $propertyData = ['list' => [], 'usage' => []];
 
     protected function sectionTitle(): string
     {
@@ -82,9 +102,8 @@ class CompanyStructure extends MetisSection
 
         // Try local DB first (has full hierarchy)
         $result = rescue(fn () => $api->fetchCompanyStructure($query), []);
+        $this->structureData = $result;
         $this->owners = $result['owners'] ?? [];
-        $this->subsidiaries = $result['subsidiaries'] ?? [];
-        $this->ancestors = $result['ancestors'] ?? [];
         $this->companyName = $result['name'] ?? null;
 
         // Fallback: fetch owners + name from CVR Elasticsearch
@@ -101,6 +120,9 @@ class CompanyStructure extends MetisSection
         // egne når subsidiaries var tomme — faktuelt forkert under et
         // DATTERSELSKABER-label (JEUDAN viste Chr. Augustinus' porteføljeselskaber).
         // Ejerens øvrige selskaber ses korrekt mærket via 'Udfold struktur'.
+        // Fallback-loopets pr.-ejer fetchCompanyInfo-kald er billige via Task 6's
+        // 24t-cache — loopet BEHOLDES (det føder historical-owners-visningen),
+        // men wrappet i det eksisterende rescue-mønster.
         foreach ($this->owners as $i => $owner) {
             if (($owner['is_company'] ?? false) && ($owner['cvr'] ?? null)) {
                 $parentInfo = rescue(fn () => $api->fetchCompanyInfo($owner['cvr']));
@@ -110,11 +132,11 @@ class CompanyStructure extends MetisSection
             }
         }
 
-        $status = rescue(fn () => app(RegistryApi::class)->getEnrichmentStatus($query));
+        $status = rescue(fn () => $api->getEnrichmentStatus($query));
         $this->enriching = in_array($status['status'] ?? '', ['pending', 'running']);
         $this->companiesFound = $status['companies_found'] ?? 0;
 
-        $this->graphModel = $this->ownershipGraphData();
+        $this->rebuild();
     }
 
     public function pollForUpdates(): void
@@ -129,195 +151,127 @@ class CompanyStructure extends MetisSection
 
         if (in_array($newStatus, ['completed', 'failed'])) {
             $this->enriching = false;
-            $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyStructure($this->query), []);
-            // Owners don't change during subsidiary-enrichment — preserve the lifted shape
-            $this->subsidiaries = $result['subsidiaries'] ?? $this->subsidiaries;
-            // Ancestors deepen as enrichment fills them in
-            $this->ancestors = $result['ancestors'] ?? $this->ancestors;
-            // Rebuild the graph model from the deepened chain; the Alpine watcher
-            // on $wire.graphModel picks this up and re-lays-out in place.
-            $this->graphModel = $this->ownershipGraphData();
+            $this->refreshStructureData();
+            $this->rebuild();
         }
     }
 
     /**
-     * Lazy-load and cache the list of OTHER companies a given owner is active in.
-     * Triggered from Alpine.js click on the "Udfold struktur"-button per owner card.
+     * nodeId = 'sub:<cvr>' or 'props:<cvr>' (see OwnershipGraphBuilder). Lifts
+     * the subsidiary-depth or property-per-company cap for that node so the
+     * next rebuild reveals what was hidden behind it.
      */
-    public function toggleOwnerExpansion(string $ownerKey): void
+    public function expandNode(string $nodeId): void
     {
-        if (isset($this->expandedOwners[$ownerKey])) {
-            unset($this->expandedOwners[$ownerKey]);
+        if (! str_starts_with($nodeId, 'sub:') && ! str_starts_with($nodeId, 'props:')) {
+            return;
+        }
+        if (! in_array($nodeId, $this->expandedNodeIds, true)) {
+            $this->expandedNodeIds[] = $nodeId;
+        }
+        if ($this->structureData === []) {
+            $this->refreshStructureData();
+        }
+        $this->rebuild();
+    }
+
+    public function loadProperties(): void
+    {
+        if ($this->structureData === []) {
+            $this->refreshStructureData();
+        }
+
+        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query), null);
+        $portfolio = $result['portfolio'] ?? null;
+
+        if ($portfolio === null) {
+            $this->propertiesStatus = 'failed';
 
             return;
         }
 
-        $owner = collect($this->owners)->first(fn ($o) => $this->ownerKey($o) === $ownerKey);
-        if (! $owner) {
+        $list = $portfolio['properties'] ?? [];
+        $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
+
+        if ($list === [] && $count > 0) {
+            // Backend bygger stadig porteføljen (verificeret prod-adfærd: første
+            // kald tomt, andet fuldt). Bladen re-forsøger m. stigende delay.
+            $this->propertiesStatus = 'building';
+            $this->propertiesAttempts++;
+
             return;
         }
 
+        if ($list === []) {
+            $this->propertiesStatus = 'empty';
+
+            return;
+        }
+
+        $usage = $this->usageMapFor($list);
+        $this->propertyData = ['list' => $list, 'usage' => $usage];
+        $this->propertiesStatus = 'loaded';
+        $this->rebuild();
+    }
+
+    public function retryProperties(): void
+    {
+        $this->propertiesStatus = 'pending';
+        $this->loadProperties();
+    }
+
+    /**
+     * matrikel_id => primær anvendelses-label via properties/batch + BbrUsageCategory.
+     * En NULL fra fetchPropertiesBatch (ét chunk fejlede, alt-eller-intet) er
+     * en batch-fejl — IKKE en portfolio-fejl: ejendommene vises stadig, blot
+     * uden anvendelses-række. propertiesStatus forbliver 'loaded'.
+     */
+    protected function usageMapFor(array $properties): array
+    {
+        $ids = collect($properties)->pluck('matrikel_id')->filter()->map(fn ($m) => (string) $m)->unique()->values()->all();
+        $batch = rescue(fn () => app(RegistryApi::class)->fetchPropertiesBatch($ids), null) ?? [];
+
+        return collect($batch)->mapWithKeys(function ($p) {
+            $buildings = collect($p['bbr']['buildings'] ?? []);
+            // Primær bygning: største areal blandt ikke-småbygninger (9xx-koder =
+            // garager/udhuse); fallback = største uanset kode.
+            $primary = $buildings->filter(fn ($b) => (int) ($b['usage'] ?? 0) < 900)->sortByDesc('total_area')->first()
+                ?? $buildings->sortByDesc('total_area')->first();
+
+            return [(string) ($p['matrikel_id'] ?? '') => $primary ? BbrUsageCategory::label($primary['usage'] ?? null) : null];
+        })->all();
+    }
+
+    /**
+     * Cachet variant bruges KUN når enrichment ikke kører — mens enrichment
+     * kører skal den ucachede fetchCompanyStructure() bruges, ellers fryser
+     * datter-væksten i op til 5 minutter (Task 6's cache-kontrakt).
+     */
+    protected function refreshStructureData(): void
+    {
         $api = app(RegistryApi::class);
-        $companies = [];
+        $result = $this->enriching
+            ? rescue(fn () => $api->fetchCompanyStructure($this->query), [])
+            : rescue(fn () => $api->fetchCompanyStructureCached($this->query), []);
 
-        if ($owner['is_company'] ?? false) {
-            // For company-owners: fetch their structure (subs) + parent_owners (already loaded)
-            if ($owner['cvr'] ?? null) {
-                $structure = rescue(fn () => $api->fetchCompanyStructure($owner['cvr']), []);
-                $companies = collect($structure['subsidiaries'] ?? [])
-                    ->map(fn ($s) => [
-                        'name' => $s['name'] ?? $s['cvr'],
-                        'cvr' => $s['cvr'],
-                        'role' => __('Subsidiary'),
-                        'share' => $s['ownership_share'] ?? null,
-                    ])
-                    ->values()
-                    ->toArray();
-            }
-        } else {
-            // For person-owners: fetch their roles across all companies
-            $rolesData = rescue(fn () => $api->fetchPersonRoles($owner['person_name'] ?? ''));
-            $allCompanies = collect($rolesData['data']['companies'] ?? $rolesData['companies'] ?? []);
-            $companies = $allCompanies
-                ->filter(fn ($c) => collect($c['roles'] ?? [])->contains('is_current', true))
-                ->filter(fn ($c) => ($c['cvr'] ?? '') !== $this->query) // exclude searched company
-                ->map(function ($c) {
-                    $activeRoles = collect($c['roles'] ?? [])->filter(fn ($r) => $r['is_current'] ?? false);
-
-                    return [
-                        'name' => $c['name'] ?? '',
-                        'cvr' => $c['cvr'] ?? '',
-                        'role' => $activeRoles->pluck('role_label')->unique()->implode(', '),
-                        'share' => null,
-                    ];
-                })
-                ->values()
-                ->toArray();
+        $this->structureData = $result;
+        if (empty($this->owners)) {
+            $this->owners = $result['owners'] ?? [];
         }
-
-        $this->expandedOwners[$ownerKey] = $companies;
+        $this->companyName = $this->companyName ?? ($result['name'] ?? null);
     }
 
-    public function ownerKey(array $owner): string
+    protected function rebuild(): void
     {
-        return ($owner['is_company'] ?? false)
-            ? 'cvr:'.($owner['cvr'] ?? '')
-            : 'person:'.md5($owner['person_name'] ?? '');
-    }
-
-    /**
-     * Flat {nodes, edges} model for the dagre graph render (fase 1). Built
-     * directly from the flat `$ancestors` list: one node per owner plus a
-     * `searched` node for the queried company, and one edge per owner→owned
-     * relation. dagre lays this out; the Blade renders nodes as frankston
-     * cards and edges as SVG lines. Node ids: cvr for companies, `person:<md5>`
-     * for persons/foreign entities without a cvr, `searched` for the queried co.
-     *
-     * @return array{nodes: list<array>, edges: list<array>}
-     */
-    public function ownershipGraphData(): array
-    {
-        $nodes = [
-            ['id' => 'searched', 'label' => $this->companyName ?? __('Searched company'), 'cvr' => $this->query, 'kind' => 'searched', 'share' => null],
-        ];
-        $seen = ['searched' => true];
-        $edges = [];
-        $edgeSeen = [];
-
-        foreach ($this->ancestors as $i => $a) {
-            $isCompany = $a['is_company'] ?? false;
-            $foreign = $a['foreign'] ?? false;
-            $cvr = $a['cvr'] ?? null;
-
-            // Stable id: real cvr for DK companies (a genuine unique key), else a
-            // per-row hash. The row index $i is folded in so two distinct people
-            // sharing a name+parent (common in CVR data, e.g. two "Jens Hansen"
-            // owning the same company) never collapse into one node and drop an
-            // owner. cvr'd companies still dedup correctly across rows.
-            $id = $cvr ?: 'person:'.md5($i.'|'.($a['person_name'] ?? '').'|'.($a['parent_of_cvr'] ?? ''));
-
-            // A non-company owner is a physical person → the dark person-node.
-            // Companies carry their owner_kind (legal/reel/other); foreign wins.
-            $kind = $foreign ? 'foreign' : (! $isCompany ? 'person' : ($a['owner_kind'] ?? 'legal'));
-
-            if (! isset($seen[$id])) {
-                $seen[$id] = true;
-                $nodes[] = [
-                    'id' => $id,
-                    'label' => $a['person_name'] ?? '',
-                    'cvr' => $cvr,
-                    'kind' => $kind,
-                    'share' => $a['ownership_share'] ?? null,
-                ];
-            }
-
-            // Edge: this owner owns the company identified by parent_of_cvr.
-            // A null parent_of_cvr — OR a parent_of_cvr equal to the searched cvr
-            // (some backend rows fill the searched company's own cvr instead of
-            // null for a direct owner) — means it owns the searched company, so
-            // the edge points at the synthetic 'searched' node. Normalising here
-            // also stops the orphan-stub pass below from minting a duplicate root
-            // node for the searched company.
-            $ownedId = $this->ownedTargetId($a['parent_of_cvr'] ?? null);
-            $edge = ['from' => $id, 'to' => $ownedId, 'label' => $this->shareLabel($a['ownership_share'] ?? null)];
-            // Dedup edges on from|to (share excluded, keeping the first). Safe
-            // because registry-api guarantees one share per owner→target (CompanyRole
-            // is unique on company_id|parent_company_id|role). If that ever changes
-            // to separate capital/voting rows, fold share into the key.
-            if (! isset($edgeSeen[$id.'|'.$ownedId])) {
-                $edgeSeen[$id.'|'.$ownedId] = true;
-                $edges[] = $edge;
-            }
-        }
-
-        // Orphan-parent stubs: an ancestor's parent_of_cvr can point at a company
-        // that was capped/pruned upstream and so has no row of its own. Without a
-        // node, the render drops the edge and the owner floats detached, reading
-        // as a top-UBO it is not. Synthesise a minimal stub for every referenced
-        // parent that isn't already a node, so the chain stays connected. The
-        // searched company itself is never a stub (normalised to 'searched' above).
-        foreach ($this->ancestors as $a) {
-            $parent = $this->ownedTargetId($a['parent_of_cvr'] ?? null);
-            if ($parent !== 'searched' && ! isset($seen[$parent])) {
-                $seen[$parent] = true;
-                $nodes[] = [
-                    'id' => $parent,
-                    'label' => 'CVR '.$parent,
-                    'cvr' => $parent,
-                    'kind' => 'other',
-                    'share' => null,
-                ];
-            }
-        }
-
-        return ['nodes' => $nodes, 'edges' => $edges];
-    }
-
-    /**
-     * Resolve an ancestor's parent_of_cvr to the node id it owns. Null, or the
-     * searched company's own cvr, both mean "owns the searched company" → the
-     * synthetic 'searched' node. Any other cvr is that company's node id.
-     */
-    protected function ownedTargetId(?string $parentOfCvr): string
-    {
-        if ($parentOfCvr === null || $parentOfCvr === $this->query) {
-            return 'searched';
-        }
-
-        return $parentOfCvr;
-    }
-
-    /**
-     * Format an ownership share for an edge label. A single percentage for now;
-     * fase 2 can swap in the CVR interval band (e.g. "20-24,99%").
-     */
-    protected function shareLabel(?float $share): string
-    {
-        if ($share === null) {
-            return '';
-        }
-
-        return (fmod($share, 1.0) === 0.0 ? (string) (int) $share : rtrim(rtrim(number_format($share, 2, ',', ''), '0'), ',')).' %';
+        $this->graphModel = app(OwnershipGraphBuilder::class)->build(
+            query: $this->query,
+            companyName: $this->companyName,
+            structure: $this->structureData,
+            properties: $this->propertyData,
+            enrichment: [],
+            expandedNodeIds: $this->expandedNodeIds,
+            caps: ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
+        );
     }
 
     public function render()
