@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use TheFountainhead\Metis\Services\RegistryApi;
 
@@ -98,6 +100,111 @@ it('returns empty array when person is not found', function () {
     $result = $api->searchPersonByName('Anders Hansen');
 
     expect($result)->toBe([]);
+});
+
+// Portefølje-kaldet bruger ikke ->throw(), så de to fejltyper rammer hver sin
+// gren: en 500 giver json()===null (fanges af ?? 0), mens en ConnectionException
+// kastes og skal fanges af catch-blokken. Begge skal degradere til 0.
+it('falder tilbage til 0 ejendomme når portefølje-kaldet timer ud', function () {
+    Http::fake(function ($request) {
+        if (str_contains($request->url(), 'property-portfolio')) {
+            throw new ConnectionException('Connection timed out');
+        }
+
+        return Http::response(['data' => [
+            'person_name' => 'Anders Hansen',
+            'companies' => [[
+                'cvr' => '12345678',
+                'name' => 'Acme ApS',
+                'status' => 'NORMAL',
+                'roles' => [[
+                    'role_label' => 'Reelle ejere',
+                    'is_current' => true,
+                    'ownership_share' => 100,
+                ]],
+            ]],
+        ]]);
+    });
+
+    $api = new RegistryApi;
+    $result = $api->searchPersonByName('Anders Hansen');
+
+    expect($result[0]['total_properties'])->toBe(0)
+        ->and($result[0]['owned_companies'][0]['ownership'])->toBe(100);
+});
+
+it('rapporterer timeout på portefølje-kaldet', function () {
+    // rescue() kaldte report() automatisk. Den observability skal bevares,
+    // ellers bliver en registry-api-nedetid til et tavst "0 ejendomme".
+    $reported = [];
+    app()->bind(ExceptionHandler::class, function () use (&$reported) {
+        return new class($reported) implements ExceptionHandler
+        {
+            public function __construct(private array &$reported) {}
+
+            public function report(Throwable $e): void
+            {
+                $this->reported[] = $e::class;
+            }
+
+            public function shouldReport(Throwable $e): bool
+            {
+                return true;
+            }
+
+            public function render($request, Throwable $e)
+            {
+                return null;
+            }
+
+            public function renderForConsole($output, Throwable $e): void {}
+        };
+    });
+
+    Http::fake(function ($request) {
+        if (str_contains($request->url(), 'property-portfolio')) {
+            throw new ConnectionException('Connection timed out');
+        }
+
+        return Http::response(['data' => [
+            'person_name' => 'Anders Hansen',
+            'companies' => [[
+                'cvr' => '12345678',
+                'name' => 'Acme ApS',
+                'status' => 'NORMAL',
+                'roles' => [['role_label' => 'Reelle ejere', 'is_current' => true]],
+            ]],
+        ]]);
+    });
+
+    (new RegistryApi)->searchPersonByName('Anders Hansen');
+
+    expect($reported)->toBe([ConnectionException::class]);
+});
+
+it('falder tilbage til 0 ejendomme når portefølje-kaldet svarer 500', function () {
+    Http::fake([
+        '*/v1/cvr/person-roles' => Http::response(['data' => [
+            'person_name' => 'Anders Hansen',
+            'companies' => [[
+                'cvr' => '12345678',
+                'name' => 'Acme ApS',
+                'status' => 'NORMAL',
+                'roles' => [[
+                    'role_label' => 'Reelle ejere',
+                    'is_current' => true,
+                    'ownership_share' => 100,
+                ]],
+            ]],
+        ]]),
+        '*/property-portfolio*' => Http::response('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->searchPersonByName('Anders Hansen');
+
+    expect($result[0]['total_properties'])->toBe(0)
+        ->and($result[0]['owned_companies'][0]['ownership'])->toBe(100);
 });
 
 it('maps person roles, ownership and property count', function () {
