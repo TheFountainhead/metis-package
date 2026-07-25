@@ -235,19 +235,76 @@ class RegistryApi
 
     public function fetchCompanyInfo(string $cvr): ?array
     {
+        $cacheKey = "metis.company-info.{$cvr}";
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
         try {
             $response = $this->client()
                 ->get("/v1/cvr/company/{$cvr}");
 
-            return $response->json('data.company');
+            $company = $response->json('data.company');
         } catch (\Throwable $e) {
             return null;
         }
+
+        // Kun cache et rigtigt svar — en fejl eller manglende data må ikke
+        // skygge for friske data i 24t (samme mønster som property-portfolio).
+        if ($company) {
+            Cache::put($cacheKey, $company, 86400);
+        }
+
+        return $company;
     }
 
     public function fetchCompanyStructure(string $cvr): array
     {
         return $this->post('/v1/cvr/company-structure', ['cvr' => $cvr]) ?? [];
+    }
+
+    /**
+     * Cachet variant af fetchCompanyStructure() — bruges KUN når enrichment
+     * ikke kører (se komponentens $enriching-flag). Mens enrichment kører
+     * skal den ucachede fetchCompanyStructure() bruges, ellers fryser
+     * datter-væksten i 5 minutter.
+     */
+    public function fetchCompanyStructureCached(string $cvr): array
+    {
+        $cacheKey = "metis.company-structure.{$cvr}";
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
+        $structure = $this->fetchCompanyStructure($cvr);
+
+        // Cache kun et ikke-tomt svar — se noten ved fetchCompanyPropertyPortfolio.
+        if (! empty($structure)) {
+            Cache::put($cacheKey, $structure, 300);
+        }
+
+        return $structure;
+    }
+
+    /**
+     * Batch-opslag af ejendomme via matrikel-id. Chunker i grupper à 200
+     * (backend-grænse) og fladgør 'data'-listerne fra hver chunk til én liste.
+     */
+    public function fetchPropertiesBatch(array $matrikelIds): array
+    {
+        if (empty($matrikelIds)) {
+            return [];
+        }
+
+        return collect($matrikelIds)
+            ->chunk(200)
+            ->flatMap(fn ($chunk) => $this->post('/v1/properties/batch', [
+                'matrikel_ids' => $chunk->values()->all(),
+            ]) ?? [])
+            ->values()
+            ->all();
     }
 
     /**
