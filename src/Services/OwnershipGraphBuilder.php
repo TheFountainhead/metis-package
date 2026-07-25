@@ -35,7 +35,7 @@ class OwnershipGraphBuilder
         $edgeSeen = [];
 
         $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
-        // Tasks 2+4 tilføjer addSubsidiaries()/addProperties() her.
+        $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
 
         return ['nodes' => $nodes, 'edges' => $edges];
     }
@@ -75,6 +75,43 @@ class OwnershipGraphBuilder
     protected function ownedTargetId(?string $parentOfCvr, string $query): string
     {
         return ($parentOfCvr === null || $parentOfCvr === $query) ? 'searched' : $parentOfCvr;
+    }
+
+    protected function addSubsidiaries(array $subs, string $parentId, int $depth, int $maxDepth, array $expandedNodeIds, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
+    {
+        foreach ($subs as $s) {
+            $cvr = $s['cvr'] ?? null;
+            if (! $cvr) {
+                continue;
+            }
+            $children = $s['children'] ?? [];
+            // Beyond the depth cap the node itself is NOT rendered; its parent
+            // carries expand.relations instead (handled by the caller's count).
+            if (! isset($seen[$cvr])) {
+                $seen[$cvr] = true;
+                $nodes[] = ['id' => $cvr, 'label' => $s['name'] ?? ('CVR '.$cvr), 'cvr' => $cvr, 'kind' => 'subsidiary', 'share' => $s['ownership_share'] ?? null, 'expand' => null];
+            }
+            if (! isset($edgeSeen[$parentId.'|'.$cvr])) {
+                $edgeSeen[$parentId.'|'.$cvr] = true;
+                $edges[] = ['from' => $parentId, 'to' => $cvr, 'label' => $this->shareLabel($s['ownership_share'] ?? null)];
+            }
+
+            $expandedHere = in_array('sub:'.$cvr, $expandedNodeIds, true);
+            if ($depth < $maxDepth || $expandedHere) {
+                // Expanded nodes recurse one extra level per expansion; passing
+                // maxDepth+1 down keeps grandchildren gated behind their own expand.
+                $this->addSubsidiaries($children, $cvr, $depth + 1, $expandedHere ? $depth + 1 : $maxDepth, $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
+            } elseif (($n = count($children)) > 0) {
+                // Signal hidden children on THIS node (find it and set expand).
+                foreach ($nodes as &$node) {
+                    if ($node['id'] === $cvr) {
+                        $node['expand'] = ['relations' => $n, 'properties' => $node['expand']['properties'] ?? 0];
+                        break;
+                    }
+                }
+                unset($node);
+            }
+        }
     }
 
     /**
