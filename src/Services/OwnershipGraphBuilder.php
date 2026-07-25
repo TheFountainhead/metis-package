@@ -37,8 +37,92 @@ class OwnershipGraphBuilder
         $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
         $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
         $this->addProperties($properties['list'] ?? [], $properties['usage'] ?? [], $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
+        $this->truncateToCap($caps['total_nodes'], $nodes, $edges);
 
         return ['nodes' => $nodes, 'edges' => $edges];
+    }
+
+    /**
+     * Last step of build(): enforce the total node cap deterministically.
+     * Priority: property nodes are cut first (back-to-front in addition
+     * order), then the deepest subsidiary layer. The ancestor chain is
+     * NEVER touched. Removed nodes' edges are removed too, and the removed
+     * count is folded onto the owner's/parent's expand affordance — reusing
+     * the same `?? 0` pattern as addSubsidiaries/addProperties so an
+     * existing hidden-count is preserved, never overwritten.
+     */
+    protected function truncateToCap(int $cap, array &$nodes, array &$edges): void
+    {
+        if (count($nodes) <= $cap) {
+            return;
+        }
+
+        // --- Pass 1: drop property nodes, back-to-front in addition order. ---
+        for ($i = count($nodes) - 1; $i >= 0 && count($nodes) > $cap; $i--) {
+            if ($nodes[$i]['kind'] !== 'property') {
+                continue;
+            }
+            $this->removeNode($nodes, $edges, $i, 'properties');
+        }
+
+        if (count($nodes) <= $cap) {
+            return;
+        }
+
+        // --- Pass 2: drop the deepest subsidiary layer(s), back-to-front. ---
+        while (count($nodes) > $cap) {
+            $subsidiaryIndexes = array_keys(array_filter($nodes, fn ($n) => $n['kind'] === 'subsidiary'));
+            if ($subsidiaryIndexes === []) {
+                break; // Nothing left that's safe to cut (ancestors are never touched).
+            }
+
+            $maxDepth = max(array_map(fn ($i) => $nodes[$i]['depth'] ?? 1, $subsidiaryIndexes));
+            $deepest = array_filter($subsidiaryIndexes, fn ($i) => ($nodes[$i]['depth'] ?? 1) === $maxDepth);
+
+            foreach (array_reverse($deepest) as $i) {
+                if (count($nodes) <= $cap) {
+                    break;
+                }
+                $this->removeNode($nodes, $edges, $i, 'relations');
+            }
+        }
+    }
+
+    /**
+     * Remove node at $index, drop its edges, and fold it onto its parent's
+     * expand affordance (the `$field` key: 'relations' or 'properties').
+     * The parent is whichever node the removed node's inbound edge came from.
+     */
+    protected function removeNode(array &$nodes, array &$edges, int $index, string $field): void
+    {
+        $removedId = $nodes[$index]['id'];
+        $parentId = null;
+
+        $edges = array_values(array_filter($edges, function ($e) use ($removedId, &$parentId) {
+            if ($e['to'] === $removedId) {
+                $parentId = $e['from'];
+            }
+
+            return $e['from'] !== $removedId && $e['to'] !== $removedId;
+        }));
+
+        array_splice($nodes, $index, 1);
+
+        if ($parentId === null) {
+            return;
+        }
+
+        foreach ($nodes as &$node) {
+            if ($node['id'] === $parentId) {
+                $node['expand'] = [
+                    'relations' => $node['expand']['relations'] ?? 0,
+                    'properties' => $node['expand']['properties'] ?? 0,
+                ];
+                $node['expand'][$field] = $node['expand'][$field] + 1;
+                break;
+            }
+        }
+        unset($node);
     }
 
     protected function addAncestors(array $ancestors, string $query, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
@@ -90,7 +174,10 @@ class OwnershipGraphBuilder
             // carries expand.relations instead (handled by the caller's count).
             if (! isset($seen[$cvr])) {
                 $seen[$cvr] = true;
-                $nodes[] = ['id' => $cvr, 'label' => $s['name'] ?? ('CVR '.$cvr), 'cvr' => $cvr, 'kind' => 'subsidiary', 'share' => $s['ownership_share'] ?? null, 'expand' => null];
+                // 'depth' drives deterministic cap-truncation (deepest layer cut
+                // first); it is additive node metadata, not a shape change other
+                // consumers depend on positionally.
+                $nodes[] = ['id' => $cvr, 'label' => $s['name'] ?? ('CVR '.$cvr), 'cvr' => $cvr, 'kind' => 'subsidiary', 'share' => $s['ownership_share'] ?? null, 'expand' => null, 'depth' => $depth];
             }
             if (! isset($edgeSeen[$parentId.'|'.$cvr])) {
                 $edgeSeen[$parentId.'|'.$cvr] = true;

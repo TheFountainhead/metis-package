@@ -223,3 +223,32 @@ it('preserves existing relations count when adding hidden properties to a node',
         ->and($childNode['expand']['relations'])->toBe(1)
         ->and($childNode['expand']['properties'])->toBe(3);
 });
+
+it('enforces the total node cap deterministically: properties are cut before subsidiaries', function () {
+    // 100 subsidiaries level 1 + 60 properties → cap 120 must keep ALL company
+    // nodes (101 + searched = 101) and cut properties down to fit.
+    $subs = collect(range(1, 100))->map(fn ($i) => ['cvr' => (string) (60000000 + $i), 'name' => 'S'.$i, 'ownership_share' => 1.0, 'children' => []])->all();
+    $props = collect(range(1, 60))->map(fn ($i) => fdlProperty(['matrikel_id' => (string) (2000000 + $i), 'owner_cvr' => (string) (60000000 + ($i % 100) + 1)]))->all();
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'properties' => ['list' => $props, 'usage' => []]]);
+
+    expect(count($g['nodes']))->toBeLessThanOrEqual(120)
+        ->and(collect($g['nodes'])->where('kind', 'subsidiary'))->toHaveCount(100);
+});
+
+it('truncates deepest subsidiary layer when cap cannot be met by cutting properties alone', function () {
+    // 130 subsidiaries level 1, 0 properties → cap 120 must cut the deepest
+    // layer (level 1 itself, since there's only one layer). Ancestors untouched.
+    $subs = collect(range(1, 130))->map(fn ($i) => ['cvr' => (string) (70000000 + $i), 'name' => 'S'.$i, 'ownership_share' => 1.0, 'children' => []])->all();
+    $ancestors = [['person_name' => 'Owner', 'is_company' => false, 'cvr' => null, 'ownership_share' => 100.0, 'parent_of_cvr' => null]];
+    $g = buildGraph(['structure' => ['ancestors' => $ancestors, 'subsidiaries' => $subs], 'properties' => ['list' => [], 'usage' => []]]);
+
+    expect(count($g['nodes']))->toBeLessThanOrEqual(120)
+        ->and(collect($g['nodes'])->where('kind', 'person'))->toHaveCount(1)
+        ->and(collect($g['nodes'])->firstWhere('id', 'searched')['expand']['relations'])->toBeGreaterThan(0);
+
+    // Removed subsidiary nodes must not leave dangling edges.
+    $nodeIds = collect($g['nodes'])->pluck('id')->all();
+    foreach ($g['edges'] as $edge) {
+        expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
+    }
+});
