@@ -1,109 +1,133 @@
-# Metis: Ejer-relations-graf fase 2 — Resights-billedet (datterselskaber + ejendomme + intervaller)
+# Metis: Ejer-relations-graf fase 2 — Resights-billedet + berigelses-lag
 
-**Dato:** 2026-07-25
-**Repo:** metis-package (render) — registry-api genbruges uændret
+**Dato:** 2026-07-25 (revideret efter 3-agent-review + beyond-Resights-brainstorm samme dag)
+**Repos:** metis-package (builder/blade) **+ metis host-app** (`resources/js/ownership-graph.js` — dagre-render'en bor dér; fase 2 kræver JS-ændringer, se Leverance)
 **Bygger på:** `2026-07-24-ownership-graph-relations-design.md` (fase 1, LIVE på prod 25/7)
-**Reference:** Resights-eksporten `Frederik Gregers Dannisgår d Larnæs-portefølje (5).png` (Downloads, 24/7) — FDL-Invest-koncernen: person → selskaber → datter-datterselskaber → 13 ejendomme, interval-labels på kanterne, "Udvid N relationer"-affordances.
-**Status:** Design godkendt (sektion 1-3 godkendt enkeltvis), klar til implementeringsplan
+**Reference:** Resights-eksporten `Frederik Gregers Dannisgår d Larnæs-portefølje (5).png` (Downloads, 24/7)
+**Status:** Design godkendt i sektioner; review-fund indarbejdet; klar til implementeringsplan (2a.1)
 
 ## Mål
 
-Fase 1-grafen viser kun ejere OPAD; datterselskaber render'es stadig i den gamle org-chart-stil under grafen (to designsprog på én side), og kanter viser enkelttal. Fase 2 leverer Resights-billedet:
+Fase 1-grafen viser kun ejere OPAD; datterselskaber render'es i gammel org-chart-stil under grafen, og kanter viser enkelttal. Fase 2 leverer to ting:
 
-1. **Datterselskaber ind i grafen** — nedad, 2 niveauer initialt, dybere via udvid. Den gamle DATTERSELSKABER-sektion og "Udfold struktur"-toggles fjernes.
-2. **Ejendoms-noder** — BFE + adresse + anvendelse, hængt på ejende selskab. Altid på (ingen toggle), capped pr. selskab, hentet asynkront efter first paint.
-3. **Ejerandels-intervaller** på kanter ("33,3-50%", ikke "33,33 %").
-4. **"Udvid N relationer"-affordances** på noder hvor der er skåret.
-5. **Grafen på alle tre opslagstyper** — selskab, person og ejendom, med den søgte entitet som strukturelt centrum.
+**2a.1 — Resights-billedet (struktur):**
+1. Datterselskaber ind i grafen — nedad, 2 niveauer initialt, dybere via udvid. Gammel DATTERSELSKABER-sektion + "Udfold struktur" fjernes.
+2. Ejendoms-noder (BFE + adresse + anvendelse) hængt på ejende selskab. Altid på, capped ~6 pr. selskab, hentet async efter first paint.
+3. "Udvid N relationer" / "Vis N ejendomme mere"-affordances.
+4. Ejerandels-visning på kanter (interval KUN hvis data kan bære det — se Interval-afsnit).
 
-**Ikke i fase 2** (forbliver fase 3): aktieposter- og gæld-lag.
+**2a.2 — Berigelses-laget (bedre end Resights):**
+5. **Hover-/tap-kort** pr. node (niveau 2 i info-hierarkiet): ejendom = skråfoto-thumb + AVM-vurdering + seneste handelspris; selskab = egenkapital/resultat/ansatte + website-link (hvis felt findes); alle = link til fuldt opslag. Tap på mobil (løser touch-hullet).
+6. **Værdi-aggregat på selskabs-noder**: "13 ejendomme · 10,4 mio. kr." (`property_count`/`property_value_kr` findes i payload).
+7. **Signal-markeringer**: små ikoner for *negativ egenkapital* og *nystiftet (<12 mdr.)*. (Høj-LTV-signal udskydes til fase 3, hvor gæld-laget henter tinglysningsdata.)
 
-## Beslutninger (fra brainstorm 25/7)
+**Info-hierarki (bærende designprincip):** node = navn + ét nøgletal → hover/tap-kort = billede + 3-4 nøgletal + link → klik = fuldt Metis-opslag. Grafen forbliver let; dybden er ét klik væk.
+
+**Ikke i fase 2** (se Opfølgere/Non-goals): aktieposter+gæld (fase 3), person-opslag (2b), ejendoms-opslag (2c), tidsrejse.
+
+## Beslutninger
 
 | Beslutning | Valg |
 |---|---|
-| Scope | Resights-billedet; aktieposter+gæld udskudt til fase 3 |
-| Ejendomme | Altid på (ingen toggle — afviger bevidst fra fase 1-spec'en), capped ~6 pr. selskab, "Vis N ejendomme mere"-affordance |
-| Graf-størrelse | Dybde-bound: ejere opad som i dag, datterselskaber 2 niveauer ned, ejendomme capped; resten bag udvid |
-| Centrum | Søgt entitet står strukturelt i midten (ejere over, koncern/ejendomme under) — hierarkisk dagre-layout, IKKE radial. Viewport auto-centrerer på søgt node |
-| Opslagstyper | Alle tre (selskab + person + ejendom), leveret som 2a → 2b → 2c |
-| Arkitektur | **Tilgang A:** server-bygget grafmodel — én delt PHP-builder; Alpine/dagre gør kun layout+render |
+| Scope | 2a (selskabs-opslag) i to PR'er: 2a.1 struktur, 2a.2 berigelse. 2b/2c skåret ud som opfølgere (reviewets anbefaling — de var underspecificerede) |
+| Ejendomme | Altid på (ingen toggle), cap ~6 pr. selskab, async efter first paint m. engangs-guard |
+| Graf-størrelse | Ejere opad som i dag; datterselskaber 2 niveauer ned; ejendomme capped; **samlet node-cap ~120** (derover trunkeres m. udvid) |
+| Centrum | Søgt selskab strukturelt i midten (hierarkisk dagre, ikke radial). Auto-center på søgt node KUN ved initial render; ved merge/udvid bevares brugerens zoom/pan-transform |
+| Arkitektur | Server-bygget grafmodel via `OwnershipGraphBuilder` — **ren, deklarativ funktion** (se nedenfor) |
+| Builder-API | ÉN indgang (selskab) i 2a. Multi-indgang (person/ejendom) designes først når 2b startes — ikke før (YAGNI-fund) |
+| Branche på noder | DROPPES i 2a.1 (N+1: 20-40 serielle HTTP-kald før first paint). Kan komme async i 2a.2 sammen med berigelsesdata, hvis et samlet kald kan bære det |
 
 ## Arkitektur
 
-### `OwnershipGraphBuilder` (ny klasse, metis-package)
+### `OwnershipGraphBuilder` — deklarativ, ren funktion (KRITISK review-fund)
 
-Udtrækkes af `CompanyStructure::ownershipGraphData()` og producerer den `{nodes, edges}`-model fase 1-render allerede forstår. Tre indgange, samme output:
+`graphModel` genbygges i dag totalt af `pollForUpdates()`. Rå appends fra udvid/ejendoms-merge ville blive **slettet** ved næste poll-completion. Derfor:
 
-| Indgang | Centrum | Datakilder (alle eksisterende registry-api-endpoints) |
+```
+build(structureData, propertyData, expandedNodeIds, caps): {nodes, edges}
+```
+
+- **Alle stier** (mount, enrichment-poll, ejendoms-fetch-complete, udvid-klik) genbygger `graphModel` gennem builderen. Ingen sti muterer modellen direkte.
+- Udvid = `expandedNodeIds`-set + rebuild → **idempotent by construction** (dobbeltklik/dobbelt-request = no-op).
+- Deterministisk: samme input → samme node-id'er (person-id-stabilitet på tværs af rebuilds følger gratis).
+- Builderen er **ren transformation** — ingen HTTP. RegistryApi-kald sker i komponenten/fetcher-lag. Unit-tests er rene array-tests, ikke HTTP-fakes.
+- Fase 1's `seen`/`edgeSeen`-dedup, orphan-stub-pass og `ownedTargetId`-normalisering flytter med ind og anvendes globalt på tværs af lag. Centrum-id er parameter (ikke hardkodet `'searched'`).
+- Placering: `src/Services/`. Bevares i komponenten: `enriching`/poll, `$graphModel` som public property (`$wire.$watch` kræver det), historical-owners-visningen (læser `$owners`).
+- **State-sanering** (samme ombæring): rå `$ancestors`/`$subsidiaries` ophører som public Livewire-state — komponenten holder builder-input-nøgler (query, expandedIds, propertiesLoaded) + `graphModel`. `fetchCompanyStructure` caches i RegistryApi (samme `Cache::remember`-mønster som portfolio), så deklarative rebuilds ikke koster nye API-kald.
+
+### Datakilder (selskabs-opslag, alle eksisterende endpoints)
+
+| Lag | Kilde | Verificeret |
 |---|---|---|
-| `forCompany(cvr)` | søgt selskab | `fetchCompanyStructure` (ejere/ancestors som nu + datterselskaber nedad 2 niveauer) + `company/{cvr}/property-portfolio` (koncernens ejendomme) |
-| `forPerson(name)` | personen øverst | `fetchPersonRoles` → selskaber med ejerandel → pr. selskab koncern nedad + ejendomme |
-| `forProperty(bfe)` | ejendommen nederst | ejendommens ejer(e) → ejerkæden opad via samme strukturdata |
+| Ejere opad | `fetchCompanyStructure` (ancestors, som i dag) | ✅ fase 1 |
+| Datterselskaber | samme kald — `getSubsidiariesTree` leverer **fuldt nested træ (dybde ≤5)**; "2 niveauer + Udvid N" er ren metis-side trunkering, og N beregnes fra det allerede-hentede træ | ✅ verificeret i review |
+| Ejendomme | `company/{cvr}/property-portfolio` (koncern-kald) | ⚠️ plan-verifikation: (a) ejer-cvr pr. ejendom i payload, (b) 'building'-tilstand ved første kald |
+| Berigelse (2a.2) | AVM (`fetchValuation`), skråfoto-URL (beregnes ved build), regnskabsnøgletal, website-felt | ⚠️ website-felt skal verificeres i registry-api |
 
-- Node-id-disciplin fra fase 1 bevares (cvr for selskaber, `person:<md5 med rækkeindex>` for personer, dedup på BFE for ejendomme).
-- Edge-dedup, orphan-stub-pass og cycle-guard-data genbruges uændret.
-- registry-api røres IKKE — alle lag har endpoints i forvejen.
+### Lazy-flow
 
-### Lazy-flow (ejendomme + udvid)
+- **First paint:** struktur-lagene (data der allerede hentes). Ejendomme fyres som ét async koncern-kald efter first paint (engangs-guard-flag) → rebuild via builder → `$wire.$watch` re-layouter på plads.
+- **'building'-tilstand:** portfolio-kaldet kan returnere building/tomt mens backend bygger → poll få gange med backoff; derefter diskret "ejendomme hentes stadig"-note. Aldrig stiltiende tomt.
+- **Udvid:** Livewire-action → tilføj til `expandedNodeIds` → rebuild. Knappen viser loading-state under roundtrip; klik-vs-pan skelnes (mousedown-flytte-tærskel). Ingen kollaps i 2a (noteret som muligt polish).
+- **Ejendom ejet af selskab uden for de viste 2 niveauer:** ejendommen vises IKKE før selskabet er udvidet ind (ejendomme hænger altid på deres faktiske ejer-node).
 
-- **First paint:** grafen render'es straks med selskabs-lagene (data der allerede hentes i dag).
-- **Ejendomme:** hentes asynkront efter first paint (ét koncern-kald via KoncernPortfolioService-endpointet) og flettes ind i `graphModel` → den eksisterende `$wire.$watch('graphModel')`-mekanik re-layouter på plads uden at miste zoom/pan (samme mønster som enrichment-poll i dag).
-- **Udvid:** "Udvid N relationer" (dybere datterselskaber / flere ejer-lag) og "Vis N ejendomme mere" er Livewire-actions der appender til `graphModel` → re-layout på plads. Ét server-roundtrip pr. klik er acceptabelt for et opslagsværktøj.
+### Fjernes (2a.1)
 
-### Fjernes
-
-- DATTERSELSKABER-sektionen (gammel org-chart-stil: rød tekst + pille-badges) i `company-structure.blade.php`.
-- "Udfold struktur"-toggle (`toggleOwnerExpansion`/`expandedOwners`) — erstattet af udvid-affordances i grafen.
+- DATTERSELSKABER-sektionen (gammel org-chart-stil) i `company-structure.blade.php`.
+- `toggleOwnerExpansion`/`expandedOwners` (~55 linjer; ingen andre consumers — verificeret).
+- **Bevidst trade-off:** "Udfold struktur" på person-ejere viste personens ØVRIGE selskaber. Den mulighed forsvinder fra selskabssiden indtil person-opslag (2b) leverer den rigtigt. Accepteret.
+- Graf-markup + `.mgraph`-CSS (~110 inline-linjer) udtrækkes til delt partial i samme ombæring (forudsætning for 2b/2c og alm. hygiejne).
 
 ## Node-, kant- & interval-design (frankston-stil)
 
-Referencebilledets *struktur*, frankston.io's *stil* (sand, Spectral, mono — ikke Resights' hvide tema):
+- **Person-node:** mørk (#2b2333) — uændret.
+- **Selskab-node:** sand-kort, Spectral-navn, mono-række `CVR-NUMMER`. 2a.2 tilføjer værdi-aggregat-rækken + evt. signal-ikoner. (Branche: kun hvis 2a.2's samlede berigelses-kald kan levere den uden N+1.)
+- **Ejendom-node (ny):** stiplet kant, adresse som titel i ochre (#8a6d1f), mono-rækker `BFE` / `ANVENDELSE` (via `BbrUsageCategory`). Manglende felt → række udelades; manglende adresse → titel "BFE {nr}". **Node-id: `bfe:{nr}`** (BFE kan kollidere numerisk med 8-cifret CVR).
+- **Kanter:** tynd rule-linje, label midt på. Ejerskabs-label-reglen (nedenfor) gælder ALLE ejerskabs-kanter, også datter-kanter. Ejendoms-kanter: ingen label (retningen bærer semantikken).
+- **JS (host-app):** `layout()` får per-node-type dimensioner (`NODE_W/H` er i dag hardkodede 210×56 — ejendoms-noder og berigede selskabs-noder har andre mål).
+- **Hover-/tap-kort (2a.2):** ren Alpine-template over data der allerede ligger i noden (ingen roundtrip ved hover). Skråfoto vises som beregnet URL; ingen eksterne kald fra kortet (website vises som domæne-link, ikke embedded preview).
 
-- **Person-node:** mørk (#2b2333), hvid tekst — uændret fra fase 1.
-- **Selskab-node:** sand-kort, Spectral-navn, mono-rækker `CVR-NUMMER` / `BRANCHE` (branche er NY — data findes i `fetchCompanyInfo`). Søgt selskab fremhævet som i dag.
-- **Ejendom-node (ny):** stiplet kant, adresse som titel i ochre (#8a6d1f), mono-rækker `BFE` / `ANVENDELSE` (via `BbrUsageCategory`). Mangler BFE/anvendelse → rækken udelades.
-- **Kanter:** tynd rule-linje med label midt på; datterselskabs- og ejendomskanter i samme sprog som ejer-kanter (retningen bærer semantikken).
-- **Udvid-affordance:** lille mono-tekstknap i kortets bund ("↓ Udvid 2 relationer" / "Vis 4 ejendomme mere").
+### Ejerandels-label (revideret efter review — 50%-hullet)
 
-### Interval-mapning (erstatter `shareLabel()`)
+CVR registrerer NOGLE andele som bånd og NOGLE som eksakte værdier. Heuristikken "tal == båndgrænse ⇒ vis bånd" er FORKERT for fx to ejere med præcis 50% hver.
 
-CVR registrerer ejerandele i officielle bånd; det gemte tal (`EJERANDEL_PROCENT` × 100) er båndets nedre grænse. Regel:
+- **Plan-verifikation FØRST:** kan interval-registrering skelnes fra eksakt værdi i rå CVR-data/registry-api (attribut-type e.l.)? Undersøg faktiske prod-værdier (float-repræsentation af 33,33/66,66 inkluderet).
+- **Hvis skelnen findes:** interval-bånd vises for interval-registrerede, eksakt tal for eksakte.
+- **Hvis IKKE:** kanter beholder eksakt tal som i dag (ingen regression), og interval-visning droppes/udskydes. Vi gætter ikke ("Gæt aldrig").
 
-- Tal == kendt bånd-nedre-grænse (5, 10, 15, 20, 25, 33,33, 50, 66,66, 90) → vis båndet, fx "33,3-50%".
-- Tal == 100 → "100%".
-- Alt andet (fx en reel ejers præcise 27,43%) → vis det præcise tal som i dag.
+## Fejltilstande (nyt afsnit — review-krav)
 
-Reglen kan aldrig gøre en korrekt værdi mindre præcis (værste fald = dagens visning). Ren metis-render-ændring; ingen datamigrering. **Plan-fasen skal verificere bånd-grænserne mod faktiske prod-værdier** (Frankston-regel: gæt aldrig).
+- **null ≠ tom:** portfolio-kald der FEJLER må aldrig ligne "ingen ejendomme" (misinformation i et vurderingsværktøj). Fejl → diskret "ejendomme kunne ikke hentes"-note + retry-mulighed. Tom (verificeret 0 ejendomme) → intet lag, ingen note.
+- **Udvid-fejl:** knap går tilbage til normal + lille fejlmarkering; klik igen = retry (idempotent).
+- **Enrichment kører stadig:** eksisterende spinner bevares; datter-lag vokser via poll-rebuild som i dag.
 
-## Leverance-rækkefølge (hver del selvstændigt deploybar PR)
+## Leverance-rækkefølge
 
-1. **2a — Selskabs-opslag komplet** (størst — det ER Resights-billedet): builder-udtræk, datterselskaber i grafen, ejendomme (capped, async), intervaller, udvid, gammel sektion fjernes.
-2. **2b — Person-opslag:** ny graf-sektion på person-siden; builder + blade-partial genbruges 1:1.
-3. **2c — Ejendoms-opslag:** graf på ejendoms-siden; ejendommen nederst, ejerkæden op.
+1. **2a.1 — struktur (Resights-billedet):** builder (deklarativ), datterselskaber i grafen, ejendomme async, udvid, label-regel (efter verifikation), gammel sektion fjernes, partial-udtræk, JS-dimensioner. **To repos, koordineret deploy** (package-PR + host-PR); rollback = revert BEGGE. `view:clear` efter Blade-ændringer (fase 1-lektie).
+2. **2a.2 — berigelse:** hover-/tap-kort, værdi-aggregat, signal-ikoner (negativ egenkapital, nystiftet), website-link (efter felt-verifikation), evt. branche.
 
-## Edge cases
+### Opfølgere (kræver egen mini-spec — IKKE besluttede leverancer)
 
-- **Store koncerner (85+ ejere):** dybde-bounds + udvid + zoom/pan (bygget).
-- **Cykler/diamanter:** dagre + eksisterende cycle-guard; edge-dedup bevares.
-- **Ejendom ejet af flere koncern-selskaber:** én node, flere kanter (dedup på BFE).
-- **Person uden selskaber / selskab uden ejendomme:** grafen render'es uden det lag — ingen fejltilstand.
-- **CVR-andele summer ikke til 100%:** kendt datavilkår, note findes allerede under grafen.
+- **2b person-opslag:** åbne spørgsmål fra review: navne- vs CPR-side (CPR-siden har allerede `PersonNetwork` i gammel stil — skal afløses), person-disambiguering (`disambiguatePerson`), first paint-strategi (N tunge kald, 5-15 s), hvilke roller tæller, cap på selskaber, person-centrum-id.
+- **2c ejendoms-opslag:** adresse→BFE-resolve (opslag er adresse-drevet; null-BFE findes), ejere uden CVR-kæde (personer/andelsforeninger/offentlige — hvad vises?), én-node-grafer skjules.
+- **Fase 3:** aktieposter + gæld-lag (og dermed LTV-signalet).
+- **Parkeret idé:** tidsrejse (strukturen på valgt dato — CVR har perioder).
 
 ## Performance
 
-- Ejendomme = ét koncern-kald, efter first paint. dagre på ≤40 noder er målt uproblematisk i fase 1.
-- Interval-mapning er ren streng-formatering, ingen ekstra kald.
+- Ejendomme = ét koncern-kald efter first paint. Cache af `fetchCompanyStructure` fjerner rebuild-omkostninger ved actions.
+- Node-cap ~120 samlet; dagre-måling ved >40 noder indgår i 2a.1-verifikation (fase 1 målte kun ≤40).
+- Payload: graphModel som eneste store public state (efter sanering) — est. 15-30 KB ved 40-80 noder; acceptabelt.
 
 ## Test & verifikation
 
-- **Builder-unit-tests pr. indgang:** node/kant-sammensætning, caps, udvid-append, interval-mapning, BFE-dedup — oven på fase 1's suite.
-- **Browser-verifikation på den ÆGTE prod-side med konsollen åben** (fase 1's dyreste lektie — standalone-render beviser kun render-logikken, ikke layout-konteksten). `php artisan view:clear` efter enhver Blade-ændring på metis-prod.
-- Rollback: hver del-leverance er én PR; 2a kan reverte til fase 1-grafen uden datarisiko (registry-api urørt).
+- **Builder-unit-tests (rene array-tests):** sammensætning pr. lag, caps, expandedIds-rebuild (idempotens), label-regel, `bfe:`-dedup, orphan-stubs, node-cap-trunkering.
+- **Plan-fasens data-verifikationer (FØR kode):** (1) interval vs. eksakt-skelnen, (2) portfolio-payload: ejer-cvr pr. ejendom + building-adfærd, (3) website-felt i registry-api. To-tre curl-kald.
+- **Browser-verifikation på ÆGTE prod-side med konsollen åben** (fase 1's dyreste lektie); `view:clear` efter Blade-ændring.
+- Rollback: 2a.1 = revert package-PR + host-PR sammen; registry-api urørt.
 
 ## Non-goals
 
-- Aktieposter- og gæld-lag (fase 3).
-- Ændringer i registry-api.
-- Radial/cirkulær layout-motor — centrum-effekten opnås hierarkisk.
-- Redigering/eksport af grafen.
+- Ændringer i registry-api (alle lag + berigelser bruger eksisterende endpoints; mangler et felt → featuren udskydes, endpointet ændres ikke i denne fase).
+- Radial layout-motor; redigering/eksport af grafen; embedded website-previews (eksterne kald fra hover-kort).
+- Touch-pan/pinch på canvas (2a.2's tap-kort giver mobil-adgang til INDHOLDET; fuld touch-navigation er senere polish).
