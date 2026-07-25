@@ -754,3 +754,133 @@ it('treats a properties/batch failure as usage-less (not a portfolio failure) �
     expect($prop)->not->toBeNull()
         ->and($prop['meta']['usage'])->toBeNull();
 });
+
+// ---- Review fix: $propertyData is lost on hydration too (P0) ----
+
+it('keeps property nodes in the graph when expandNode runs in a separate request after loadProperties (P0 hydration)', function () {
+    // Request A: loadProperties() succeeds — propertiesStatus becomes 'loaded'
+    // and the property node appears in graphModel.
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'present');
+
+    $first = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+    expect($first->get('propertiesStatus'))->toBe('loaded');
+    expect(collect($first->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->not->toBeNull();
+
+    // Request B: a FRESH component instance (protected $propertyData lost to
+    // hydration, but the public propertiesStatus — hydrated normally — still
+    // says 'loaded'). expandNode() must detect the mismatch and refetch the
+    // portfolio before rebuilding, or the property node silently disappears.
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'present');
+
+    $second = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->set('propertiesStatus', 'loaded')
+        ->call('expandNode', 'sub:44018942');
+
+    $nodes = collect($second->get('graphModel')['nodes']);
+    expect($nodes->firstWhere('kind', 'property'))->not->toBeNull();
+    expect($nodes->pluck('id'))->toContain('44027992'); // the expand itself still worked
+});
+
+it('keeps property nodes in the graph when pollForUpdates completes in a separate request after loadProperties (P0 hydration)', function () {
+    // Http::fake() APPENDS stubs (first URL match wins), so a test that needs
+    // the SAME endpoint to answer differently across two "requests" must
+    // declare every response inside one Http::fake() call, driven by a
+    // request-sequence-aware closure — a second Http::fake() call would just
+    // add a stub the first one's pattern already shadows.
+    $enrichmentCalls = 0;
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        '*enrichment*' => function () use (&$enrichmentCalls) {
+            $enrichmentCalls++;
+
+            // Request A's mount (call 1) + request B's mount (call 2) both see
+            // 'running' so $enriching=true on request B and pollForUpdates()
+            // does real work; the explicit pollForUpdates call (call 3) sees
+            // 'completed'.
+            return Http::response(['data' => ['status' => $enrichmentCalls >= 3 ? 'completed' : 'running']]);
+        },
+        '*/property-portfolio*' => Http::response(['data' => [
+            'portfolio' => [
+                'properties' => [fdlPortfolioProperty()],
+                'property_count' => 1,
+                'total_count' => 1,
+            ],
+        ]]),
+        '*/properties/batch*' => Http::response(['data' => []]),
+    ]);
+
+    // Request A: loadProperties() succeeds — propertiesStatus becomes 'loaded'.
+    $first = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+    expect($first->get('propertiesStatus'))->toBe('loaded');
+
+    // Request B: a FRESH component instance — protected $propertyData is lost
+    // to hydration, but the public $propertiesStatus (hydrated normally, and
+    // forced here to simulate a real hydrated request) still says 'loaded'.
+    // pollForUpdates() completing must detect the mismatch and refetch the
+    // portfolio before rebuilding, or the property node silently disappears.
+    $second = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->set('propertiesStatus', 'loaded')
+        ->call('pollForUpdates');
+
+    expect(collect($second->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->not->toBeNull();
+});
+
+// ---- Review fix: propertiesAttempts cap (P2b) ----
+
+it('flips to failed after MAX_PROPERTIES_ATTEMPTS building attempts — never polls forever', function () {
+    fakeRegistryStructure();
+    // property_count > 0 but properties always empty: the portfolio never finishes.
+    fakeRegistryPortfolio(properties: [], propertyCount: 13);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    for ($i = 0; $i < 8; $i++) {
+        $c->call('loadProperties');
+    }
+
+    expect($c->get('propertiesStatus'))->toBe('failed')
+        ->and($c->get('propertiesAttempts'))->toBe(8);
+});
+
+it('retryProperties resets propertiesAttempts so the cap does not carry over', function () {
+    fakeRegistryStructure();
+
+    // Http::fake() appends stubs (first URL match wins), so the portfolio
+    // endpoint must switch behaviour via one call-count-aware closure rather
+    // than a second Http::fake() — see the pollForUpdates P0 test above.
+    $portfolioCalls = 0;
+    Http::fake([
+        '*/property-portfolio*' => function () use (&$portfolioCalls) {
+            $portfolioCalls++;
+
+            // First 8 calls (the cap-exhausting loop): building forever.
+            // 9th call (after retryProperties resets attempts): succeeds.
+            return $portfolioCalls <= 8
+                ? Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 13, 'total_count' => 13]]])
+                : Http::response(['data' => ['portfolio' => [
+                    'properties' => [fdlPortfolioProperty()], 'property_count' => 1, 'total_count' => 1,
+                ]]]);
+        },
+        '*/properties/batch*' => Http::response(['data' => []]),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+    for ($i = 0; $i < 8; $i++) {
+        $c->call('loadProperties');
+    }
+    expect($c->get('propertiesStatus'))->toBe('failed');
+
+    $c->call('retryProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('loaded')
+        ->and($c->get('propertiesAttempts'))->toBe(0);
+});

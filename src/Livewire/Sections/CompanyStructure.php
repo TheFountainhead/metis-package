@@ -9,6 +9,15 @@ use TheFountainhead\Metis\Services\RegistryApi;
 class CompanyStructure extends MetisSection
 {
     /**
+     * Loft for antal 'building'-forsøg (Task 8's blade re-poller loadProperties
+     * med stigende delay via $propertiesAttempts). Uden loft ville en portefølje
+     * der aldrig færdiggøres (backend-fejl uden 500, blot evigt 'building')
+     * poll'e for evigt — efter loftet slår vi om til 'failed' så bladen viser
+     * en retry-knap i stedet for en uendelig spinner.
+     */
+    protected const MAX_PROPERTIES_ATTEMPTS = 8;
+
+    /**
      * Historical-owner data only — the ownership tree (built from ancestors
      * inside $structureData, via the builder) is the single source for
      * CURRENT owners. $owners still feeds the Blade's "Historical" block.
@@ -151,7 +160,7 @@ class CompanyStructure extends MetisSection
 
         if (in_array($newStatus, ['completed', 'failed'])) {
             $this->enriching = false;
-            $this->refreshStructureData();
+            $this->rehydrateBeforeRebuild();
             $this->rebuild();
         }
     }
@@ -169,17 +178,13 @@ class CompanyStructure extends MetisSection
         if (! in_array($nodeId, $this->expandedNodeIds, true)) {
             $this->expandedNodeIds[] = $nodeId;
         }
-        if ($this->structureData === []) {
-            $this->refreshStructureData();
-        }
+        $this->rehydrateBeforeRebuild();
         $this->rebuild();
     }
 
     public function loadProperties(): void
     {
-        if ($this->structureData === []) {
-            $this->refreshStructureData();
-        }
+        $this->rehydrateBeforeRebuild();
 
         $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query), null);
         $portfolio = $result['portfolio'] ?? null;
@@ -194,10 +199,14 @@ class CompanyStructure extends MetisSection
         $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
 
         if ($list === [] && $count > 0) {
-            // Backend bygger stadig porteføljen (verificeret prod-adfærd: første
-            // kald tomt, andet fuldt). Bladen re-forsøger m. stigende delay.
-            $this->propertiesStatus = 'building';
             $this->propertiesAttempts++;
+
+            // Loft nået: porteføljen bliver aldrig færdig (eller backend hænger).
+            // 'failed' i stedet for evig 'building' giver bladen en retry-knap
+            // (som nulstiller $propertiesAttempts) i stedet for en uendelig spinner.
+            // Ellers: backend bygger stadig (verificeret prod-adfærd: første kald
+            // tomt, andet fuldt) — bladen re-forsøger m. stigende delay.
+            $this->propertiesStatus = $this->propertiesAttempts >= self::MAX_PROPERTIES_ATTEMPTS ? 'failed' : 'building';
 
             return;
         }
@@ -208,8 +217,7 @@ class CompanyStructure extends MetisSection
             return;
         }
 
-        $usage = $this->usageMapFor($list);
-        $this->propertyData = ['list' => $list, 'usage' => $usage];
+        $this->propertyData = ['list' => $list, 'usage' => $this->usageMapFor($list)];
         $this->propertiesStatus = 'loaded';
         $this->rebuild();
     }
@@ -217,6 +225,7 @@ class CompanyStructure extends MetisSection
     public function retryProperties(): void
     {
         $this->propertiesStatus = 'pending';
+        $this->propertiesAttempts = 0;
         $this->loadProperties();
     }
 
@@ -243,6 +252,23 @@ class CompanyStructure extends MetisSection
     }
 
     /**
+     * Neither protected input survives Livewire hydration across requests, so
+     * both are re-checked here: $structureData empty → refetch; $propertyData
+     * empty while $propertiesStatus still says 'loaded' → refetch, or the
+     * property nodes would silently vanish from the next rebuild. Called at
+     * the start of every action that rebuilds (poll, expand, loadProperties).
+     */
+    protected function rehydrateBeforeRebuild(): void
+    {
+        if ($this->structureData === []) {
+            $this->refreshStructureData();
+        }
+        if ($this->propertiesStatus === 'loaded' && $this->propertyData['list'] === []) {
+            $this->refreshPropertyData();
+        }
+    }
+
+    /**
      * Cachet variant bruges KUN når enrichment ikke kører — mens enrichment
      * kører skal den ucachede fetchCompanyStructure() bruges, ellers fryser
      * datter-væksten i op til 5 minutter (Task 6's cache-kontrakt).
@@ -259,6 +285,25 @@ class CompanyStructure extends MetisSection
             $this->owners = $result['owners'] ?? [];
         }
         $this->companyName = $this->companyName ?? ($result['name'] ?? null);
+    }
+
+    /**
+     * Re-fetches via the same cached fetchCompanyPropertyPortfolio() the
+     * first load used (Task 6: cached 5 min) — cheap, not a re-scrape. A
+     * failure here is swallowed rather than flipping to 'failed': the
+     * portfolio already loaded once this session, so a transient re-fetch
+     * error shouldn't regress the section into an error the user never triggered.
+     */
+    protected function refreshPropertyData(): void
+    {
+        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query), null);
+        $list = $result['portfolio']['properties'] ?? [];
+
+        if ($list === []) {
+            return;
+        }
+
+        $this->propertyData = ['list' => $list, 'usage' => $this->usageMapFor($list)];
     }
 
     protected function rebuild(): void

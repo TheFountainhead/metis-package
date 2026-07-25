@@ -40,11 +40,11 @@
                      edges are SVG lines.
 
                      Read the SAME $graphModel the Alpine watcher watches — a single
-                     source of truth. Rebuilding it here with a fresh
-                     ownershipGraphData() call would let the graph's initial x-data
-                     diverge from the watched property if a future action ever mutates
-                     ancestors without also rebuilding $graphModel. One source, no
-                     divergence. --}}
+                     source of truth. $graphModel is rebuilt exclusively by
+                     OwnershipGraphBuilder::build() (see CompanyStructure::rebuild());
+                     no other code path may mutate it directly, so re-deriving it
+                     here from anything else would let the graph's initial x-data
+                     diverge from the watched property. One source, no divergence. --}}
                 @php
                     $graph = $this->graphModel;
                 @endphp

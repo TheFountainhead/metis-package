@@ -5,8 +5,9 @@
      reel/legal/other (sand card), searched (bg-2 + thick ink border). NO
      left-stripe border — that AI-tell is banned (see spec §Node).
 
-     `node` is an Alpine object from ownershipGraphData(); every text field is
-     bound via x-text so Alpine escapes it (never interpolated as raw HTML). --}}
+     `node` is an Alpine object from $graphModel (built server-side by
+     OwnershipGraphBuilder::build()); every text field is bound via x-text so
+     Alpine escapes it (never interpolated as raw HTML). --}}
 <template x-for="node in nodes" :key="node.id">
     <div
         class="mgraph-node"
