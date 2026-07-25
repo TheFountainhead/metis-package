@@ -21,6 +21,7 @@
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
+    @fluxAppearance
 </head>
 <body class="bg-paper min-h-screen antialiased" x-data="{ sidebarOpen: false }">
 
@@ -59,6 +60,14 @@
     @include('metis::components.cookie-consent')
 
     @livewireScripts
+    {{-- Flux' JavaScript. Standalone-mode pages (Lookup::render → this layout when
+         config('metis.mode')==='standalone') use <flux:modal>/<flux:flyout> (e.g.
+         the tinglysning mortgage drawer), which compile to x-data="fluxModal(...)".
+         Without this, fluxModal is undefined → an uncaught ReferenceError during
+         Alpine's init kills the whole bootstrap, so every Alpine component after
+         the flux modal in the DOM (including the ownership graph) never hydrates.
+         Flux CSS is already imported in app.css; only the JS was missing. --}}
+    @fluxScripts
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>
