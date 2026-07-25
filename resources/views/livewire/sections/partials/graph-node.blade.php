@@ -34,26 +34,31 @@
              Same evaluate-regardless-of-x-show reasoning as above: most nodes have
              expand=null, so the x-text expressions need their own ?? fallback.
 
-             node.expand.capped means the hidden count came from TOTAL-cap
-             truncation (removeNode folding a cut node's count onto its parent),
-             not the depth-cap — expandNode() only lifts the depth-recursion
-             cap, so a button here would busy to '…' and never resolve. Render
-             static mono-text instead (x-if swaps the element type itself, not
-             just its style, so no button/click semantics reach the DOM). --}}
+             node.expand.capped_relations / capped_properties mean that FIELD's
+             hidden count came from TOTAL-cap truncation (removeNode folding a
+             cut node's count onto its parent), not the depth-cap —
+             expandNode() only lifts the depth-recursion cap, so a button for
+             that field would busy to '…' and never resolve. Flagged per
+             field (not on the whole expand object): a parent can carry a
+             legitimate, still-resolvable depth-cap relations count alongside
+             a total-cap-truncated properties count, or vice versa. Render
+             static mono-text instead for the capped field (x-if swaps the
+             element type itself, not just its style, so no button/click
+             semantics reach the DOM). --}}
         <div class="mgraph-node__expand" x-show="node.expand && (node.expand.relations || node.expand.properties)" x-cloak>
             <template x-if="node.expand?.relations">
-                <button type="button" x-show="!node.expand?.capped" x-data="{busy:false}"
+                <button type="button" x-show="!node.expand?.capped_relations" x-data="{busy:false}"
                         @mousedown.stop @click.stop="busy = true; $wire.expandNode('sub:' + node.cvr)"
                         :disabled="busy" x-text="busy ? '…' : ('↓ ' + node.expand.relations + ' relationer')"></button>
             </template>
-            <span x-show="node.expand?.relations && node.expand?.capped" x-text="'↓ ' + (node.expand?.relations ?? 0) + ' relationer'"></span>
+            <span x-show="node.expand?.relations && node.expand?.capped_relations" x-text="'↓ ' + (node.expand?.relations ?? 0) + ' relationer'"></span>
 
             <template x-if="node.expand?.properties">
-                <button type="button" x-show="!node.expand?.capped" x-data="{busy:false}"
+                <button type="button" x-show="!node.expand?.capped_properties" x-data="{busy:false}"
                         @mousedown.stop @click.stop="busy = true; $wire.expandNode('props:' + node.cvr)"
                         :disabled="busy" x-text="busy ? '…' : ('+ ' + node.expand.properties + ' ejendomme')"></button>
             </template>
-            <span x-show="node.expand?.properties && node.expand?.capped" x-text="'+ ' + (node.expand?.properties ?? 0) + ' skjult'"></span>
+            <span x-show="node.expand?.properties && node.expand?.capped_properties" x-text="'+ ' + (node.expand?.properties ?? 0) + ' skjult'"></span>
         </div>
     </div>
 </template>

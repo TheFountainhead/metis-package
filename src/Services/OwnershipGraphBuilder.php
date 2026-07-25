@@ -97,12 +97,17 @@ class OwnershipGraphBuilder
      * cap (its own expand.relations) — those must not vanish silently, so
      * they're added to the parent's count alongside the node itself.
      *
-     * The parent's expand array is also flagged `capped: true`. This count
-     * was created by TOTAL-cap truncation, not depth-cap truncation, so
-     * expandNode() cannot resolve it (expandedNodeIds only affects the
+     * The parent's expand array is also flagged `capped_{$field}: true` — on
+     * the SAME field that was folded, not the whole expand object. This
+     * count was created by TOTAL-cap truncation, not depth-cap truncation,
+     * so expandNode() cannot resolve it (expandedNodeIds only affects the
      * depth-recursion in addSubsidiaries/addProperties) — without the flag
      * the Blade would render an expand button that busies to '…' forever on
      * click, since the rebuild it triggers can never satisfy the request.
+     * Field-specific because a parent can carry a LEGITIMATE depth-cap
+     * relations count alongside a total-cap-truncated properties count (or
+     * vice versa) — flagging the whole object would freeze the still-
+     * resolvable field's button too.
      */
     protected function removeNode(array &$nodes, array &$edges, int $index, string $field): void
     {
@@ -132,9 +137,15 @@ class OwnershipGraphBuilder
                 $node['expand'] = [
                     'relations' => $node['expand']['relations'] ?? 0,
                     'properties' => $node['expand']['properties'] ?? 0,
-                    'capped' => true,
+                    // Preserve a flag already set by an earlier removeNode call
+                    // on this same parent (e.g. properties cut in pass 1, then
+                    // relations cut in pass 2) — only the field cut THIS call
+                    // gets newly flagged.
+                    'capped_relations' => $node['expand']['capped_relations'] ?? false,
+                    'capped_properties' => $node['expand']['capped_properties'] ?? false,
                 ];
                 $node['expand'][$field] += $nodeCountToAdd;
+                $node['expand']['capped_'.$field] = true;
                 break;
             }
         }
