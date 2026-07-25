@@ -93,6 +93,13 @@
                             <button type="button" @click="zoomBy(0.8)" aria-label="{{ __('Zoom out') }}">−</button>
                         </div>
                     </div>
+
+                    {{-- Always shown (not gated on an actual <100% sum): computing a
+                         per-node share total across the whole chain is noise, and the
+                         caveat holds for every CVR graph anyway. --}}
+                    <p class="mgraph-note">
+                        {{ __('Ownership shares come from CVR and may total under 100% — the register lists only owners of 5% or more, often in bands.') }}
+                    </p>
                 @endif
 
                 {{-- Historical owners (collapsible) --}}
@@ -132,16 +139,11 @@
                     </div>
                 @endif
 
-                {{-- Searched company (highlighted center) --}}
-                <div class="org-self">
-                    <div class="org-node primary">
-                        <div class="font-semibold">{{ $companyName ?? '—' }}</div>
-                        <div class="text-xs text-zinc-500 font-mono mt-0.5">CVR {{ $query }}</div>
-                        <div class="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300 font-medium mt-1">
-                            {{ __('Searched company') }}
-                        </div>
-                    </div>
-                </div>
+                {{-- The searched company is already rendered as the graph's own
+                     'searched' node (sand card + thick ink border, frankston-styled)
+                     at the bottom of the ownership graph. The old org-chart's
+                     amber "Searched company" box was a duplicate AND off-brand
+                     (Tailwind amber-100/300 — an AI-tell), so it is removed. --}}
 
                 @if(count($subsidiaries) > 0)
                     <div class="org-trunk"></div>
@@ -241,17 +243,6 @@
     .dark .metis-org-chart .org-node {
         background: rgb(24 24 27);
         border-color: rgb(63 63 70);
-    }
-
-    .metis-org-chart .org-node.primary {
-        background: rgb(254 243 199);
-        border: 2px solid rgb(252 211 77);
-        font-weight: 500;
-    }
-
-    .dark .metis-org-chart .org-node.primary {
-        background: rgba(120, 53, 15, 0.2);
-        border-color: rgb(180 83 9);
     }
 
     .metis-org-chart .org-node.historical {
@@ -528,6 +519,14 @@
         cursor: pointer; line-height: 1;
     }
     .mgraph-controls button:hover { background: var(--bg); }
+
+    .mgraph-note {
+        margin-top: 8px;
+        font-family: var(--fm);
+        font-size: 11px;
+        line-height: 1.4;
+        color: var(--ink-3);
+    }
 
     @media (prefers-reduced-motion: reduce) {
         .mgraph-canvas { will-change: auto; }
