@@ -100,6 +100,33 @@ it('returns empty array when person is not found', function () {
     expect($result)->toBe([]);
 });
 
+it('falder tilbage til 0 ejendomme når portefølje-kaldet fejler', function () {
+    // Netværksfejl skal STADIG degradere pænt — det er kontrakten vi bevarer
+    // ved at erstatte rescue(\Throwable) med eksplicit catch.
+    Http::fake([
+        '*/v1/cvr/person-roles' => Http::response(['data' => [
+            'person_name' => 'Anders Hansen',
+            'companies' => [[
+                'cvr' => '12345678',
+                'name' => 'Acme ApS',
+                'status' => 'NORMAL',
+                'roles' => [[
+                    'role_label' => 'Reelle ejere',
+                    'is_current' => true,
+                    'ownership_share' => 100,
+                ]],
+            ]],
+        ]]),
+        '*/property-portfolio*' => Http::response('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->searchPersonByName('Anders Hansen');
+
+    expect($result[0]['total_properties'])->toBe(0)
+        ->and($result[0]['owned_companies'][0]['ownership'])->toBe(100);
+});
+
 it('maps person roles, ownership and property count', function () {
     Http::fake([
         '*/v1/cvr/person-roles' => Http::response(['data' => [

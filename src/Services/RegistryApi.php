@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Services;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -101,14 +102,18 @@ class RegistryApi
                     ->whereIn('role_label', ['Reelle ejere', 'EJERREGISTER'])
                     ->max('ownership_share');
 
-                // Count properties via cached portfolio or quick API check
-                $propertyCount = rescue(function () use ($cvr) {
-                    $result = $this->client()->timeout(5)
+                // Count properties via cached portfolio or quick API check.
+                // Fanger kun netværksfejl — ikke \Throwable. En catch-all ville
+                // også sluge testenes StrayRequestException, så en omdøbning af
+                // endpointet stille ville rapportere 0 ejendomme i stedet for
+                // at fejle testen.
+                try {
+                    $propertyCount = $this->client()->timeout(5)
                         ->get("/v1/company/{$cvr}/property-portfolio", ['limit' => 0])
-                        ->json('data.portfolio.total_count');
-
-                    return $result ?? 0;
-                }, 0);
+                        ->json('data.portfolio.total_count') ?? 0;
+                } catch (RequestException|ConnectionException) {
+                    $propertyCount = 0;
+                }
 
                 return [
                     'name' => $c['name'] ?? '',
@@ -454,13 +459,18 @@ class RegistryApi
 
         $cacheKey = "metis_comparison_{$postalCode}_{$address}";
 
-        return Cache::remember($cacheKey, 3600, fn () =>
-            rescue(fn () => $this->client()
-                ->post('property/compare', [
-                    'address' => $address,
-                    'postal_code' => $postalCode,
-                ])->json('data'), null)
-        );
+        return Cache::remember($cacheKey, 3600, function () use ($address, $postalCode) {
+            // Kun netværksfejl fanges — se noten ved property-portfolio ovenfor.
+            try {
+                return $this->client()
+                    ->post('property/compare', [
+                        'address' => $address,
+                        'postal_code' => $postalCode,
+                    ])->json('data');
+            } catch (RequestException|ConnectionException) {
+                return null;
+            }
+        });
     }
 
     public function parseAddress(string $address): array
