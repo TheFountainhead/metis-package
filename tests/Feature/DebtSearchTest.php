@@ -4,6 +4,15 @@ use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 
+// Søge-fakes bruger '*/v1/debt-search?*' og IKKE '*/v1/debt-search*'.
+// Det brede mønster matcher nemlig også '/v1/debt-search/export-link', og
+// Laravel vælger den FØRSTE matchende fake (PendingRequest ->first()), så
+// en søge-fake listet før export-faken ville stjæle export-kaldet.
+// Søgning er altid GET med query-filtre, export altid POST uden query —
+// '?*' skiller dem derfor præcist, uanset rækkefølge. Bemærk at Str::is
+// kun behandler '*' som wildcard; '?' er et literalt tegn og matcher
+// netop query-separatoren.
+
 function fakeDebtSearchResponse(array $overrides = []): array
 {
     return array_merge([
@@ -42,7 +51,7 @@ it('mounts without firing API call when filters are at defaults', function () {
 });
 
 it('mounts with non-default filters fires search', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::withQueryParams(['rate_min' => 10.0])
         ->test(DebtSearch::class)
@@ -55,7 +64,7 @@ it('mounts with non-default filters fires search', function () {
 });
 
 it('updating a filter triggers search and resets cursor + history', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('cursor', 'previous-page-cursor')
@@ -67,7 +76,7 @@ it('updating a filter triggers search and resets cursor + history', function () 
 });
 
 it('postalCodeFrom + postalCodeTo are sent as separate filters', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '9000')
@@ -79,7 +88,7 @@ it('postalCodeFrom + postalCodeTo are sent as separate filters', function () {
 });
 
 it('strips partial postal codes (1-3 digits) from API call', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '1');
@@ -91,7 +100,7 @@ it('strips partial postal codes (1-3 digits) from API call', function () {
 });
 
 it('strips creditor_contains shorter than 3 chars', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('creditorContains', 'ab');
@@ -103,7 +112,7 @@ it('strips creditor_contains shorter than 3 chars', function () {
 });
 
 it('422 from server does not surface as service-unavailable error', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(['error' => 'invalid filter'], 422)]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(['error' => 'invalid filter'], 422)]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '9000')
@@ -112,7 +121,7 @@ it('422 from server does not surface as service-unavailable error', function () 
 });
 
 it('previousPage pops cursorHistory and re-searches', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse([
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse([
         'pagination' => ['next_cursor' => 'page-2-cursor', 'limit' => 25, 'has_more' => true],
     ]))]);
 
@@ -127,7 +136,7 @@ it('previousPage pops cursorHistory and re-searches', function () {
 });
 
 it('previousPage does nothing when cursorHistory is empty', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '2000')
@@ -137,7 +146,7 @@ it('previousPage does nothing when cursorHistory is empty', function () {
 
 it('renders empty state when API returns zero loans', function () {
     Http::fake([
-        '*/v1/debt-search*' => Http::response(fakeDebtSearchResponse(['summary' => [
+        '*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse(['summary' => [
             'n_loans' => 0, 'n_properties' => 0, 'n_companies' => 0, 'n_creditors' => 0,
             'total_principal_kr' => 0, 'avg_rate' => 0,
         ]])),
@@ -149,7 +158,7 @@ it('renders empty state when API returns zero loans', function () {
 });
 
 it('renders error state on API failure', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response([], 500)]);
+    Http::fake(['*/v1/debt-search?*' => Http::response([], 500)]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '2000')
@@ -158,7 +167,7 @@ it('renders error state on API failure', function () {
 });
 
 it('renders quota-exceeded state on 429', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(['error' => 'daily_quota_exceeded'], 429)]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(['error' => 'daily_quota_exceeded'], 429)]);
 
     Livewire::test(DebtSearch::class)
         ->set('postalCodeFrom', '2000')
@@ -201,7 +210,7 @@ it('resetFilters clears state to defaults', function () {
 });
 
 it('nextPage uses next_cursor and pushes current cursor onto history', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse([
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse([
         'pagination' => ['next_cursor' => 'page-2-cursor.signature', 'limit' => 25, 'has_more' => true],
     ]))]);
 
@@ -219,7 +228,7 @@ it('nextPage uses next_cursor and pushes current cursor onto history', function 
 // Rasmus-feedback 2026-05-25: registered_from/registered_to date-range filter.
 
 it('registeredFrom + registeredTo are sent as reg_from + reg_to to backend', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('registeredFrom', '2020-01-01')
@@ -231,7 +240,7 @@ it('registeredFrom + registeredTo are sent as reg_from + reg_to to backend', fun
 });
 
 it('strips malformed date-input (partial typing) from API call', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('registeredFrom', '2020-1'); // user mid-typing
@@ -241,7 +250,7 @@ it('strips malformed date-input (partial typing) from API call', function () {
 });
 
 it('mounts with reg_from query-param fires search (URL-bookmarkable filter)', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::withQueryParams(['reg_from' => '2024-01-01'])
         ->test(DebtSearch::class)
@@ -250,7 +259,7 @@ it('mounts with reg_from query-param fires search (URL-bookmarkable filter)', fu
 });
 
 it('resetFilters clears registeredFrom + registeredTo', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('registeredFrom', '2020-01-01')
@@ -263,7 +272,7 @@ it('resetFilters clears registeredFrom + registeredTo', function () {
 // --- Fri sortering, rammerente-markør, hide-nominal, eksport-teaser ---
 
 it('sortBy toggles direction and sends sort to backend', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->call('sortBy', 'amount')
@@ -276,7 +285,7 @@ it('sortBy toggles direction and sends sort to backend', function () {
 });
 
 it('sortBy resets pagination (new keyset)', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('cursor', 'abc')
@@ -287,7 +296,7 @@ it('sortBy resets pagination (new keyset)', function () {
 });
 
 it('sortBy ignores unknown columns', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->call('sortBy', 'creditor')
@@ -295,7 +304,7 @@ it('sortBy ignores unknown columns', function () {
 });
 
 it('hideNominalRates sends hide_nominal_rates=1 to backend', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)->set('hideNominalRates', true);
 
@@ -306,7 +315,7 @@ it('hideNominalRates sends hide_nominal_rates=1 to backend', function () {
 it('renders rammerente-badge on nominal-rate hits', function () {
     $resp = fakeDebtSearchResponse();
     $resp['results'][0]['debt']['is_nominal_rate'] = true;
-    Http::fake(['*/v1/debt-search*' => Http::response($resp)]);
+    Http::fake(['*/v1/debt-search?*' => Http::response($resp)]);
 
     Livewire::test(DebtSearch::class)
         ->set('minRate', 8.0)
@@ -314,7 +323,7 @@ it('renders rammerente-badge on nominal-rate hits', function () {
 });
 
 it('shows CSV export as a coming-soon teaser, not an active button', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response(fakeDebtSearchResponse())]);
+    Http::fake(['*/v1/debt-search?*' => Http::response(fakeDebtSearchResponse())]);
 
     Livewire::test(DebtSearch::class)
         ->set('minRate', 8.0)

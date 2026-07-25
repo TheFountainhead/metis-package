@@ -4,7 +4,7 @@ use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 
 it('uses advisor terminology and formats large debt as mia', function () {
-    Http::fake(['*/v1/debt-search*' => Http::response([
+    Http::fake(['*/v1/debt-search?*' => Http::response([
         'summary' => ['n_loans'=>21852,'n_properties'=>18976,'n_companies'=>5372,'n_creditors'=>50,'total_principal_kr'=>1_101_967_100_000,'avg_rate'=>10.5],
         'creditors' => [['creditor'=>'X A/S','n_loans'=>438,'avg_rate'=>10.0,'max_rate'=>10,'total_principal_kr'=>149_058_000_000]],
         'results' => [[

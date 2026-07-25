@@ -5,6 +5,11 @@ use Illuminate\Support\Facades\Route;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\PropertyExplore;
 
+// Søge-fakes bruger '*/v1/property-explore' UDEN afsluttende '*'. Tilføjes
+// et '*', matcher mønstret også '/v1/property-explore/export-link', og da
+// Laravel vælger den første matchende fake, ville søge-faken stjæle
+// export-kaldet. Samme fælde som i DebtSearchTest.
+
 beforeEach(function () {
     if (! Route::has('metis.lookup')) {
         Route::get('/lookup/{type}/{query}', fn () => null)->name('metis.lookup')->where('query', '.*');
