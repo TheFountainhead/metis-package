@@ -13,9 +13,7 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         // Enhver ikke-fake'et HTTP-request fejler straks i stedet for at ramme
-        // netvaerket. Uden denne guard bliver en endpoint-omdoebning til en
-        // 10s DNS-timeout mod registry-api.test frem for en praecis fejl, og
-        // driften opdages foerst i CI paa en urelateret branch.
+        // netværket, så endpoint-drift bliver en præcis fejl frem for en DNS-timeout.
         Http::preventStrayRequests();
     }
 
