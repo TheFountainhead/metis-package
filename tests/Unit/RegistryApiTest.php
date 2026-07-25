@@ -329,6 +329,26 @@ it('returnerer tomt array uden kald ved tom input til fetchPropertiesBatch', fun
     Http::assertNothingSent();
 });
 
+it('returnerer null (alt-eller-intet) når ét chunk fejler i fetchPropertiesBatch', function () {
+    // 250 ids → 2 chunks. Chunk 1 (200 ids) svarer OK, chunk 2 (50 ids) fejler
+    // med HTTP 500. post()-hjælperen fanger RequestException og returnerer
+    // ['error' => ..., 'status' => 500] — den værdi må ALDRIG flatMap'es ind
+    // blandt gyldige properties. Hele metoden skal degradere til null, uden
+    // at kaste en exception.
+    $ids = array_map(fn ($i) => "matrikel-{$i}", range(1, 250));
+
+    Http::fake([
+        '*/v1/properties/batch' => Http::sequence()
+            ->push(['data' => array_fill(0, 200, ['matrikel_id' => 'x', 'bbr' => ['buildings' => []]])])
+            ->push('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchPropertiesBatch($ids);
+
+    expect($result)->toBeNull();
+});
+
 it('cacher company-structure men kun ved ikke-tomt svar', function () {
     Http::fake([
         '*/v1/cvr/company-structure' => Http::sequence()

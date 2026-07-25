@@ -291,20 +291,36 @@ class RegistryApi
     /**
      * Batch-opslag af ejendomme via matrikel-id. Chunker i grupper à 200
      * (backend-grænse) og fladgør 'data'-listerne fra hver chunk til én liste.
+     *
+     * Alt-eller-intet: post()-hjælperen returnerer ['error' => ..., 'status' => ...]
+     * ved HTTP-fejl (aldrig null), så et fejlende chunk kan ikke bare
+     * flatMap'es ind — det ville blande fejl-strenge ind mellem gyldige
+     * properties. Fejler ét chunk, returnér null for hele kaldet: Task 7's
+     * fejl-flow behandler null som "berigelse fejlede", mens et stille
+     * delvist resultat ville give ejendoms-noder uden anvendelse uden
+     * forklaring.
      */
-    public function fetchPropertiesBatch(array $matrikelIds): array
+    public function fetchPropertiesBatch(array $matrikelIds): ?array
     {
         if (empty($matrikelIds)) {
             return [];
         }
 
-        return collect($matrikelIds)
-            ->chunk(200)
-            ->flatMap(fn ($chunk) => $this->post('/v1/properties/batch', [
+        $properties = [];
+
+        foreach (collect($matrikelIds)->chunk(200) as $chunk) {
+            $response = $this->post('/v1/properties/batch', [
                 'matrikel_ids' => $chunk->values()->all(),
-            ]) ?? [])
-            ->values()
-            ->all();
+            ]);
+
+            if (! is_array($response) || isset($response['error'])) {
+                return null;
+            }
+
+            array_push($properties, ...$response);
+        }
+
+        return $properties;
     }
 
     /**
