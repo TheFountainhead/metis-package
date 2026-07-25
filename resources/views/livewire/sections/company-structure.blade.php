@@ -75,26 +75,15 @@
                              @wheel.prevent="onWheel($event)"
                         >
                             <div class="mgraph-canvas" :style="`transform:${transform}; transform-origin:0 0;`">
-                                {{-- Edges as absolutely-positioned, rotated HTML divs — NOT
-                                     an SVG <template x-for>. Alpine's x-for relies on native
-                                     <template> cloning, which does NOT work inside <svg>
-                                     (SVG namespace has no <template>): the loop scope never
-                                     reaches the children, so `edge` is undefined and every
-                                     coordinate binding fails ("edge is not defined"). HTML
-                                     divs keep everything in Alpine's reactive HTML namespace,
-                                     preserve x-text escaping on labels, and match the node
-                                     render (also divs) — one paradigm. edge.len/edge.angle
-                                     are precomputed in layout(). --}}
-                                <template x-for="(edge, i) in edges" :key="i">
-                                    <div>
-                                        <div class="mgraph-edge-line"
-                                             :style="`left:${edge.x1}px; top:${edge.y1}px; width:${edge.len}px; transform:rotate(${edge.angle}deg);`"></div>
-                                        <div class="mgraph-edge-label"
-                                             x-show="edge.label"
-                                             x-text="edge.label"
-                                             :style="`left:${edge.mx}px; top:${edge.my}px;`"></div>
-                                    </div>
-                                </template>
+                                {{-- Edges = one imperatively-built, trusted SVG string from
+                                     layout() (buildEdgesSvg), injected via x-html. Safe:
+                                     coords are dagre numbers, labels are escapeXml'd in JS.
+                                     Gives non-scaling-stroke (edges visible at low zoom) +
+                                     <polyline> through all routed points (no chord lying
+                                     about ownership on diamonds).
+                                     DO NOT rewrite as <template x-for> inside <svg>: Alpine
+                                     can't scope there (SVG has no <template>) → blank graph. --}}
+                                <div class="mgraph-edges-wrap" x-html="edgesSvg"></div>
                                 @include('metis::livewire.sections.partials.graph-node')
                             </div>
                         </div>
@@ -467,21 +456,19 @@
     }
     .mgraph-frame:active { cursor: grabbing; }
     .mgraph-canvas { position: absolute; top: 0; left: 0; will-change: transform; }
-    /* Edges are absolutely-positioned HTML divs (not SVG). The line is a 1px-tall
-       div anchored at (x1,y1) and rotated toward (x2,y2) about its left edge. */
-    .mgraph-edge-line {
-        position: absolute; height: 1px;
-        background: var(--rule-strong);
-        transform-origin: 0 50%;
-        pointer-events: none;
-    }
+    /* Edges: one SVG (injected via x-html) laid over the node cards. The wrap is a
+       zero-size anchor at the canvas origin so the SVG shares the node coordinate
+       space; the SVG itself overflows freely and never intercepts pointer events. */
+    .mgraph-edges-wrap { position: absolute; top: 0; left: 0; }
+    .mgraph-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+    /* non-scaling-stroke keeps the hairline visible even when the canvas is scaled
+       down to fit a large graph (which can drop the effective scale to ~0.2). */
+    .mgraph-edge-line { fill: none; stroke: var(--rule-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
     .mgraph-edge-label {
-        position: absolute; transform: translate(-50%, -50%);
-        padding: 0 3px;
-        background: var(--bg);
-        font-family: var(--fm); font-size: 10.5px; color: var(--ink-2);
-        font-variant-numeric: tabular-nums; white-space: nowrap;
-        pointer-events: none;
+        font-family: var(--fm); font-size: 10.5px; fill: var(--ink-2);
+        text-anchor: middle; dominant-baseline: middle;
+        paint-order: stroke; stroke: var(--bg); stroke-width: 4px;
+        font-variant-numeric: tabular-nums;
     }
 
     .mgraph-node {
