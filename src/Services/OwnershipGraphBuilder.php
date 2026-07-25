@@ -89,13 +89,33 @@ class OwnershipGraphBuilder
     }
 
     /**
-     * Remove node at $index, drop its edges, and fold it onto its parent's
-     * expand affordance (the `$field` key: 'relations' or 'properties').
-     * The parent is whichever node the removed node's inbound edge came from.
+     * Remove node at $index, drop its edges, and fold it onto EVERY parent's
+     * expand affordance (the `$field` key: 'relations' or 'properties'). A
+     * "parent" is any node with an inbound edge to the removed node — for a
+     * co-owned property (one bfe: node, two owner edges, an explicitly
+     * supported/tested shape) that is more than one node, and each of them
+     * independently loses visibility of the removed node, so each must be
+     * incremented. A naive single `$parentId` variable overwritten per
+     * matching edge would let only the LAST owner win, silently under-
+     * counting portfolios for every earlier co-owner (review finding F1).
      *
      * A removed subsidiary can itself have hidden children behind the depth
      * cap (its own expand.relations) — those must not vanish silently, so
-     * they're added to the parent's count alongside the node itself.
+     * they're added to the parent's count alongside the node itself. This
+     * roll-up describes the removed node's own content, which is identical
+     * regardless of which owner is looking at it — so nodeCountToAdd (1 +
+     * own hidden children) is computed once and applied UNCHANGED to each
+     * owner: every owner lost the same node, carrying the same hidden
+     * subtree behind it, from their own perspective.
+     *
+     * Property nodes never carry expand.relations of their own (they have no
+     * children), so this roll-up is a no-op in the co-owned-property case —
+     * it only matters for the (single-parent, by construction — see docblock
+     * below) subsidiary-removal path. Both call sites can never collide: the
+     * properties pass (addProperties-created nodes, single owner by
+     * construction) always runs before the subsidiary pass in truncateToCap,
+     * so a multi-parent removal is never combined with a non-zero relations
+     * roll-up in the same call.
      *
      * The parent's expand array is also flagged `capped_{$field}: true` — on
      * the SAME field that was folded, not the whole expand object. This
@@ -116,11 +136,11 @@ class OwnershipGraphBuilder
         if ($field === 'relations') {
             $nodeCountToAdd += $nodes[$index]['expand']['relations'] ?? 0;
         }
-        $parentId = null;
+        $parentIds = [];
 
-        $edges = array_values(array_filter($edges, function ($e) use ($removedId, &$parentId) {
+        $edges = array_values(array_filter($edges, function ($e) use ($removedId, &$parentIds) {
             if ($e['to'] === $removedId) {
-                $parentId = $e['from'];
+                $parentIds[$e['from']] = true;
             }
 
             return $e['from'] !== $removedId && $e['to'] !== $removedId;
@@ -128,26 +148,27 @@ class OwnershipGraphBuilder
 
         array_splice($nodes, $index, 1);
 
-        if ($parentId === null) {
+        if ($parentIds === []) {
             return;
         }
 
         foreach ($nodes as &$node) {
-            if ($node['id'] === $parentId) {
-                $node['expand'] = [
-                    'relations' => $node['expand']['relations'] ?? 0,
-                    'properties' => $node['expand']['properties'] ?? 0,
-                    // Preserve a flag already set by an earlier removeNode call
-                    // on this same parent (e.g. properties cut in pass 1, then
-                    // relations cut in pass 2) — only the field cut THIS call
-                    // gets newly flagged.
-                    'capped_relations' => $node['expand']['capped_relations'] ?? false,
-                    'capped_properties' => $node['expand']['capped_properties'] ?? false,
-                ];
-                $node['expand'][$field] += $nodeCountToAdd;
-                $node['expand']['capped_'.$field] = true;
-                break;
+            if (! isset($parentIds[$node['id']])) {
+                continue;
             }
+
+            $node['expand'] = [
+                'relations' => $node['expand']['relations'] ?? 0,
+                'properties' => $node['expand']['properties'] ?? 0,
+                // Preserve a flag already set by an earlier removeNode call
+                // on this same parent (e.g. properties cut in pass 1, then
+                // relations cut in pass 2) — only the field cut THIS call
+                // gets newly flagged.
+                'capped_relations' => $node['expand']['capped_relations'] ?? false,
+                'capped_properties' => $node['expand']['capped_properties'] ?? false,
+            ];
+            $node['expand'][$field] += $nodeCountToAdd;
+            $node['expand']['capped_'.$field] = true;
         }
         unset($node);
     }
