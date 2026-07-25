@@ -20,6 +20,15 @@ class CompanyStructure extends MetisSection
      */
     public array $expandedOwners = [];
 
+    /**
+     * The flat {nodes, edges} graph model, kept as public state so the Alpine
+     * graph can `$wire.$watch('graphModel', …)` it: an enrichment poll deepens
+     * the chain, this property changes, and the graph re-lays-out in place
+     * WITHOUT a wire:ignore re-mount (so the user's zoom/pan survives). Rebuilt
+     * from $ancestors wherever $ancestors is assigned (mount + pollForUpdates).
+     */
+    public array $graphModel = ['nodes' => [], 'edges' => []];
+
     protected function sectionTitle(): string
     {
         return __('Company Structure');
@@ -104,6 +113,8 @@ class CompanyStructure extends MetisSection
         $status = rescue(fn () => app(RegistryApi::class)->getEnrichmentStatus($query));
         $this->enriching = in_array($status['status'] ?? '', ['pending', 'running']);
         $this->companiesFound = $status['companies_found'] ?? 0;
+
+        $this->graphModel = $this->ownershipGraphData();
     }
 
     public function pollForUpdates(): void
@@ -123,6 +134,9 @@ class CompanyStructure extends MetisSection
             $this->subsidiaries = $result['subsidiaries'] ?? $this->subsidiaries;
             // Ancestors deepen as enrichment fills them in
             $this->ancestors = $result['ancestors'] ?? $this->ancestors;
+            // Rebuild the graph model from the deepened chain; the Alpine watcher
+            // on $wire.graphModel picks this up and re-lays-out in place.
+            $this->graphModel = $this->ownershipGraphData();
         }
     }
 
@@ -291,28 +305,6 @@ class CompanyStructure extends MetisSection
         }
 
         return $parentOfCvr;
-    }
-
-    /**
-     * Topology key for the graph's Livewire wrapper. The graph lives in a
-     * wire:ignore subtree, so Livewire only re-mounts (and Alpine only re-lays-out
-     * via dagre) when the wire:key VALUE changes. Keying on the query alone freezes
-     * a stale partial graph after an enrichment poll deepens the ancestor chain.
-     *
-     * We hash only the SHAPE — node ids + kinds and the from/to edge topology —
-     * NOT labels or shares. A fuller graph (new node/edge) changes the key and
-     * triggers a fresh layout; a mere relabel (e.g. a late companyName fetch) or a
-     * share change does not, so the user's zoom/pan survives an enrichment poll
-     * that only refined text. Alpine updates those via x-text without a re-mount.
-     */
-    public function graphKey(array $graph): string
-    {
-        $topology = [
-            'n' => array_map(fn ($node) => [$node['id'], $node['kind']], $graph['nodes']),
-            'e' => array_map(fn ($edge) => [$edge['from'], $edge['to']], $graph['edges']),
-        ];
-
-        return substr(md5(json_encode($topology)), 0, 12);
     }
 
     /**

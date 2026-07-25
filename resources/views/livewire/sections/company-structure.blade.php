@@ -36,24 +36,34 @@
                      frankston.io editorial style: owners on top, searched company
                      at the bottom, ownership flowing downward. Replaces the old
                      CSS org-chart. Node positions + edge coordinates are computed
-                     in JS (dagre) from ownershipGraphData(); nodes are absolutely-
-                     positioned HTML cards, edges are SVG lines.
+                     in JS (dagre); nodes are absolutely-positioned HTML cards,
+                     edges are SVG lines.
 
-                     Wrapped in wire:ignore so Livewire's DOM morphing never touches
-                     the dagre-rendered subtree. The wire:key is derived from the
-                     graph CONTENT (query + model hash), so when an enrichment poll
-                     deepens the ancestor chain the key changes, Livewire re-mounts
-                     the element, and Alpine re-runs the dagre layout with the fuller
-                     graph. Keying on the query alone would freeze a stale partial
-                     graph — that is the bug this hash fixes. --}}
+                     Read the SAME $graphModel the Alpine watcher watches — a single
+                     source of truth. Rebuilding it here with a fresh
+                     ownershipGraphData() call would let the graph's initial x-data
+                     diverge from the watched property if a future action ever mutates
+                     ancestors without also rebuilding $graphModel. One source, no
+                     divergence. --}}
                 @php
-                    $graph = $this->ownershipGraphData();
+                    $graph = $this->graphModel;
                 @endphp
                 @if(count($graph['nodes']) > 1)
                     <div class="org-section-label">{{ __('Ownership structure') }}</div>
+
+                    {{-- The graph lives in a wire:ignore subtree with a STABLE
+                         wire:key (query only), so Livewire never re-mounts it — the
+                         user's zoom/pan is Alpine state that must survive an
+                         enrichment poll. Instead the component watches the Livewire
+                         `graphModel` property ($wire.$watch in init()): when a poll
+                         deepens the chain, graphModel changes, and refreshModel()
+                         re-lays-out in place (deferring while the user is mid-pan).
+                         This is the canonical Livewire→Alpine bridge for "react to
+                         server state without re-mounting" — no carrier node, no
+                         dispatch-before-listener race. --}}
                     <div
                         wire:ignore
-                        wire:key="ownership-graph-{{ $query }}-{{ $this->graphKey($graph) }}"
+                        wire:key="ownership-graph-{{ $query }}"
                         class="mgraph"
                         x-data="ownershipGraph(@js($graph))"
                     >
