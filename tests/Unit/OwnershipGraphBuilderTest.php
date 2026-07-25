@@ -380,3 +380,80 @@ it('removes edges where the truncated node is the FROM endpoint, not only the TO
         expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
     }
 });
+
+it('increments expand.properties for BOTH co-owners when a shared property is truncated by the total cap (F1)', function () {
+    // Two companies co-own the same property (dedup shape explicitly tested
+    // elsewhere: one bfe: node, two owner edges). A tight total_nodes cap
+    // forces pass 1 to remove that single property node — since it has TWO
+    // inbound edges, BOTH owners must have their expand.properties
+    // incremented and capped_properties flagged, not just the last one a
+    // naive single-$parentId variable would have overwritten to.
+    $subs = [
+        ['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []],
+        ['cvr' => '45170209', 'name' => 'I', 'ownership_share' => 100.0, 'children' => []],
+    ];
+    $props = [fdlProperty(), fdlProperty(['owner_cvr' => '45170209'])];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => $props, 'usage' => []],
+        // searched + 2 subsidiaries = 3 nodes; cap 3 forces the shared
+        // property (the 4th node) to be cut in pass 1.
+        'caps' => ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 3],
+    ]);
+
+    expect(collect($g['nodes'])->pluck('id'))->not->toContain('bfe:2573669');
+
+    $k = collect($g['nodes'])->firstWhere('id', '44507781');
+    $i = collect($g['nodes'])->firstWhere('id', '45170209');
+
+    expect($k['expand']['properties'])->toBe(1)
+        ->and($k['expand']['capped_properties'])->toBeTrue()
+        ->and($i['expand']['properties'])->toBe(1)
+        ->and($i['expand']['capped_properties'])->toBeTrue();
+});
+
+it('does not crash when a removed subsidiary with its own expand.properties has a co-owned property, thanks to pass ordering (F1 corner)', function () {
+    // Architectural note (see removeNode docblock): the properties pass
+    // ALWAYS runs before the subsidiary pass in truncateToCap, so a
+    // multi-parent (co-owned) removal is never combined with a non-zero
+    // expand.relations roll-up in the same removeNode() call — the two
+    // "hard" cases (multi-parent, and non-zero roll-up) never overlap in
+    // practice. This test documents and asserts that invariant rather than
+    // fabricating an impossible combined case: it removes a subsidiary that
+    // itself already carries expand.properties (from pass 1 truncation) and
+    // confirms pass 2 folds only the relations roll-up, leaving the
+    // pre-existing properties count untouched.
+    $subs = [[
+        'cvr' => '82000001', 'name' => 'Root', 'ownership_share' => 100.0,
+        'children' => [[
+            'cvr' => '82000002', 'name' => 'Mid', 'ownership_share' => 100.0,
+            'children' => [],
+        ]],
+    ]];
+    // 9 properties owned by Mid: pass 1 (tight cap) truncates them down,
+    // leaving Mid with expand.properties > 0 BEFORE pass 2 ever runs.
+    $props = collect(range(1, 9))->map(fn ($i) => fdlProperty(['matrikel_id' => (string) (4000000 + $i), 'owner_cvr' => '82000002']))->all();
+
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => $props, 'usage' => []],
+        // searched + Root + Mid = 3 nodes; cap 2 forces pass 1 to strip all
+        // properties first, then pass 2 to cut the deepest subsidiary (Mid).
+        'caps' => ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 2],
+    ]);
+
+    $nodeIds = collect($g['nodes'])->pluck('id');
+    expect($nodeIds)->not->toContain('82000002');
+
+    $root = collect($g['nodes'])->firstWhere('id', '82000001');
+    // Mid had no expand.relations of its own (no depth-capped children), so
+    // the roll-up onto Root is just +1 for Mid itself — no crash, no
+    // cross-contamination between the 'properties' work pass 1 already did
+    // and the 'relations' field pass 2 folds now.
+    expect($root['expand']['relations'])->toBe(1)
+        ->and($root['expand']['capped_relations'])->toBeTrue();
+
+    foreach ($g['edges'] as $edge) {
+        expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
+    }
+});

@@ -63,7 +63,7 @@
                      the FAILURE/BUILDING states are visible (spec's null ≠ empty:
                      'empty' silently means no properties, not an error). --}}
                 @if($propertiesStatus === 'building')
-                    <p class="mgraph-note" x-data x-init="setTimeout(() => $wire.loadProperties(), {{ min(3 + 3 * $propertiesAttempts, 12) * 1000 }})">
+                    <p class="mgraph-note" wire:key="properties-status-{{ $propertiesAttempts }}" x-data x-init="setTimeout(() => $wire.loadProperties(), {{ min(3 + 3 * $propertiesAttempts, 12) * 1000 }})">
                         {{ __('Ejendomme hentes stadig…') }}
                     </p>
                 @elseif($propertiesStatus === 'failed')
