@@ -103,15 +103,20 @@ class RegistryApi
                     ->max('ownership_share');
 
                 // Count properties via cached portfolio or quick API check.
-                // Fanger kun netværksfejl — ikke \Throwable. En catch-all ville
-                // også sluge testenes StrayRequestException, så en omdøbning af
-                // endpointet stille ville rapportere 0 ejendomme i stedet for
-                // at fejle testen.
+                // Kaldet bruger ikke ->throw(), så en fejl-status giver bare
+                // json()===null (fanges af ?? 0) — kun ConnectionException
+                // kastes. Fang derfor præcis den og ikke \Throwable: en
+                // catch-all ville også sluge testenes StrayRequestException,
+                // så en omdøbning af endpointet stille ville rapportere 0
+                // ejendomme i stedet for at fejle testen.
                 try {
                     $propertyCount = $this->client()->timeout(5)
                         ->get("/v1/company/{$cvr}/property-portfolio", ['limit' => 0])
                         ->json('data.portfolio.total_count') ?? 0;
-                } catch (RequestException|ConnectionException) {
+                } catch (ConnectionException $e) {
+                    // rescue() rapporterede automatisk; bevar den observability.
+                    report($e);
+
                     $propertyCount = 0;
                 }
 
@@ -460,14 +465,17 @@ class RegistryApi
         $cacheKey = "metis_comparison_{$postalCode}_{$address}";
 
         return Cache::remember($cacheKey, 3600, function () use ($address, $postalCode) {
-            // Kun netværksfejl fanges — se noten ved property-portfolio ovenfor.
+            // Kun ConnectionException kan kastes her — se noten ved
+            // property-portfolio ovenfor.
             try {
                 return $this->client()
                     ->post('property/compare', [
                         'address' => $address,
                         'postal_code' => $postalCode,
                     ])->json('data');
-            } catch (RequestException|ConnectionException) {
+            } catch (ConnectionException $e) {
+                report($e);
+
                 return null;
             }
         });
