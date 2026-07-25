@@ -95,3 +95,24 @@ it('dedups a subsidiary that is also an ancestor node', function () {
 
     expect(collect($g['nodes'])->where('id', '22222222'))->toHaveCount(1);
 });
+
+it('renders a hidden third level when its parent is expanded', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'A', 'ownership_share' => 50.0, 'children' => [
+        ['cvr' => '44018942', 'name' => 'B', 'ownership_share' => 100.0, 'children' => [
+            ['cvr' => '44027992', 'name' => 'C', 'ownership_share' => 67.0, 'children' => []],
+        ]],
+    ]]];
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'expandedNodeIds' => ['sub:44018942']]);
+
+    expect(collect($g['nodes'])->pluck('id'))->toContain('44027992');
+});
+
+it('is idempotent: duplicate expand ids change nothing', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'A', 'ownership_share' => 50.0, 'children' => [
+        ['cvr' => '44018942', 'name' => 'B', 'ownership_share' => 100.0, 'children' => []],
+    ]]];
+    $once = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'expandedNodeIds' => ['sub:44507781']]);
+    $twice = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'expandedNodeIds' => ['sub:44507781', 'sub:44507781']]);
+
+    expect($twice)->toEqual($once);
+});
