@@ -1,4 +1,4 @@
-<div @if($enriching) wire:poll.3s="pollForUpdates" @endif>
+<div @if($enriching) wire:poll.3s="pollForUpdates" @endif wire:init="loadProperties">
     <flux:card>
         <div class="flex items-center justify-between mb-4">
             <flux:heading size="lg">{{ __('Company Structure') }}</flux:heading>
@@ -16,7 +16,7 @@
             @endif
         </div>
 
-        @if(count($owners) === 0 && count($subsidiaries) === 0 && count($ancestors) === 0 && ! $enriching)
+        @if(count($owners) === 0 && count($graphModel['nodes'] ?? []) <= 1 && ! $enriching)
             <p class="text-sm text-zinc-500">{{ __('No structure data found.') }}</p>
         @else
             @php
@@ -40,65 +40,36 @@
                      edges are SVG lines.
 
                      Read the SAME $graphModel the Alpine watcher watches — a single
-                     source of truth. Rebuilding it here with a fresh
-                     ownershipGraphData() call would let the graph's initial x-data
-                     diverge from the watched property if a future action ever mutates
-                     ancestors without also rebuilding $graphModel. One source, no
-                     divergence. --}}
+                     source of truth. $graphModel is rebuilt exclusively by
+                     OwnershipGraphBuilder::build() (see CompanyStructure::rebuild());
+                     no other code path may mutate it directly, so re-deriving it
+                     here from anything else would let the graph's initial x-data
+                     diverge from the watched property. One source, no divergence. --}}
                 @php
                     $graph = $this->graphModel;
                 @endphp
+                @include('metis::livewire.sections.partials.ownership-graph', ['graph' => $graph])
+
                 @if(count($graph['nodes']) > 1)
-                    <div class="org-section-label">{{ __('Ownership structure') }}</div>
-
-                    {{-- The graph lives in a wire:ignore subtree with a STABLE
-                         wire:key (query only), so Livewire never re-mounts it — the
-                         user's zoom/pan is Alpine state that must survive an
-                         enrichment poll. Instead the component watches the Livewire
-                         `graphModel` property ($wire.$watch in init()): when a poll
-                         deepens the chain, graphModel changes, and refreshModel()
-                         re-lays-out in place (deferring while the user is mid-pan).
-                         This is the canonical Livewire→Alpine bridge for "react to
-                         server state without re-mounting" — no carrier node, no
-                         dispatch-before-listener race. --}}
-                    <div
-                        wire:ignore
-                        wire:key="ownership-graph-{{ $query }}"
-                        class="mgraph"
-                        x-data="ownershipGraph(@js($graph))"
-                    >
-                        <div class="mgraph-frame"
-                             x-ref="frame"
-                             @mousedown="startPan($event)"
-                             @mousemove.window="onPan($event)"
-                             @mouseup.window="endPan()"
-                             @wheel.prevent="onWheel($event)"
-                        >
-                            <div class="mgraph-canvas" :style="`transform:${transform}; transform-origin:0 0;`">
-                                {{-- Edges = one imperatively-built, trusted SVG string from
-                                     layout() (buildEdgesSvg), injected via x-html. Safe:
-                                     coords are dagre numbers, labels are escapeXml'd in JS.
-                                     Gives non-scaling-stroke (edges visible at low zoom) +
-                                     <polyline> through all routed points (no chord lying
-                                     about ownership on diamonds).
-                                     DO NOT rewrite as <template x-for> inside <svg>: Alpine
-                                     can't scope there (SVG has no <template>) → blank graph. --}}
-                                <div class="mgraph-edges-wrap" x-html="edgesSvg"></div>
-                                @include('metis::livewire.sections.partials.graph-node')
-                            </div>
-                        </div>
-                        <div class="mgraph-controls">
-                            <button type="button" @click="zoomBy(1.2)" aria-label="{{ __('Zoom in') }}">+</button>
-                            <button type="button" @click="fit()" aria-label="{{ __('Fit') }}" x-text="zoomPct + '%'"></button>
-                            <button type="button" @click="zoomBy(0.8)" aria-label="{{ __('Zoom out') }}">−</button>
-                        </div>
-                    </div>
-
                     {{-- Always shown (not gated on an actual <100% sum): computing a
                          per-node share total across the whole chain is noise, and the
                          caveat holds for every CVR graph anyway. --}}
                     <p class="mgraph-note">
                         {{ __('Ownership shares come from CVR and may total under 100% — the register lists only owners of 5% or more, often in bands.') }}
+                    </p>
+                @endif
+
+                {{-- Property-fetch status. `loaded`/`empty` show no note — only
+                     the FAILURE/BUILDING states are visible (spec's null ≠ empty:
+                     'empty' silently means no properties, not an error). --}}
+                @if($propertiesStatus === 'building')
+                    <p class="mgraph-note" x-data x-init="setTimeout(() => $wire.loadProperties(), {{ min(3 + 3 * $propertiesAttempts, 12) * 1000 }})">
+                        {{ __('Ejendomme hentes stadig…') }}
+                    </p>
+                @elseif($propertiesStatus === 'failed')
+                    <p class="mgraph-note">
+                        {{ __('Ejendomme kunne ikke hentes.') }}
+                        <button type="button" wire:click="retryProperties" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
                 @endif
 
@@ -139,42 +110,13 @@
                     </div>
                 @endif
 
-                {{-- The searched company is already rendered as the graph's own
-                     'searched' node (sand card + thick ink border, frankston-styled)
-                     at the bottom of the ownership graph. The old org-chart's
-                     amber "Searched company" box was a duplicate AND off-brand
-                     (Tailwind amber-100/300 — an AI-tell), so it is removed. --}}
-
-                @if(count($subsidiaries) > 0)
-                    <div class="org-trunk"></div>
-                    @if(count($subsidiaries) > 1)
-                        <div class="org-bridge-row" style="--node-count: {{ count($subsidiaries) }}">
-                            <div class="org-bridge-line"></div>
-                        </div>
-                        <div class="org-stem-row">
-                            @foreach($subsidiaries as $sub)
-                                <div class="org-stem-cell"><div class="org-stem-line"></div></div>
-                            @endforeach
-                        </div>
-                    @endif
-
-                    <div class="org-row {{ count($subsidiaries) > 1 ? 'multi' : '' }}">
-                        @foreach($subsidiaries as $sub)
-                            <div class="org-cell">
-                                <div class="org-node">
-                                    <x-metis-link type="cvr" :query="$sub['cvr']" :label="$sub['name'] ?? $sub['cvr']" />
-                                    @if($sub['ownership_share'] ?? null)
-                                        <div class="org-meta">
-                                            <flux:badge size="sm" color="zinc">{{ $sub['ownership_share'] }}%</flux:badge>
-                                        </div>
-                                    @endif
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-
-                    <div class="org-section-label">{{ __('Subsidiaries') }}</div>
-                @endif
+                {{-- The searched company AND its subsidiaries are rendered as
+                     graph nodes in the shared ownership-graph partial (sand
+                     card + thick ink border for 'searched'; subsidiary cards
+                     below it) — the old CSS org-chart trunk/subsidiary rows
+                     are superseded by the graph and removed (subsidiaries are
+                     no longer public state; the builder reads them from
+                     protected $structureData). --}}
 
             </div>
         @endif
@@ -422,114 +364,5 @@
     .frankston-org-scroll .cflag { font-family: var(--fm); font-size: 10px; color: var(--ink-3); margin-top: 4px; }
     .frankston-org-scroll .searched { background: var(--bg-2); border-color: var(--ink); border-width: 1.5px; }
     .frankston-org-scroll .searched .cname { font-size: 16.5px; }
-
-    /* ── Ownership relations graph (fase 1) ───────────────────────────
-       Free-form dagre layout. Same editorial tokens as the org-chart.
-       Node kinds carry colour; NO left-stripe (banned AI-tell). */
-    .mgraph {
-        --bg:#f6efe3; --bg-2:#efe6d4; --rule-strong:#b8a884; --ink:#1a1a1a; --ink-2:#3a3a3a; --ink-3:#6b6457;
-        --reel:#0a5c4a; --legal:#3e5e63; --foreign:#7a1f1f; --person:#2b2333;
-        --fd:"Spectral",Georgia,serif; --fb:"IBM Plex Sans",sans-serif; --fm:"IBM Plex Mono",monospace;
-        position: relative;
-        /* .mgraph is a flex child of .metis-org-chart (display:flex). Its only
-           content is the absolutely-positioned graph, so without an explicit width
-           the flex item collapses to 0 (the classic flex min-width trap). A 0-wide
-           frame makes fit() bail (availW===0) → scale stays 1 → graph renders at
-           100% with the owners off-screen. width:100% + min-width:0 forces the
-           frame to fill the row so fit() can measure it. */
-        width: 100%;
-        min-width: 0;
-        border: 1px solid var(--rule-strong);
-        border-radius: 0.5rem;
-        background: var(--bg);
-        color: var(--ink);
-        font-family: var(--fb);
-    }
-    .mgraph-frame {
-        position: relative;
-        width: 100%;
-        height: 520px;
-        overflow: hidden;
-        cursor: grab;
-        border-radius: 0.5rem;
-    }
-    .mgraph-frame:active { cursor: grabbing; }
-    .mgraph-canvas { position: absolute; top: 0; left: 0; will-change: transform; }
-    /* Edges: one SVG (injected via x-html) laid over the node cards. The wrap is a
-       zero-size anchor at the canvas origin so the SVG shares the node coordinate
-       space; the SVG itself overflows freely and never intercepts pointer events. */
-    .mgraph-edges-wrap { position: absolute; top: 0; left: 0; }
-    .mgraph-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
-    /* non-scaling-stroke keeps the hairline visible even when the canvas is scaled
-       down to fit a large graph (which can drop the effective scale to ~0.2). */
-    .mgraph-edge-line { fill: none; stroke: var(--rule-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
-    .mgraph-edge-label {
-        font-family: var(--fm); font-size: 10.5px; fill: var(--ink-2);
-        text-anchor: middle; dominant-baseline: middle;
-        paint-order: stroke; stroke: var(--bg); stroke-width: 4px;
-        font-variant-numeric: tabular-nums;
-    }
-
-    .mgraph-node {
-        position: absolute; box-sizing: border-box;
-        display: flex; flex-direction: column; justify-content: center;
-        gap: 3px; padding: 8px 12px;
-        background: var(--bg); border: 1px solid var(--rule-strong);
-        overflow: hidden;
-    }
-    .mgraph-node__name {
-        font-family: var(--fd); font-weight: 600; font-size: 14px;
-        letter-spacing: -0.01em; line-height: 1.2;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .mgraph-node__meta { display: flex; align-items: baseline; gap: 6px; }
-    .mgraph-node__cvr {
-        font-family: var(--fm); font-size: 11px; color: var(--ink-3);
-        font-variant-numeric: tabular-nums;
-    }
-    /* kind accents — border + a small hue on the name, no fill stripe */
-    .mgraph-node--reel    { border-color: var(--reel); }
-    .mgraph-node--reel    .mgraph-node__name { color: var(--reel); }
-    .mgraph-node--legal   { border-color: var(--legal); }
-    /* 'other' = a capped/pruned parent surfaced as a stub ("CVR <nr>", no name).
-       Dashed + dimmed so it reads as an incomplete link, not a confirmed owner. */
-    .mgraph-node--other {
-        border-style: dashed;
-        border-color: var(--rule-strong);
-        opacity: 0.72;
-    }
-    .mgraph-node--other .mgraph-node__name { color: var(--ink-3); font-style: italic; }
-    .mgraph-node--foreign { border-color: var(--foreign); }
-    .mgraph-node--foreign .mgraph-node__name { color: var(--foreign); }
-    .mgraph-node--searched { background: var(--bg-2); border-color: var(--ink); border-width: 1.5px; }
-    .mgraph-node--person {
-        background: var(--person); border-color: var(--person);
-    }
-    .mgraph-node--person .mgraph-node__name { color: #f6efe3; }
-    .mgraph-node--person .mgraph-node__cvr  { color: #cfc7bd; }
-
-    .mgraph-controls {
-        position: absolute; right: 12px; bottom: 12px;
-        display: flex; flex-direction: column; gap: 4px;
-    }
-    .mgraph-controls button {
-        min-width: 34px; height: 30px; padding: 0 6px;
-        background: var(--bg-2); border: 1px solid var(--rule-strong);
-        font-family: var(--fm); font-size: 12px; color: var(--ink);
-        cursor: pointer; line-height: 1;
-    }
-    .mgraph-controls button:hover { background: var(--bg); }
-
-    .mgraph-note {
-        margin-top: 8px;
-        font-family: var(--fm);
-        font-size: 11px;
-        line-height: 1.4;
-        color: var(--ink-3);
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-        .mgraph-canvas { will-change: auto; }
-    }
 </style>
 </div>

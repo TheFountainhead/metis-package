@@ -235,19 +235,92 @@ class RegistryApi
 
     public function fetchCompanyInfo(string $cvr): ?array
     {
+        $cacheKey = "metis.company-info.{$cvr}";
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
         try {
             $response = $this->client()
                 ->get("/v1/cvr/company/{$cvr}");
 
-            return $response->json('data.company');
+            $company = $response->json('data.company');
         } catch (\Throwable $e) {
             return null;
         }
+
+        // Kun cache et rigtigt svar — en fejl eller manglende data må ikke
+        // skygge for friske data i 24t (samme mønster som property-portfolio).
+        if ($company) {
+            Cache::put($cacheKey, $company, 86400);
+        }
+
+        return $company;
     }
 
     public function fetchCompanyStructure(string $cvr): array
     {
         return $this->post('/v1/cvr/company-structure', ['cvr' => $cvr]) ?? [];
+    }
+
+    /**
+     * Cachet variant af fetchCompanyStructure() — bruges KUN når enrichment
+     * ikke kører (se komponentens $enriching-flag). Mens enrichment kører
+     * skal den ucachede fetchCompanyStructure() bruges, ellers fryser
+     * datter-væksten i 5 minutter.
+     */
+    public function fetchCompanyStructureCached(string $cvr): array
+    {
+        $cacheKey = "metis.company-structure.{$cvr}";
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
+        $structure = $this->fetchCompanyStructure($cvr);
+
+        // Cache kun et ikke-tomt svar — se noten ved fetchCompanyPropertyPortfolio.
+        if (! empty($structure)) {
+            Cache::put($cacheKey, $structure, 300);
+        }
+
+        return $structure;
+    }
+
+    /**
+     * Batch-opslag af ejendomme via matrikel-id. Chunker i grupper à 200
+     * (backend-grænse) og fladgør 'data'-listerne fra hver chunk til én liste.
+     *
+     * Alt-eller-intet: post()-hjælperen returnerer ['error' => ..., 'status' => ...]
+     * ved HTTP-fejl (aldrig null), så et fejlende chunk kan ikke bare
+     * flatMap'es ind — det ville blande fejl-strenge ind mellem gyldige
+     * properties. Fejler ét chunk, returnér null for hele kaldet: Task 7's
+     * fejl-flow behandler null som "berigelse fejlede", mens et stille
+     * delvist resultat ville give ejendoms-noder uden anvendelse uden
+     * forklaring.
+     */
+    public function fetchPropertiesBatch(array $matrikelIds): ?array
+    {
+        if (empty($matrikelIds)) {
+            return [];
+        }
+
+        $properties = [];
+
+        foreach (collect($matrikelIds)->chunk(200) as $chunk) {
+            $response = $this->post('/v1/properties/batch', [
+                'matrikel_ids' => $chunk->values()->all(),
+            ]);
+
+            if (! is_array($response) || isset($response['error'])) {
+                return null;
+            }
+
+            array_push($properties, ...$response);
+        }
+
+        return $properties;
     }
 
     /**

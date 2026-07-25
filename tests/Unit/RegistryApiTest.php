@@ -2,6 +2,7 @@
 
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use TheFountainhead\Metis\Services\RegistryApi;
 
@@ -294,4 +295,114 @@ it('parses Danish address correctly', function () {
     expect($result['street'])->toBe('Bredgade');
     expect($result['number'])->toBe('40');
     expect($result['zip'])->toBe('1260');
+});
+
+it('chunker matrikel_ids i grupper à 200 og fladgør data-listerne', function () {
+    // 250 ids skal splittes i to POST-kald (200 + 50) — assert på antal kald
+    // og payload-størrelse pr. kald, ikke kun det samlede flade resultat.
+    $ids = array_map(fn ($i) => "matrikel-{$i}", range(1, 250));
+
+    Http::fake([
+        '*/v1/properties/batch' => Http::sequence()
+            ->push(['data' => array_fill(0, 200, ['matrikel_id' => 'x', 'bbr' => ['buildings' => []]])])
+            ->push(['data' => array_fill(0, 50, ['matrikel_id' => 'y', 'bbr' => ['buildings' => []]])]),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchPropertiesBatch($ids);
+
+    Http::assertSentCount(2);
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), '/v1/properties/batch')
+            && count($request->data()['matrikel_ids']) <= 200;
+    });
+    expect($result)->toHaveCount(250);
+});
+
+it('returnerer tomt array uden kald ved tom input til fetchPropertiesBatch', function () {
+    Http::fake();
+
+    $api = new RegistryApi;
+    $result = $api->fetchPropertiesBatch([]);
+
+    expect($result)->toBe([]);
+    Http::assertNothingSent();
+});
+
+it('returnerer null (alt-eller-intet) når ét chunk fejler i fetchPropertiesBatch', function () {
+    // 250 ids → 2 chunks. Chunk 1 (200 ids) svarer OK, chunk 2 (50 ids) fejler
+    // med HTTP 500. post()-hjælperen fanger RequestException og returnerer
+    // ['error' => ..., 'status' => 500] — den værdi må ALDRIG flatMap'es ind
+    // blandt gyldige properties. Hele metoden skal degradere til null, uden
+    // at kaste en exception.
+    $ids = array_map(fn ($i) => "matrikel-{$i}", range(1, 250));
+
+    Http::fake([
+        '*/v1/properties/batch' => Http::sequence()
+            ->push(['data' => array_fill(0, 200, ['matrikel_id' => 'x', 'bbr' => ['buildings' => []]])])
+            ->push('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchPropertiesBatch($ids);
+
+    expect($result)->toBeNull();
+});
+
+it('cacher company-structure men kun ved ikke-tomt svar', function () {
+    Http::fake([
+        '*/v1/cvr/company-structure' => Http::sequence()
+            ->push(['data' => ['root' => ['cvr' => '12345678', 'name' => 'Frankston ApS']]])
+            ->push(['data' => ['root' => ['cvr' => '12345678', 'name' => 'STALE — bør aldrig ses']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $first = $api->fetchCompanyStructureCached('12345678');
+    $second = $api->fetchCompanyStructureCached('12345678');
+
+    Http::assertSentCount(1);
+    expect($first)->toBe($second)
+        ->and($second['root']['name'])->toBe('Frankston ApS');
+});
+
+it('cacher IKKE et tomt svar fra company-structure', function () {
+    Http::fake([
+        '*/v1/cvr/company-structure' => Http::response(['data' => []]),
+    ]);
+
+    $api = new RegistryApi;
+    $api->fetchCompanyStructureCached('12345678');
+    $api->fetchCompanyStructureCached('12345678');
+
+    // Tomt svar må ikke cache — begge kald skal ramme API'et.
+    Http::assertSentCount(2);
+});
+
+it('cacher company-info ved andet kald', function () {
+    Http::fake([
+        '*/v1/cvr/company/*' => Http::sequence()
+            ->push(['data' => ['company' => ['cvr' => '12345678', 'name' => 'Frankston ApS']]])
+            ->push(['data' => ['company' => ['cvr' => '12345678', 'name' => 'STALE — bør aldrig ses']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $first = $api->fetchCompanyInfo('12345678');
+    $second = $api->fetchCompanyInfo('12345678');
+
+    Http::assertSentCount(1);
+    expect($first)->toBe($second)
+        ->and($second['name'])->toBe('Frankston ApS');
+});
+
+it('cacher IKKE et null-svar fra company-info', function () {
+    Http::fake([
+        '*/v1/cvr/company/*' => Http::response('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $first = $api->fetchCompanyInfo('12345678');
+    $second = $api->fetchCompanyInfo('12345678');
+
+    expect($first)->toBeNull()->and($second)->toBeNull();
+    Http::assertSentCount(2);
 });
