@@ -440,6 +440,14 @@
         --reel:#0a5c4a; --legal:#3e5e63; --foreign:#7a1f1f; --person:#2b2333;
         --fd:"Spectral",Georgia,serif; --fb:"IBM Plex Sans",sans-serif; --fm:"IBM Plex Mono",monospace;
         position: relative;
+        /* .mgraph is a flex child of .metis-org-chart (display:flex). Its only
+           content is the absolutely-positioned graph, so without an explicit width
+           the flex item collapses to 0 (the classic flex min-width trap). A 0-wide
+           frame makes fit() bail (availW===0) → scale stays 1 → graph renders at
+           100% with the owners off-screen. width:100% + min-width:0 forces the
+           frame to fill the row so fit() can measure it. */
+        width: 100%;
+        min-width: 0;
         border: 1px solid var(--rule-strong);
         border-radius: 0.5rem;
         background: var(--bg);
