@@ -75,14 +75,15 @@
                              @wheel.prevent="onWheel($event)"
                         >
                             <div class="mgraph-canvas" :style="`transform:${transform}; transform-origin:0 0;`">
-                                <svg class="mgraph-edges" :width="graphW" :height="graphH">
-                                    <template x-for="(edge, i) in edges" :key="i">
-                                        <g>
-                                            <line :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2" class="mgraph-edge-line" />
-                                            <text :x="edge.mx" :y="edge.my" class="mgraph-edge-label" x-show="edge.label" x-text="edge.label"></text>
-                                        </g>
-                                    </template>
-                                </svg>
+                                {{-- Edges = one imperatively-built, trusted SVG string from
+                                     layout() (buildEdgesSvg), injected via x-html. Safe:
+                                     coords are dagre numbers, labels are escapeXml'd in JS.
+                                     Gives non-scaling-stroke (edges visible at low zoom) +
+                                     <polyline> through all routed points (no chord lying
+                                     about ownership on diamonds).
+                                     DO NOT rewrite as <template x-for> inside <svg>: Alpine
+                                     can't scope there (SVG has no <template>) → blank graph. --}}
+                                <div class="mgraph-edges-wrap" x-html="edgesSvg"></div>
                                 @include('metis::livewire.sections.partials.graph-node')
                             </div>
                         </div>
@@ -455,8 +456,14 @@
     }
     .mgraph-frame:active { cursor: grabbing; }
     .mgraph-canvas { position: absolute; top: 0; left: 0; will-change: transform; }
+    /* Edges: one SVG (injected via x-html) laid over the node cards. The wrap is a
+       zero-size anchor at the canvas origin so the SVG shares the node coordinate
+       space; the SVG itself overflows freely and never intercepts pointer events. */
+    .mgraph-edges-wrap { position: absolute; top: 0; left: 0; }
     .mgraph-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
-    .mgraph-edge-line { stroke: var(--rule-strong); stroke-width: 1; }
+    /* non-scaling-stroke keeps the hairline visible even when the canvas is scaled
+       down to fit a large graph (which can drop the effective scale to ~0.2). */
+    .mgraph-edge-line { fill: none; stroke: var(--rule-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
     .mgraph-edge-label {
         font-family: var(--fm); font-size: 10.5px; fill: var(--ink-2);
         text-anchor: middle; dominant-baseline: middle;
