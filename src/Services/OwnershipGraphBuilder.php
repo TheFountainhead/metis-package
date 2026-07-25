@@ -92,10 +92,18 @@ class OwnershipGraphBuilder
      * Remove node at $index, drop its edges, and fold it onto its parent's
      * expand affordance (the `$field` key: 'relations' or 'properties').
      * The parent is whichever node the removed node's inbound edge came from.
+     *
+     * A removed subsidiary can itself have hidden children behind the depth
+     * cap (its own expand.relations) — those must not vanish silently, so
+     * they're added to the parent's count alongside the node itself.
      */
     protected function removeNode(array &$nodes, array &$edges, int $index, string $field): void
     {
         $removedId = $nodes[$index]['id'];
+        $nodeCountToAdd = 1;
+        if ($field === 'relations') {
+            $nodeCountToAdd += $nodes[$index]['expand']['relations'] ?? 0;
+        }
         $parentId = null;
 
         $edges = array_values(array_filter($edges, function ($e) use ($removedId, &$parentId) {
@@ -118,7 +126,7 @@ class OwnershipGraphBuilder
                     'relations' => $node['expand']['relations'] ?? 0,
                     'properties' => $node['expand']['properties'] ?? 0,
                 ];
-                $node['expand'][$field] = $node['expand'][$field] + 1;
+                $node['expand'][$field] += $nodeCountToAdd;
                 break;
             }
         }

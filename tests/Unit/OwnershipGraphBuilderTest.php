@@ -252,3 +252,60 @@ it('truncates deepest subsidiary layer when cap cannot be met by cutting propert
         expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
     }
 });
+
+it('rolls up a removed subsidiary\'s own hidden children onto the parent, not just +1', function () {
+    // One depth-1 root with one depth-2 child that itself has 5 depth-3
+    // children hidden behind the depth cap (subsidiary_depth = 2, so the
+    // depth-2 node carries expand.relations = 5 for them). A tight total_nodes
+    // cap forces the deepest RENDERED layer (the depth-2 node) to be cut.
+    // The root must then absorb 1 (the depth-2 node itself) + 5 (its
+    // already-hidden grandchildren) = 6, not just 1.
+    $grandchildren = collect(range(1, 5))->map(fn ($i) => ['cvr' => (string) (80001000 + $i), 'name' => 'GC'.$i, 'ownership_share' => 1.0, 'children' => []])->all();
+    $subs = [[
+        'cvr' => '80000001', 'name' => 'Root', 'ownership_share' => 100.0,
+        'children' => [[
+            'cvr' => '80000002', 'name' => 'Mid', 'ownership_share' => 100.0,
+            'children' => $grandchildren,
+        ]],
+    ]];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'caps' => ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 2],
+    ]);
+
+    // Only the searched node + the depth-1 root should remain; the depth-2
+    // node was the deepest rendered layer and got cut.
+    expect(collect($g['nodes'])->pluck('id'))->not->toContain('80000002')
+        ->and(collect($g['nodes'])->firstWhere('id', '80000001')['expand']['relations'])->toBe(6);
+});
+
+it('removes edges where the truncated node is the FROM endpoint, not only the TO endpoint', function () {
+    // A depth-2 node has an outbound edge to a depth-3 child that survived
+    // because it was expanded (props:/sub:-style), so when the depth-2 node
+    // itself gets cut by the cap, its outbound edge (from = removed node)
+    // must also disappear — not just its inbound edge (to = removed node).
+    $subs = [[
+        'cvr' => '81000001', 'name' => 'Root', 'ownership_share' => 100.0,
+        'children' => [[
+            'cvr' => '81000002', 'name' => 'Mid', 'ownership_share' => 100.0,
+            'children' => [[
+                'cvr' => '81000003', 'name' => 'Leaf', 'ownership_share' => 100.0, 'children' => [],
+            ]],
+        ]],
+    ]];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'expandedNodeIds' => ['sub:81000002'], // renders the depth-3 leaf too
+        'caps' => ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 2],
+    ]);
+
+    $nodeIds = collect($g['nodes'])->pluck('id')->all();
+    expect($nodeIds)->not->toContain('81000002')
+        ->and($nodeIds)->not->toContain('81000003') // deepest layer cut too, or orphaned otherwise
+        ->and(collect($g['edges'])->where('from', '81000002'))->toBeEmpty()
+        ->and(collect($g['edges'])->where('to', '81000002'))->toBeEmpty();
+
+    foreach ($g['edges'] as $edge) {
+        expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
+    }
+});
