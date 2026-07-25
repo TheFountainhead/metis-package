@@ -116,3 +116,110 @@ it('is idempotent: duplicate expand ids change nothing', function () {
 
     expect($twice)->toEqual($once);
 });
+
+function fdlProperty(array $overrides = []): array
+{
+    return array_merge([
+        'owner_cvr' => '44507781', 'matrikel_id' => '2573669', 'is_matriculated' => true,
+        'address' => 'Kongshøjvej 2', 'city' => 'Store Heddinge', 'valuation' => 534000, 'depth' => 1,
+    ], $overrides);
+}
+
+it('hangs property nodes on their owning company with bfe: ids', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => []]];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => [fdlProperty()], 'usage' => ['2573669' => 'Fritliggende enfamiliehus']],
+    ]);
+
+    $prop = collect($g['nodes'])->firstWhere('id', 'bfe:2573669');
+    expect($prop)->not->toBeNull()
+        ->and($prop['kind'])->toBe('property')
+        ->and($prop['label'])->toBe('Kongshøjvej 2')
+        ->and($prop['meta'])->toMatchArray(['bfe' => '2573669', 'usage' => 'Fritliggende enfamiliehus'])
+        ->and(collect($g['edges'])->firstWhere('to', 'bfe:2573669')['from'])->toBe('44507781');
+});
+
+it('drops properties whose owner is not in the graph', function () {
+    $g = buildGraph(['properties' => ['list' => [fdlProperty(['owner_cvr' => '99999999'])], 'usage' => []]]);
+
+    expect(collect($g['nodes'])->pluck('id'))->not->toContain('bfe:2573669');
+});
+
+it('caps properties per company at 6 and signals the rest via expand.properties', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]];
+    $props = collect(range(1, 9))->map(fn ($i) => fdlProperty(['matrikel_id' => (string) (1000000 + $i), 'address' => 'Vej '.$i]))->all();
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'properties' => ['list' => $props, 'usage' => []]]);
+
+    expect(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(6)
+        ->and(collect($g['nodes'])->firstWhere('id', '44507781')['expand']['properties'])->toBe(3);
+});
+
+it('lifts the property cap for a props:-expanded company', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]];
+    $props = collect(range(1, 9))->map(fn ($i) => fdlProperty(['matrikel_id' => (string) (1000000 + $i)]))->all();
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => $props, 'usage' => []],
+        'expandedNodeIds' => ['props:44507781'],
+    ]);
+
+    expect(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(9);
+});
+
+it('dedups a property owned by two graph companies into one node with two edges', function () {
+    $subs = [
+        ['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []],
+        ['cvr' => '45170209', 'name' => 'I', 'ownership_share' => 100.0, 'children' => []],
+    ];
+    $props = [fdlProperty(), fdlProperty(['owner_cvr' => '45170209'])];
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'properties' => ['list' => $props, 'usage' => []]]);
+
+    expect(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(1)
+        ->and(collect($g['edges'])->where('to', 'bfe:2573669'))->toHaveCount(2);
+});
+
+it('falls back to BFE-number label when address is missing and omits missing usage', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => [fdlProperty(['address' => null])], 'usage' => []],
+    ]);
+
+    $prop = collect($g['nodes'])->firstWhere('kind', 'property');
+    expect($prop['label'])->toBe('BFE 2573669')->and($prop['meta']['usage'])->toBeNull();
+});
+
+it('hangs property nodes on the searched company when owner_cvr matches query', function () {
+    $query = '38653806';
+    $g = buildGraph([
+        'query' => $query,
+        'properties' => ['list' => [fdlProperty(['owner_cvr' => $query])], 'usage' => ['2573669' => 'Bolig']],
+    ]);
+
+    $prop = collect($g['nodes'])->firstWhere('id', 'bfe:2573669');
+    expect($prop)->not->toBeNull()
+        ->and(collect($g['edges'])->firstWhere('to', 'bfe:2573669')['from'])->toBe('searched');
+});
+
+it('preserves existing relations count when adding hidden properties to a node', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => [
+        ['cvr' => '12345678', 'name' => 'Child', 'ownership_share' => 100.0, 'children' => [
+            ['cvr' => '87654321', 'name' => 'Grandchild', 'ownership_share' => 100.0, 'children' => []],
+        ]],
+    ]]];
+    // Create 9 properties owned by parent and 9 owned by child
+    $parentProps = collect(range(1, 9))->map(fn ($i) => fdlProperty(['matrikel_id' => (string) (1000000 + $i)]))->all();
+    $childProps = collect(range(1, 9))->map(fn ($i) => fdlProperty(['owner_cvr' => '12345678', 'matrikel_id' => (string) (2000000 + $i)]))->all();
+    $allProps = array_merge($parentProps, $childProps);
+
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => $allProps, 'usage' => []],
+    ]);
+
+    $childNode = collect($g['nodes'])->firstWhere('id', '12345678');
+    expect($childNode['expand'])->toHaveKeys(['relations', 'properties'])
+        ->and($childNode['expand']['relations'])->toBe(1)
+        ->and($childNode['expand']['properties'])->toBe(3);
+});

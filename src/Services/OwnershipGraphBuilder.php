@@ -36,6 +36,7 @@ class OwnershipGraphBuilder
 
         $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
         $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
+        $this->addProperties($properties['list'] ?? [], $properties['usage'] ?? [], $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
 
         return ['nodes' => $nodes, 'edges' => $edges];
     }
@@ -111,6 +112,58 @@ class OwnershipGraphBuilder
                 }
                 unset($node);
             }
+        }
+    }
+
+    protected function addProperties(array $props, array $usage, array $expandedNodeIds, int $capPerCompany, string $query, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
+    {
+        $nodeIds = array_flip(array_column($nodes, 'id'));
+        $perOwner = [];
+
+        foreach ($props as $p) {
+            $owner = $p['owner_cvr'] ?? null;
+            $mid = (string) ($p['matrikel_id'] ?? '');
+            // Owner must already be a node — properties of pruned companies appear
+            // only once their owner is expanded into the graph (spec §Lazy-flow).
+            $ownerId = $owner === null ? null : (isset($nodeIds[$owner]) ? $owner : ($owner === $query ? 'searched' : null));
+            if ($mid === '' || $ownerId === null) {
+                continue;
+            }
+
+            $perOwner[$ownerId] ??= 0;
+            $capLifted = in_array('props:'.$ownerId, $expandedNodeIds, true)
+                || ($ownerId === 'searched' && in_array('props:'.$query, $expandedNodeIds, true));
+            if (! $capLifted && $perOwner[$ownerId] >= $capPerCompany) {
+                // Count hidden properties on the owner's expand affordance.
+                foreach ($nodes as &$node) {
+                    if ($node['id'] === $ownerId) {
+                        $node['expand'] = ['relations' => $node['expand']['relations'] ?? 0, 'properties' => ($node['expand']['properties'] ?? 0) + 1];
+                        break;
+                    }
+                }
+                unset($node);
+
+                continue;
+            }
+
+            $id = 'bfe:'.$mid;
+            if (! isset($seen[$id])) {
+                $seen[$id] = true;
+                $isMatriculated = $p['is_matriculated'] ?? false;
+                $nodes[] = [
+                    'id' => $id,
+                    'label' => ($p['address'] ?? null) ?: 'BFE '.$mid,
+                    'cvr' => null, 'kind' => 'property', 'share' => null,
+                    'meta' => ['bfe' => $isMatriculated ? $mid : null, 'usage' => $usage[$mid] ?? null],
+                    'expand' => null,
+                ];
+                $nodeIds[$id] = true;
+            }
+            if (! isset($edgeSeen[$ownerId.'|'.$id])) {
+                $edgeSeen[$ownerId.'|'.$id] = true;
+                $edges[] = ['from' => $ownerId, 'to' => $id, 'label' => ''];
+            }
+            $perOwner[$ownerId]++;
         }
     }
 
