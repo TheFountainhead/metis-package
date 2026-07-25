@@ -9,7 +9,9 @@ use TheFountainhead\Metis\Livewire\DebtSearch;
 // Laravel vælger den FØRSTE matchende fake (PendingRequest ->first()), så
 // en søge-fake listet før export-faken ville stjæle export-kaldet.
 // Søgning er altid GET med query-filtre, export altid POST uden query —
-// '?*' skiller dem derfor præcist, uanset rækkefølge.
+// '?*' skiller dem derfor præcist, uanset rækkefølge. Bemærk at Str::is
+// kun behandler '*' som wildcard; '?' er et literalt tegn og matcher
+// netop query-separatoren.
 
 function fakeDebtSearchResponse(array $overrides = []): array
 {
