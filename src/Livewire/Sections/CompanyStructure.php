@@ -186,7 +186,11 @@ class CompanyStructure extends MetisSection
     {
         $this->rehydrateBeforeRebuild();
 
-        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query), null);
+        // limit: 500 matches CompanyOverview.php's call — same cache key, so
+        // large portfolios reuse its warm cache instead of paging in the API's
+        // default 25 (which would make the node-cap/expand counts a lie on
+        // big koncerner: e.g. JEUDAN has 649 properties).
+        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query, limit: 500), null);
         $portfolio = $result['portfolio'] ?? null;
 
         if ($portfolio === null) {
@@ -296,7 +300,9 @@ class CompanyStructure extends MetisSection
      */
     protected function refreshPropertyData(): void
     {
-        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query), null);
+        // limit: 500 — same reasoning as loadProperties() above; also keeps
+        // the cache key identical so this re-fetch stays a cache hit.
+        $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($this->query, limit: 500), null);
         $list = $result['portfolio']['properties'] ?? [];
 
         if ($list === []) {

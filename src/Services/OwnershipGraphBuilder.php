@@ -96,6 +96,13 @@ class OwnershipGraphBuilder
      * A removed subsidiary can itself have hidden children behind the depth
      * cap (its own expand.relations) — those must not vanish silently, so
      * they're added to the parent's count alongside the node itself.
+     *
+     * The parent's expand array is also flagged `capped: true`. This count
+     * was created by TOTAL-cap truncation, not depth-cap truncation, so
+     * expandNode() cannot resolve it (expandedNodeIds only affects the
+     * depth-recursion in addSubsidiaries/addProperties) — without the flag
+     * the Blade would render an expand button that busies to '…' forever on
+     * click, since the rebuild it triggers can never satisfy the request.
      */
     protected function removeNode(array &$nodes, array &$edges, int $index, string $field): void
     {
@@ -125,6 +132,7 @@ class OwnershipGraphBuilder
                 $node['expand'] = [
                     'relations' => $node['expand']['relations'] ?? 0,
                     'properties' => $node['expand']['properties'] ?? 0,
+                    'capped' => true,
                 ];
                 $node['expand'][$field] += $nodeCountToAdd;
                 break;

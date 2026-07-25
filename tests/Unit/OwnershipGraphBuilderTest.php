@@ -253,6 +253,40 @@ it('truncates deepest subsidiary layer when cap cannot be met by cutting propert
     }
 });
 
+it('flags the parents expand.capped when TOTAL-cap truncation removes a node (F3)', function () {
+    // 130 FLAT children of 'searched' (depth 1, so no depth-cap ever touches
+    // them) forces removeNode() via the TOTAL-node cap alone. expandNode()
+    // cannot resolve this hidden count (it only lifts the depth-recursion
+    // cap) so the parent's expand array must carry capped: true, telling the
+    // Blade to render static text instead of a dead-end expand button.
+    $subs = collect(range(1, 130))->map(fn ($i) => ['cvr' => (string) (90000000 + $i), 'name' => 'S'.$i, 'ownership_share' => 1.0, 'children' => []])->all();
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'properties' => ['list' => [], 'usage' => []]]);
+
+    $searched = collect($g['nodes'])->firstWhere('id', 'searched');
+    expect($searched['expand']['relations'])->toBeGreaterThan(0)
+        ->and($searched['expand']['capped'])->toBeTrue();
+});
+
+it('does not set expand.capped on a node whose hidden count comes only from the depth cap', function () {
+    // Regression guard: depth-cap signalling (addSubsidiaries, well under the
+    // total_nodes cap) must NOT carry capped — those ARE resolvable via
+    // expandNode(), so the Blade must still render a real button for them.
+    $subs = [[
+        'cvr' => '44507781', 'name' => 'A', 'ownership_share' => 50.0,
+        'children' => [[
+            'cvr' => '44018942', 'name' => 'B', 'ownership_share' => 100.0,
+            'children' => [[
+                'cvr' => '44027992', 'name' => 'C', 'ownership_share' => 67.0, 'children' => [],
+            ]],
+        ]],
+    ]];
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs]]);
+
+    $trygve1 = collect($g['nodes'])->firstWhere('id', '44018942');
+    expect($trygve1['expand']['relations'])->toBe(1)
+        ->and($trygve1['expand'])->not->toHaveKey('capped');
+});
+
 it('rolls up a removed subsidiary\'s own hidden children onto the parent, not just +1', function () {
     // One depth-1 root with one depth-2 child that itself has 5 depth-3
     // children hidden behind the depth cap (subsidiary_depth = 2, so the

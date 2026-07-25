@@ -851,6 +851,50 @@ it('flips to failed after MAX_PROPERTIES_ATTEMPTS building attempts — never po
         ->and($c->get('propertiesAttempts'))->toBe(8);
 });
 
+// ---- Final review fase 2a.1: F1 — portfolio fetch must request limit 500 ----
+
+it('requests the property portfolio with limit 500, matching CompanyOverviews warm cache (F1)', function () {
+    // Default API limit is 25 — without an explicit limit, large koncerner
+    // (e.g. JEUDAN's 649 properties) would silently page in only the first
+    // 25, making the node-cap/expand counts a lie. limit: 500 also matches
+    // CompanyOverview.php:40's call, so this hits the same cache key.
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'present');
+
+    Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/property-portfolio')
+        && $request['limit'] === 500);
+});
+
+it('rehydrated refreshPropertyData also requests limit 500 (F1)', function () {
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'present');
+
+    $first = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+    expect($first->get('propertiesStatus'))->toBe('loaded');
+
+    // fetchCompanyPropertyPortfolio() caches on {cvr}:{limit}:{offset} (Task
+    // 6). Force a cache miss so the second component's rehydration path
+    // actually re-fetches, instead of the test passing vacuously off the
+    // first call's cached response.
+    \Illuminate\Support\Facades\Cache::flush();
+
+    // Fresh request: protected $propertyData is lost to hydration, forcing
+    // rehydrateBeforeRebuild() -> refreshPropertyData() to re-fetch.
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'present');
+
+    Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->set('propertiesStatus', 'loaded')
+        ->call('expandNode', 'sub:44018942');
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/property-portfolio')
+        && $request['limit'] === 500);
+});
+
 it('retryProperties resets propertiesAttempts so the cap does not carry over', function () {
     fakeRegistryStructure();
 
