@@ -19,20 +19,27 @@
         <div class="mgraph-node__meta" x-show="node.cvr" x-cloak>
             <span class="mgraph-node__cvr" x-text="node.cvr"></span>
         </div>
-        {{-- Property meta rows: BFE + anvendelse (rows omitted when null) --}}
+        {{-- Property meta rows: BFE + anvendelse (rows omitted when null).
+             Optional chaining + ?? fallback on the x-text expressions too, not
+             just the x-show guards: Alpine evaluates x-text on every node
+             regardless of x-show (display:none doesn't skip evaluation), so
+             person/company nodes (meta=undefined) would otherwise throw
+             "Cannot read properties of undefined (reading 'bfe'/'usage')". --}}
         <div class="mgraph-node__meta" x-show="node.kind === 'property'" x-cloak>
-            <span class="mgraph-node__cvr" x-show="node.meta?.bfe" x-text="'BFE ' + node.meta.bfe"></span>
-            <span class="mgraph-node__usage" x-show="node.meta?.usage" x-text="node.meta.usage"></span>
+            <span class="mgraph-node__cvr" x-show="node.meta?.bfe" x-text="'BFE ' + (node.meta?.bfe ?? '')"></span>
+            <span class="mgraph-node__usage" x-show="node.meta?.usage" x-text="node.meta?.usage ?? ''"></span>
         </div>
         {{-- Expand affordances. @mousedown.stop so the frame's pan never starts;
-             _expanding gives a per-node loading state until the watcher re-renders. --}}
+             _expanding gives a per-node loading state until the watcher re-renders.
+             Same evaluate-regardless-of-x-show reasoning as above: most nodes have
+             expand=null, so the x-text expressions need their own ?? fallback. --}}
         <div class="mgraph-node__expand" x-show="node.expand && (node.expand.relations || node.expand.properties)" x-cloak>
             <button type="button" x-show="node.expand?.relations" x-data="{busy:false}"
                     @mousedown.stop @click.stop="busy = true; $wire.expandNode('sub:' + node.cvr)"
-                    :disabled="busy" x-text="busy ? '…' : ('↓ ' + node.expand.relations + ' relationer')"></button>
+                    :disabled="busy" x-text="busy ? '…' : ('↓ ' + (node.expand?.relations ?? 0) + ' relationer')"></button>
             <button type="button" x-show="node.expand?.properties" x-data="{busy:false}"
                     @mousedown.stop @click.stop="busy = true; $wire.expandNode('props:' + node.cvr)"
-                    :disabled="busy" x-text="busy ? '…' : ('+ ' + node.expand.properties + ' ejendomme')"></button>
+                    :disabled="busy" x-text="busy ? '…' : ('+ ' + (node.expand?.properties ?? 0) + ' ejendomme')"></button>
         </div>
     </div>
 </template>
