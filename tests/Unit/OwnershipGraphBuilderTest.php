@@ -11,9 +11,10 @@ function buildGraph(array $overrides = []): array
         companyName: $overrides['companyName'] ?? 'FDL-Invest ApS',
         structure: $overrides['structure'] ?? ['ancestors' => [], 'subsidiaries' => []],
         properties: $overrides['properties'] ?? ['list' => [], 'usage' => []],
-        enrichment: [],
+        enrichment: $overrides['enrichment'] ?? [],
         expandedNodeIds: $overrides['expandedNodeIds'] ?? [],
         caps: $overrides['caps'] ?? ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
+        now: $overrides['now'] ?? null,
     );
 }
 
@@ -456,4 +457,63 @@ it('does not crash when a removed subsidiary with its own expand.properties has 
     foreach ($g['edges'] as $edge) {
         expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
     }
+});
+
+it('derives value aggregate per owner from the property list with coverage', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]];
+    $props = [
+        fdlProperty(['matrikel_id' => '1000001', 'valuation' => 500000]),
+        fdlProperty(['matrikel_id' => '1000002', 'valuation' => null]),
+    ];
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'properties' => ['list' => $props, 'usage' => []]]);
+
+    expect(collect($g['nodes'])->firstWhere('id', '44507781')['agg'])
+        ->toMatchArray(['count' => 2, 'value' => 500000, 'valued' => 1]);
+});
+
+it('computes signals in the builder with a deterministic now', function () {
+    $enrichment = ['companies' => ['44507781' => ['equity' => -12000.0, 'fiscal_year' => '2025', 'founded_date' => '2026-03-01']], 'properties' => []];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]]],
+        'enrichment' => $enrichment,
+        'now' => \Carbon\CarbonImmutable::parse('2026-07-26'),
+    ]);
+
+    expect(collect($g['nodes'])->firstWhere('id', '44507781')['signals'])
+        ->toContain('negative_equity')->toContain('newly_founded');
+});
+
+it('marks enriched companies without financials explicitly and leaves unenriched nodes without signals key', function () {
+    $enrichment = ['companies' => ['44507781' => ['founded_date' => '2010-01-01']], 'properties' => []];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => [
+            ['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []],
+            ['cvr' => '45170209', 'name' => 'I', 'ownership_share' => 100.0, 'children' => []],
+        ]],
+        'enrichment' => $enrichment,
+        'now' => \Carbon\CarbonImmutable::parse('2026-07-26'),
+    ]);
+
+    expect(collect($g['nodes'])->firstWhere('id', '44507781')['signals'])->toContain('no_financials')
+        ->and(collect($g['nodes'])->firstWhere('id', '45170209'))->not->toHaveKey('signals');
+});
+
+it('attaches property card data from the enrichment property map', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => [fdlProperty(['latitude' => 55.25, 'longitude' => 12.17])], 'usage' => []],
+        'enrichment' => ['companies' => [], 'properties' => ['2573669' => ['usage' => 'Fritliggende enfamiliehus', 'latest_sale_price' => 1200000, 'streetview_url' => 'https://example/sv']]],
+    ]);
+
+    $card = collect($g['nodes'])->firstWhere('id', 'bfe:2573669')['card'];
+    expect($card)->toMatchArray(['usage' => 'Fritliggende enfamiliehus', 'latest_sale_price' => 1200000, 'streetview_url' => 'https://example/sv', 'lat' => 55.25, 'lng' => 12.17])
+        ->and($card)->not->toHaveKey('valuation');   // null-felter udeladt
+});
+
+it('remains deterministic and idempotent with enrichment input', function () {
+    $args = ['structure' => ['ancestors' => [], 'subsidiaries' => [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]]],
+        'enrichment' => ['companies' => ['44507781' => ['equity' => 5.0]], 'properties' => []],
+        'now' => \Carbon\CarbonImmutable::parse('2026-07-26')];
+    expect(buildGraph($args))->toEqual(buildGraph($args));
 });

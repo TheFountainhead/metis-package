@@ -2,6 +2,8 @@
 
 namespace TheFountainhead\Metis\Services;
 
+use Carbon\CarbonImmutable;
+
 /**
  * Builds the flat {nodes, edges} model for the ownership graph.
  *
@@ -11,8 +13,10 @@ namespace TheFountainhead\Metis\Services;
  * model directly, because pollForUpdates() rebuilds from source and would
  * silently wipe any appended state (review finding, spec v3).
  *
- * $enrichment is RESERVED for fase 2a.2 (per-cvr hover-card data) so the
- * signature never changes between the two PRs. It is unused here.
+ * $enrichment (fase 2a.2) carries per-cvr and per-property hover-card data:
+ * ['companies' => [cvr => [...]], 'properties' => [matrikelId => [...]]].
+ * It is applied as the LAST step of build(), after truncateToCap, so
+ * card/aggregate data is never computed for a node that got cut by the cap.
  */
 class OwnershipGraphBuilder
 {
@@ -24,6 +28,7 @@ class OwnershipGraphBuilder
         array $enrichment,
         array $expandedNodeIds,
         array $caps,
+        ?CarbonImmutable $now = null,
     ): array {
         $nodes = [[
             'id' => 'searched',
@@ -34,10 +39,21 @@ class OwnershipGraphBuilder
         $edges = [];
         $edgeSeen = [];
 
+        // usage-bagudkompatibilitet: enrichment['properties'][mid]['usage'] wins
+        // over the legacy properties['usage'][mid] map (2a.1 shape) so Task 3 can
+        // migrate the usage-populating component without a big-bang cutover.
+        $usage = $properties['usage'] ?? [];
+        foreach ($enrichment['properties'] ?? [] as $mid => $entry) {
+            if (($entry['usage'] ?? null) !== null) {
+                $usage[$mid] = $entry['usage'];
+            }
+        }
+
         $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
         $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
-        $this->addProperties($properties['list'] ?? [], $properties['usage'] ?? [], $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
+        $this->addProperties($properties['list'] ?? [], $usage, $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
         $this->truncateToCap($caps['total_nodes'], $nodes, $edges);
+        $this->applyEnrichment($nodes, $enrichment, $properties['list'] ?? [], $query, $now);
 
         return ['nodes' => $nodes, 'edges' => $edges];
     }
@@ -171,6 +187,143 @@ class OwnershipGraphBuilder
             $node['expand']['capped_'.$field] = true;
         }
         unset($node);
+    }
+
+    /**
+     * Last step of build(): attaches per-node enrichment data — runs AFTER
+     * truncateToCap so aggregates/cards are never computed for a node the cap
+     * already removed. Three independent sub-steps: (a) value aggregate per
+     * owner, derived from $propertyList regardless of whether enrichment was
+     * fetched at all; (b) company card+signals, only for nodes present in
+     * enrichment['companies']; (c) property card, only for nodes present in
+     * enrichment['properties'].
+     */
+    protected function applyEnrichment(array &$nodes, array $enrichment, array $propertyList, string $query, ?CarbonImmutable $now): void
+    {
+        $nodeIds = array_flip(array_column($nodes, 'id'));
+        $agg = $this->aggregateProperties($propertyList, $nodeIds, $query);
+        $companies = $enrichment['companies'] ?? [];
+        $propertiesById = $enrichment['properties'] ?? [];
+        // lat/lng come from the portfolio row itself (the skråfoto link needs
+        // them), not from enrichment — keyed by matrikel_id, last row wins for
+        // a co-owned property (identical coordinates regardless of owner).
+        $coordsByMid = [];
+        foreach ($propertyList as $p) {
+            $mid = (string) ($p['matrikel_id'] ?? '');
+            if ($mid !== '') {
+                $coordsByMid[$mid] = ['lat' => $p['latitude'] ?? null, 'lng' => $p['longitude'] ?? null];
+            }
+        }
+
+        foreach ($nodes as &$node) {
+            if (isset($agg[$node['id']])) {
+                $node['agg'] = $agg[$node['id']];
+            }
+
+            if ($node['kind'] === 'property') {
+                // Keyed off the node id, not meta.bfe — meta.bfe is deliberately
+                // null for non-matriculated properties (addProperties), but the
+                // matrikel_id (and its enrichment lookup) still applies to them.
+                $mid = substr($node['id'], 4);
+                if (isset($propertiesById[$mid])) {
+                    $node['card'] = $this->propertyCard($propertiesById[$mid], $coordsByMid[$mid] ?? []);
+                }
+
+                continue;
+            }
+
+            $cvr = $node['cvr'];
+            if ($cvr !== null && isset($companies[$cvr])) {
+                $node['card'] = $this->companyCard($companies[$cvr]);
+                $node['signals'] = $this->companySignals($companies[$cvr], $now);
+            }
+        }
+        unset($node);
+    }
+
+    /**
+     * Groups the property list by owner-node-id, reusing the SAME
+     * ownedTargetId-style normalisation as addProperties (owner_cvr → node id,
+     * or 'searched' when it equals the query) so aggregates land on the exact
+     * node a property was hung on — including the searched-company case.
+     * Independent of enrichment: this is derived purely from the property
+     * list, so it is present even when no enrichment was ever fetched.
+     */
+    protected function aggregateProperties(array $propertyList, array $nodeIds, string $query): array
+    {
+        $agg = [];
+        foreach ($propertyList as $p) {
+            $owner = $p['owner_cvr'] ?? null;
+            $ownerId = $owner === null ? null : (isset($nodeIds[$owner]) ? $owner : ($owner === $query ? 'searched' : null));
+            if ($ownerId === null) {
+                continue;
+            }
+
+            $agg[$ownerId] ??= ['count' => 0, 'value' => 0, 'valued' => 0];
+            $agg[$ownerId]['count']++;
+            $valuation = $p['valuation'] ?? null;
+            if ($valuation !== null) {
+                $agg[$ownerId]['value'] += $valuation;
+                $agg[$ownerId]['valued']++;
+            }
+        }
+
+        return $agg;
+    }
+
+    protected function companyCard(array $company): array
+    {
+        return array_filter([
+            'equity' => $company['equity'] ?? null,
+            'result' => $company['result'] ?? null,
+            'fiscal_year' => $company['fiscal_year'] ?? null,
+            'employees' => $company['employees'] ?? null,
+            'website' => $company['website'] ?? null,
+            'founded_date' => $company['founded_date'] ?? null,
+            'industry' => $company['industry'] ?? null,
+        ], fn ($v) => $v !== null);
+    }
+
+    /**
+     * negative_equity: latest equity < 0. newly_founded: founded within the
+     * last 12 months of a caller-supplied, deterministic $now — without $now
+     * this signal can never be evaluated (never CarbonImmutable::now(), which
+     * would make build() non-deterministic). no_financials: the company IS in
+     * the enrichment map but carries no equity figure — distinct from a
+     * company absent from enrichment entirely (no signals key at all, handled
+     * by the caller), because "not fetched yet" must never look "financially
+     * healthy".
+     */
+    protected function companySignals(array $company, ?CarbonImmutable $now): array
+    {
+        $signals = [];
+        $equity = $company['equity'] ?? null;
+
+        if ($equity !== null && $equity < 0) {
+            $signals[] = 'negative_equity';
+        } elseif ($equity === null) {
+            $signals[] = 'no_financials';
+        }
+
+        $foundedDate = $company['founded_date'] ?? null;
+        if ($now !== null && $foundedDate !== null && CarbonImmutable::parse($foundedDate)->greaterThan($now->subMonths(12))) {
+            $signals[] = 'newly_founded';
+        }
+
+        return $signals;
+    }
+
+    protected function propertyCard(array $property, array $coords): array
+    {
+        return array_filter([
+            'usage' => $property['usage'] ?? null,
+            'latest_sale_date' => $property['latest_sale_date'] ?? null,
+            'latest_sale_price' => $property['latest_sale_price'] ?? null,
+            'valuation' => $property['valuation'] ?? null,
+            'streetview_url' => $property['streetview_url'] ?? null,
+            'lat' => $coords['lat'] ?? null,
+            'lng' => $coords['lng'] ?? null,
+        ], fn ($v) => $v !== null);
     }
 
     protected function addAncestors(array $ancestors, string $query, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
