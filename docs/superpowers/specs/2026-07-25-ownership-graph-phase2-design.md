@@ -102,12 +102,11 @@ build(structureData, propertyData, enrichmentData, expandedNodeIds, caps, now): 
 - **Kanter:** tynd rule-linje, label midt på; ejerskabs-label-reglen gælder alle ejerskabs-kanter inkl. datter-kanter. Ejendoms-kanter: ingen label.
 - **JS (host-app):** `layout()` får per-node-type dimensioner; singleton-kort + koordinat-transform + touch-pan er host-app-leverancer (står i Leverance).
 
-### Ejerandels-label (betinget — 50%-hullet fra runde 1)
+### Ejerandels-label — AFGJORT 26/7: eksakt tal, interval-visning DROPPET endeligt
 
-CVR registrerer NOGLE andele som bånd og NOGLE som eksakte. "Tal == båndgrænse ⇒ bånd" er forkert ved ægte 50/50.
+Verifikation udført 26/7 mod (a) rå CVR-ES (deltagerRelation for 38653806 fra prod-serveren — attribut-typerne er KUN `FUNKTION`, `EJERANDEL_MEDDELELSE_DATO`, `EJERANDEL_PROCENT`, `EJERANDEL_STEMMERET_PROCENT`; INGEN interval-attribut) og (b) prod-DB-fordelingen (242.893 rækker: 51.394 × præcis 50%, plus vilkårlige præcise værdier som 51/49/45/37,5/25,5% der aldrig ville være bånd-grænser).
 
-- **Plan-verifikation FØRST:** kan interval vs. eksakt skelnes i rå CVR-data/registry-api? (Inkl. float-repræsentation af 33,33/66,66.)
-- Findes skelnen → bånd for interval-registrerede, eksakt tal for eksakte. Findes den IKKE → eksakt tal som i dag; interval-visning udskydes. Vi gætter ikke.
+Konklusion: datagrundlaget skelner IKKE interval fra eksakt, og værdierne ER præcise andele. En bånd-mapning ville fejlvise titusindvis af ægte 50/50-selskaber som "50-66,7%". Resights' intervaller er deres egen visnings-heuristik uden støtte i disse data. **2a.1's eksakte visning er endelig; plan Task 12 lukket uden kodeændring.**
 
 ## Fejltilstande
 
