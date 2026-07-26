@@ -1481,3 +1481,60 @@ it('regression: rehydrates enrichmentData across two separate requests via the R
 
     expect(collect($second->get('graphModel')['nodes'])->firstWhere('id', '44507781')['card'] ?? null)->not->toBeNull();
 });
+
+// ---- Opus re-review fix: F2+F3 interaction — retryProperties() must reopen enrichment ----
+
+it('retryProperties() reopens enrichment after a failed-then-succeeded portfolio (F2+F3 interaction regression)', function () {
+    // Real sequence the re-review reproduced: loadProperties() → portfolio 500
+    // → propertiesStatus='failed' → loadProperties()'s trailing loadEnrichment()
+    // runs ('failed' counts as settled, F2) and enriches against EMPTY
+    // propertyData → enrichmentStatus='loaded' with no property cards. User
+    // clicks "Prøv igen" → retryProperties() → portfolio succeeds this time →
+    // propertyData is now populated, but WITHOUT resetting enrichmentStatus,
+    // loadProperties()'s trailing loadEnrichment() call would be blocked by
+    // F3's already-loaded gate forever — enrichmentData['properties'] staying
+    // permanently empty (F4's rehydration guard never even runs: it lives
+    // INSIDE loadEnrichment(), which F3 returns from before reaching it).
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryStructure();
+
+    Http::fake([
+        '*/property-portfolio*' => Http::sequence()
+            ->push(null, 500)
+            ->push(['data' => ['portfolio' => [
+                'properties' => [fdlPortfolioProperty(['owner_cvr' => '44507781', 'latitude' => 55.25, 'longitude' => 12.17])],
+                'property_count' => 1, 'total_count' => 1,
+            ]]]),
+        '*/properties/batch*' => Http::response(['data' => [[
+            'matrikel_id' => '2573669',
+            'bbr' => ['buildings' => [['usage' => 130, 'total_area' => 150]]],
+        ]]]),
+    ]);
+    config(['metis.google_maps_api_key' => 'test-key-123']);
+
+    // First loadProperties() call: portfolio 500s → 'failed' → trailing
+    // loadEnrichment() runs (settled) and reaches 'loaded' against an empty
+    // property list — no property node/card exists yet at all.
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('failed')
+        ->and($c->get('enrichmentStatus'))->toBe('loaded');
+    expect(collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->toBeNull();
+
+    // retryProperties(): portfolio now succeeds (second push in the sequence).
+    // Without the fix, enrichmentStatus stays 'loaded' from the first run and
+    // the trailing loadEnrichment() call is a permanent no-op — the property
+    // node would appear (from the builder's properties['list'] pass) but
+    // WITHOUT its usage/streetview card, since enrichmentData['properties']
+    // was never re-fetched.
+    $c->call('retryProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('loaded')
+        ->and($c->get('enrichmentStatus'))->toBe('loaded');
+
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop)->not->toBeNull()
+        ->and($prop['card']['usage'] ?? null)->toBe('Bolig')
+        ->and($prop['card']['streetview_url'] ?? null)->not->toBeNull();
+});

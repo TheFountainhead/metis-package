@@ -253,10 +253,28 @@ class CompanyStructure extends MetisSection
         }
     }
 
+    /**
+     * F2+F3 interaction fix (Opus re-review, 2026-07-26): a prior failed (or
+     * empty) properties outcome can ALREADY have driven enrichmentStatus to
+     * 'loaded' — loadProperties()'s trailing loadEnrichment() call runs once
+     * propertiesStatus settles to 'failed', and 'failed' counts as settled
+     * (F2), so enrichment proceeds against an empty propertyData and reaches
+     * 'loaded' with empty property cards. If the user then retries and the
+     * portfolio succeeds this time, loadProperties()'s OWN trailing
+     * loadEnrichment() call would hit F3's already-loaded gate and no-op
+     * PERMANENTLY — enrichmentData['properties'] never gets the real batch
+     * data, and F4's rehydration guard never fires either (it only runs
+     * inside loadEnrichment(), which F3 blocks before rehydration is even
+     * reached). Resetting enrichmentStatus to 'pending' here — same
+     * discipline as the propertiesAttempts reset just above — means the
+     * trailing loadEnrichment() after a successful retry runs fresh, exactly
+     * as if enrichment had never happened for this component.
+     */
     public function retryProperties(): void
     {
         $this->propertiesStatus = 'pending';
         $this->propertiesAttempts = 0;
+        $this->enrichmentStatus = 'pending';
         $this->loadProperties();
     }
 
