@@ -29,6 +29,21 @@
             <span class="mgraph-node__cvr" x-show="node.meta?.bfe" x-text="'BFE ' + (node.meta?.bfe ?? '')"></span>
             <span class="mgraph-node__usage" x-show="node.meta?.usage" x-text="node.meta?.usage ?? ''"></span>
         </div>
+        {{-- Enrichment (fase 2a.2): value aggregate + signal icons.
+             node.agg / node.signals are only present when OwnershipGraphBuilder
+             computed them (applyEnrichment) — most nodes have neither, so every
+             x-text expression below needs its own null-safe fallback: Alpine
+             evaluates x-text on EVERY node regardless of x-show (display:none
+             doesn't skip evaluation — the 2a.1 lesson repeated in the docblock
+             above), so `node.agg.count` (no `?.`) would throw on a node with
+             agg=undefined the instant it's rendered, not just when shown. --}}
+        <span class="mgraph-node__agg" x-show="node.agg" x-cloak
+              x-text="node.agg ? (node.agg.count + ' ejendomme · ' + fmtDKK(node.agg.value) + (node.agg.valued < node.agg.count ? ' (' + node.agg.valued + ' vurderet)' : '')) : ''"></span>
+        <span class="mgraph-node__signals" x-show="node.signals?.length" x-cloak>
+            <template x-for="s in (node.signals ?? [])" :key="s">
+                <span class="mgraph-signal" :class="'mgraph-signal--' + s" :title="signalTitle(s)" x-text="signalGlyph(s)"></span>
+            </template>
+        </span>
         {{-- Expand affordances. @mousedown.stop so the frame's pan never starts;
              _expanding gives a per-node loading state until the watcher re-renders.
              Same evaluate-regardless-of-x-show reasoning as above: most nodes have

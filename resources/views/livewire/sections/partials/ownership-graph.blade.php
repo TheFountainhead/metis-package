@@ -56,6 +56,41 @@
             <button type="button" @click="fit()" aria-label="{{ __('Fit') }}" x-text="zoomPct + '%'"></button>
             <button type="button" @click="zoomBy(0.8)" aria-label="{{ __('Zoom out') }}">−</button>
         </div>
+        {{-- Singleton hover-card (fase 2a.2): ONE card element, positioned by
+             `card.{x,y}` and populated from `card.node`, reused for whichever
+             node is currently hovered — not one card per node. Deliberately
+             OUTSIDE .mgraph-frame/.mgraph-canvas (a sibling of .mgraph-frame,
+             inside .mgraph's own x-data scope): the canvas is transformed by
+             zoom/pan (`transform:${transform}`), so a card living inside it
+             would scale and pan along with the graph instead of staying a
+             fixed-size, always-legible overlay near the cursor.
+             card.node is null when nothing is hovered — x-if unmounts the
+             whole subtree then (not just x-show), so no stale card lingers
+             invisibly and no field below is ever evaluated against a null
+             node (same evaluate-regardless-of-x-show trap as graph-node.blade.php:
+             here it's moot because x-if actually removes the DOM, not display:none). --}}
+        <template x-if="card.node">
+            <div class="mgraph-card" :style="`left:${card.x}px; top:${card.y}px;`"
+                 @mouseenter="cardHover(true)" @mouseleave="cardHover(false)">
+                <div class="mgraph-card__title" x-text="card.node.label"></div>
+                {{-- @@error escapes Blade's own @error(...)/@enderror validation
+                     directive — without the doubled @ Blade parses this as the
+                     start of that directive (matching on the opening paren) and
+                     the template fails to compile for want of an @enderror. --}}
+                <img x-show="card.node.card?.streetview_url" :src="card.node.card?.streetview_url ?? ''"
+                     class="mgraph-card__img" loading="lazy" @@error="$el.style.display='none'" alt="">
+                <dl class="mgraph-card__rows">
+                    <template x-for="row in cardRows(card.node)" :key="row.label">
+                        <div><dt x-text="row.label"></dt><dd x-text="row.value"></dd></div>
+                    </template>
+                </dl>
+                <div class="mgraph-card__links">
+                    <a x-show="card.node.card?.website" :href="card.node.card?.website ?? '#'" target="_blank" rel="noopener" class="mgraph-card__link">{{ __('Website') }} ↗</a>
+                    <a x-show="card.node.kind === 'property' && card.node.card?.lat" :href="skraafotoUrl(card.node)" target="_blank" rel="noopener" class="mgraph-card__link">{{ __('See oblique aerial photo') }} ↗</a>
+                    <a :href="nodeUrl(card.node)" class="mgraph-card__link" x-show="nodeUrl(card.node)">{{ __('Open listing') }} →</a>
+                </div>
+            </div>
+        </template>
     </div>
 @endif
 
@@ -127,6 +162,22 @@
     .mgraph-node__usage {
         font-family: var(--fm); font-size: 11px; color: var(--ink-3);
     }
+    /* fase 2a.2 enrichment: value aggregate (properties rolled up onto an
+       owner node) + signal icons (negative equity / newly founded / no
+       financials yet). Same mono/ink-3 treatment as the other meta rows —
+       enrichment reads as data, not decoration. */
+    .mgraph-node__agg {
+        font-family: var(--fm); font-size: 10.5px; color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+    }
+    .mgraph-node__signals { display: flex; gap: 4px; }
+    .mgraph-signal {
+        font-family: var(--fm); font-size: 11px; line-height: 1;
+        cursor: default;
+    }
+    .mgraph-signal--negative_equity { color: #7a2f2f; }
+    .mgraph-signal--newly_founded { color: var(--reel); }
+    .mgraph-signal--no_financials { color: var(--ink-3); }
     /* kind accents — border + a small hue on the name, no fill stripe */
     .mgraph-node--reel    { border-color: var(--reel); }
     .mgraph-node--reel    .mgraph-node__name { color: var(--reel); }
@@ -183,6 +234,59 @@
         cursor: pointer; line-height: 1;
     }
     .mgraph-controls button:hover { background: var(--bg); }
+
+    /* Singleton hover-card (fase 2a.2). Positioned absolutely within .mgraph
+       (a sibling of .mgraph-frame, NOT .mgraph-canvas — it must never scale
+       or pan with the zoomed graph, see the Blade comment above the
+       x-if="card.node" template). Sand-card treatment matching the node
+       cards; z-index lifts it above .mgraph-frame's own stacking context
+       (frame has no z-index of its own, but the card must still win against
+       edges/nodes drawn inside the frame at higher paint order). */
+    .mgraph-card {
+        position: absolute;
+        z-index: 10;
+        max-width: 280px;
+        padding: 10px 12px;
+        background: var(--bg);
+        border: 1px solid var(--rule-strong);
+        border-radius: 0.25rem;
+        box-shadow: 0 4px 16px rgba(26, 26, 26, 0.18);
+        pointer-events: auto;
+    }
+    .mgraph-card__title {
+        font-family: var(--fd); font-weight: 600; font-size: 14px;
+        letter-spacing: -0.01em; line-height: 1.25;
+        margin-bottom: 6px;
+    }
+    .mgraph-card__img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--rule-strong);
+        margin-bottom: 6px;
+    }
+    .mgraph-card__rows {
+        display: flex; flex-direction: column; gap: 2px;
+        margin: 0 0 6px;
+    }
+    .mgraph-card__rows > div {
+        display: flex; justify-content: space-between; gap: 10px;
+        font-family: var(--fm); font-size: 11px;
+    }
+    .mgraph-card__rows dt { color: var(--ink-3); margin: 0; }
+    .mgraph-card__rows dd {
+        color: var(--ink); margin: 0;
+        text-align: right; font-variant-numeric: tabular-nums;
+    }
+    .mgraph-card__links {
+        display: flex; flex-direction: column; gap: 2px;
+    }
+    .mgraph-card__link {
+        font-family: var(--fm); font-size: 11px;
+        color: var(--reel);
+        text-decoration: none;
+    }
+    .mgraph-card__link:hover { text-decoration: underline; }
 
     .mgraph-note {
         margin-top: 8px;
