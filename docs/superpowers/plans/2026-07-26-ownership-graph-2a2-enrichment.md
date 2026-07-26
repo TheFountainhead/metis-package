@@ -231,3 +231,19 @@ Bagudkompatibilitet: eksisterende `usage`-map-tests SKAL forblive grønne — bu
 - **Spec-dækning 2a.2:** hover-/tap-kort ✅ (T4-5), singleton+koordinat-transform+grace ✅ (T4-5), touch-pan ✅ (T5), værdi-aggregat m. dækningsgrad ✅ (T1), signaler m. no_financials-tilstand ✅ (T1), pooled datavej ✅ (T2-3), streetview m. config-gate + skråfoto-link ✅ (T3-6), branche/website/ansatte i kort ✅ (T3-4), node-klik-navigation (F4-opfølgning) ✅ (T5), Utm32-udtræk ✅ (T6), todo 003 ✅ (T2). Todo 004 (builder-refactor) BEVIDST udeladt: T1 tilføjer en isoleret fase, og refactor+feature i samme PR øger review-fladen — 004 forbliver i todos/.
 - **Placeholder-scan:** ingen TBD; kode/eksakte instruktioner i alle steps.
 - **Type-konsistens:** `enrichment`-shape (T1↔T3), `card`-felter (T1↔T4↔T5), `agg`-shape (T1↔T4), signal-navne (T1↔T4/T5), `utm_e/utm_n` (T6↔T4) — konsistente.
+
+---
+
+### Task 9: Auto-udvid lineære kæder (Frederik-godkendt 26/7 — Resights-dybde-4-fundet)
+
+**Files:** Modify `src/Services/OwnershipGraphBuilder.php`; Test `tests/Unit/OwnershipGraphBuilderTest.php`
+
+**Motivation:** Lars Horsbøl-casen: Resights lå på dybde 4 bag TO "↓ 1 relationer"-klik (RS HoldCo → RS BidCo → Resights). Lineære enkeltbarns-kæder koster ét klik pr. led uden at spare plads.
+
+**Regel (bindende):** Ved dybde-cap-afskæring af node N's børn: hvis N's SAMLEDE skjulte undertræ (alle efterkommere) er ≤3 noder, renderes undertræet fuldt i stedet for expand-signal. Undertræ >3 → uændret knap-adfærd. Auto-udviste noder tæller med i total-cap og kan stadig trunkeres af den (capped_*-mønstret gælder). `expandedNodeIds` uændret for store undertræer. Deterministisk.
+
+⚠️ **Skrøbeligheds-advarsel (ledger, git-history):** cap/expand-feltet er blevet fixet 3× i 2a.1 (roll-up, capped_relations/properties, co-ejere). KØR HELE OwnershipGraphBuilderTest FØR ændringen; eksisterende små-fixture-tests hvis INTENTION er "skjult lag signaleres" skal have FORSTØRREDE fixtures (≥4 skjulte noder), IKKE slettes — auto-udvid-adfærden får sine EGNE tests.
+
+- [ ] **Step 1: Failing tests:** (a) lineær kæde (2 skjulte noder) → begge renderes, INGEN expand-knap på forælderen; (b) RS HoldCo-fixturen (5% → 100% → 100%, 2 skjulte) → Resights-noden synlig fra første build; (c) skjult undertræ på 4 noder → uændret expand.relations-knap; (d) auto-udviste noder kan trunkeres af total-cap m. korrekt capped-signal; (e) determinisme (toEqual).
+- [ ] **Step 2-4:** Rød → implementér (tæl undertræ i addSubsidiaries' cap-gren; ≤3 → rekursér m. udvidet dybde) → forstør berørte eksisterende fixtures → HELE suiten grøn.
+- [ ] **Step 5: Commit** — `feat(graph): auto-udvid lineære kæder ≤3 noder (Resights-dybde-4-UX-fundet)`
