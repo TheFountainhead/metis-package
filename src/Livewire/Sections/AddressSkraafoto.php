@@ -47,6 +47,15 @@ class AddressSkraafoto extends MetisSection
      * WGS84 (lat/lng) → UTM zone 32N (EPSG:25832). Standard Transverse
      * Mercator-projektion (fast geodætisk formel, matcher PostGIS ST_Transform).
      *
+     * PHP↔JS-kontrakt: denne formel er 1:1 porteret til `_wgs84ToUtm32()` i
+     * host-appens `resources/js/ownership-graph.js` (bruges klient-side til
+     * Skråfoto-viewer-linket på ejendoms-noder i ejerskabsgrafen). De to
+     * implementationer SKAL forblive numerisk identiske. Håndhæves af
+     * `tests/Unit/AddressSkraafotoUtm32Test.php`, som asserter denne metode
+     * mod tre kryds-verificerede fixtures (samme koordinater kørt gennem
+     * BÅDE PHP og JS med identisk output) — ændres konstanter/afrunding her
+     * uden en tilsvarende JS-ændring, fejler den Pest-test.
+     *
      * @return array{0: float, 1: float} [easting, northing]
      */
     protected function wgs84ToUtm32(float $lat, float $lng): array

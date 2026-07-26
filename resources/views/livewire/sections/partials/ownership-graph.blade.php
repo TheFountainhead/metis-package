@@ -169,8 +169,14 @@
     .mgraph-node__agg {
         font-family: var(--fm); font-size: 10.5px; color: var(--ink-3);
         font-variant-numeric: tabular-nums;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        min-width: 0;
     }
-    .mgraph-node__signals { display: flex; gap: 4px; }
+    /* min-width:0: .mgraph-node is a flex column, so .mgraph-node__agg is a
+       flex item whose default min-width is 'auto' (content size) — without
+       this override the row would refuse to shrink below its full text
+       width and silently push past the 210px node instead of ellipsizing. */
+    .mgraph-node__signals { display: flex; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
     .mgraph-signal {
         font-family: var(--fm); font-size: 11px; line-height: 1;
         cursor: default;
