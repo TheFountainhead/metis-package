@@ -71,19 +71,19 @@
                         {{ __('Ejendomme kunne ikke hentes.') }}
                         <button type="button" wire:click="retryProperties" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
-                @elseif(in_array($propertiesStatus, ['loaded', 'empty']))
-                    {{-- Fase 2a.2: loadProperties() itself already calls loadEnrichment()
-                         once the property step settles (component-side, F2 fix) — this
-                         x-init is a safety-net trigger for the case where propertiesStatus
-                         was ALREADY settled on a fresh page load (so loadProperties()'s own
-                         trailing call never ran in this request). loadEnrichment()'s own
-                         gates (F2/F3) make a redundant fire here a no-op. wire:key includes
-                         $propertiesStatus itself (F6 fix) — not just $propertiesAttempts,
-                         which never changes across the loaded/empty transition it's meant
-                         to re-init on — so the x-init deterministically re-fires exactly
-                         once when the status transitions into 'loaded' or 'empty'. --}}
-                    <div wire:key="enrichment-trigger-{{ $propertiesStatus }}-{{ $propertiesAttempts }}" x-data x-init="$wire.loadEnrichment()"></div>
                 @endif
+                {{-- No separate enrichment-trigger x-init here (multi-agent review, F-D):
+                     every code path that settles $propertiesStatus already reaches
+                     loadEnrichment() PHP-side — the top-level wire:init="loadProperties"
+                     (this component's root element) fires loadProperties() once per
+                     mount, and loadProperties() itself calls loadEnrichment() at the end
+                     for every settled outcome (F2 fix); pollForUpdates() calls it again
+                     on enrichment completion (F1 fix); retryProperties()/retryEnrichment()
+                     each re-trigger their own path. A redundant Alpine trigger here added
+                     no reachable case and only obscured that PHP-side coverage — removed,
+                     verified by the full CompanyStructureTest suite staying green (every
+                     enrichment-path test reaches enrichmentStatus==='loaded' via the real
+                     component actions, not this trigger). --}}
 
                 {{-- Company/property-enrichment fetch status (F5): mirrors the
                      properties-failed note above — a discreet retry affordance,

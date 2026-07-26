@@ -56,6 +56,32 @@ it('synthesises a stub node for a pruned parent cvr', function () {
     expect($stub)->not->toBeNull()->and($stub['kind'])->toBe('other');
 });
 
+/**
+ * F-C fix (multi-agent review): an unrecognised owner_kind on a COMPANY
+ * ancestor row (e.g. a future/unexpected API value like 'ultimate') must
+ * normalise to 'legal', not pass through raw. Before this fix, a raw
+ * passthrough could (a) collide with 'other' — the distinct kind
+ * addAncestors() synthesises for orphan-parent stubs just below, in the SAME
+ * method — and (b) silently exclude a genuine company-ancestor from
+ * ENRICHABLE_KINDS-gated enrichment purely because the API used a kind
+ * string this builder didn't already recognise. This test asserts BOTH
+ * halves: the node's kind is normalised to 'legal', AND it still receives
+ * its company card via applyEnrichment() (proving ENRICHABLE_KINDS gate
+ * passes for the normalised kind).
+ */
+it('normalises an unknown company owner_kind to legal and still enriches the node (F-C)', function () {
+    $g = buildGraph([
+        'structure' => ['ancestors' => [
+            ['person_name' => 'Ultimate Holding ApS', 'is_company' => true, 'cvr' => '33333333', 'owner_kind' => 'ultimate', 'ownership_share' => 100.0, 'parent_of_cvr' => null],
+        ], 'subsidiaries' => []],
+        'enrichment' => ['companies' => ['33333333' => ['equity' => 5.0]], 'properties' => []],
+    ]);
+
+    $node = collect($g['nodes'])->firstWhere('id', '33333333');
+    expect($node['kind'])->toBe('legal')
+        ->and($node)->toHaveKey('card');
+});
+
 it('adds subsidiaries two levels deep with edges parent→child', function () {
     // Level-3 subtree enlarged to 4 hidden descendants (Task 9: ≤3 auto-
     // renders instead of signalling) so this fixture's ORIGINAL intent —

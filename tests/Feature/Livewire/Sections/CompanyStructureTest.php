@@ -988,8 +988,12 @@ it('loadEnrichment attaches company card/signals to graph nodes (via the real pr
         ->and($c->get('enrichmentStatus'))->toBe('loaded');
 
     $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+    // fakeRegistryCompanyInfo()'s financials fixture carries equity/profit_loss
+    // in t.DKK (registry-api's real unit — see CompanyStructure::
+    // companyEnrichmentFromInfo()'s KONTRAKT docblock) — the card must show
+    // hele kroner, i.e. the fixture's 1_000_000 (t.DKK) * 1000 = 1_000_000_000 kr.
     expect($node['card'] ?? null)->not->toBeNull()
-        ->and($node['card']['equity'])->toBe(1_000_000)
+        ->and($node['card']['equity'])->toBe(1_000_000_000)
         ->and($node['card']['fiscal_year'])->toBe('2024')
         ->and($node['card']['website'])->toBe('kirketorvet.dk')
         ->and($node['card']['industry'])->toBe('Ejendomshandel')
@@ -1032,6 +1036,39 @@ it('excludes an "other" orphan-parent stub cvr from the enrichment pool call (F3
     Http::assertSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/11111111'));
 });
 
+/**
+ * F-A regression pin (multi-agent review, 2026-07-26): registry-api's
+ * financials endpoint delivers equity/profit_loss in t.DKK (thousands) — the
+ * CompanyOverview.php module for the SAME payload shape declares "Beløb i
+ * t.DKK" for this exact field set. The frontend (ownership-graph.js's
+ * fmtDKK()) assumes hele kroner throughout the whole enrichment/card chain
+ * (divides by 1_000_000 for "mio. kr."), so a company-info fixture with
+ * equity=2527 (t.DKK, i.e. 2.527.000 kr.) was rendering as "3 tkr." instead
+ * of "2,5 mio. kr." — a 1000× understatement. companyEnrichmentFromInfo()
+ * converts at the SOURCE (equity/profit_loss * 1000) so every downstream
+ * consumer (builder, Blade, JS) can keep assuming hele kroner unconditionally.
+ * This test pins the API-fixture-unit → card-unit contract directly, with the
+ * exact number named in the fix spec (2527 t.DKK → 2_527_000 kr.).
+ */
+it('converts financials equity/profit_loss from t.DKK (API unit) to hele kroner (card unit) — F-A 1000× regression pin', function () {
+    fakeRegistryCompanyInfo('44507781', [
+        'financials' => [
+            ['year' => '2024', 'equity' => 2527, 'assets' => 9000, 'profit_loss' => 316],
+        ],
+    ]);
+    fakeRegistryStructure();
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    expect($c->get('enrichmentStatus'))->toBe('loaded');
+
+    $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+    expect($node['card']['equity'])->toBe(2_527_000)
+        ->and($node['card']['result'])->toBe(316_000);
+});
+
 it('reads the LATEST financials row for equity/result/fiscal_year even when the financials list arrives unsorted', function () {
     // Guards against the builder-review note: loadEnrichment (not the
     // builder) must reduce an unsorted financials array to its latest row —
@@ -1071,8 +1108,9 @@ it('reads the LATEST financials row for equity/result/fiscal_year even when the 
 
     $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
     // Must resolve to the 2024 row (the actual latest year), not the first
-    // or last array element.
-    expect($node['card']['equity'])->toBe(2_000_000)
+    // or last array element. Fixture's 2_000_000 is t.DKK (registry-api's real
+    // unit) → card must show hele kroner: 2_000_000_000.
+    expect($node['card']['equity'])->toBe(2_000_000_000)
         ->and($node['card']['fiscal_year'])->toBe('2024');
 });
 
@@ -1278,6 +1316,34 @@ it('omits the streetview URL when the property has no lat/lng even with the api 
 
     fakeRegistryStructure();
     fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'present'); // no latitude/longitude
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryCompanyInfo('44018942');
+    fakeRegistryCompanyInfo('44027992');
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop['card']['streetview_url'] ?? null)->toBeNull();
+});
+
+/**
+ * F-B fix (multi-agent review): a non-numeric latitude (malformed upstream
+ * registry-api row — e.g. empty string, or non-numeric junk) must not reach
+ * the streetview URL builder's string interpolation. attachStreetviewUrls()
+ * now guards with is_numeric() on BOTH lat and lng — this test pins the
+ * non-numeric-lat half (the more common malformed-data shape: an empty
+ * string, which is falsy but NOT null, so a `$lat === null` check alone
+ * would have let it slip through before this fix).
+ */
+it('omits the streetview URL when latitude is non-numeric, even with lat/lng both "present"', function () {
+    config(['metis.google_maps_api_key' => 'test-key-123']);
+
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(
+        properties: [fdlPortfolioProperty(['latitude' => 'not-a-number', 'longitude' => 12.17])],
+        batchUsage: 'present',
+    );
     fakeRegistryCompanyInfo('44507781');
     fakeRegistryCompanyInfo('44018942');
     fakeRegistryCompanyInfo('44027992');

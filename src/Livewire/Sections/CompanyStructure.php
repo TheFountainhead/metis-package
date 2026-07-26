@@ -355,14 +355,27 @@ class CompanyStructure extends MetisSection
      * assumption) but is NOT trusted blindly here — sorted explicitly by
      * `year` so an unsorted/out-of-order payload still resolves to the
      * actual latest fiscal year, not just array index 0.
+     *
+     * KONTRAKT: ALLE beløb i enrichment/card-shapen (dette array, og alt der
+     * flyder derfra ind i graphModel/node.card) er HELE KRONER — aldrig
+     * t.DKK/tusinder, aldrig mio. registry-api's financials-endpoint leverer
+     * equity/profit_loss i **t.DKK** (verificeret: CompanyOverview-bladets
+     * "Beløb i t.DKK"-deklaration for samme financials-shape), så begge felter
+     * ganges med 1000 HER, ved kilden — én gang, aldrig længere nede i
+     * kæden (builder, Blade, JS). Uden dette var frontend's fmtDKK() (som
+     * antager hele kroner) 1000× for lav i sin visning (fx en egenkapital på
+     * 2.527 t.DKK / 2.527.000 kr. blev vist som "3 tkr." i stedet for
+     * "2,5 mio. kr."). Ejendoms-beløb (valuation/latest_sale_price, se
+     * propertyEnrichmentFromBatch() nedenfor) er DERIMOD allerede hele kroner
+     * fra kilden — ingen konvertering der.
      */
     protected function companyEnrichmentFromInfo(array $company): array
     {
         $latest = collect($company['financials'] ?? [])->sortByDesc('year')->first();
 
         return [
-            'equity' => $latest['equity'] ?? null,
-            'result' => $latest['profit_loss'] ?? null,
+            'equity' => isset($latest['equity']) ? $latest['equity'] * 1000 : null,
+            'result' => isset($latest['profit_loss']) ? $latest['profit_loss'] * 1000 : null,
             'fiscal_year' => $latest['year'] ?? null,
             'employees' => $company['employees'] ?? null,
             'website' => data_get($company, 'contact.website'),
@@ -392,6 +405,13 @@ class CompanyStructure extends MetisSection
      * Streetview URLs are NOT built here — they need portfolio lat/lng,
      * which this batch response does not carry; loadEnrichment() layers
      * those in afterwards, keyed by the same matrikel_id.
+     *
+     * Unlike companyEnrichmentFromInfo()'s equity/result (t.DKK → kroner,
+     * see that method's docblock), latest_sale_price/valuation are ALREADY
+     * hele kroner straight from properties/batch — verified against the
+     * existing prod-verbatim fixture (260000/534000-scale values, matching
+     * the KONTRAKT that this whole enrichment/card shape is hele kroner
+     * throughout). No *1000 conversion here.
      */
     protected function propertyEnrichmentFromBatch(array $batch): array
     {
@@ -422,6 +442,16 @@ class CompanyStructure extends MetisSection
      * Keyed onto the SAME enrichment['properties'][matrikel_id] map
      * propertyEnrichmentFromBatch() produced, so a property with no batch
      * entry at all still gets a streetview_url if it has coordinates.
+     *
+     * is_numeric() guard (multi-agent review, F-B): the portfolio row's
+     * latitude/longitude come straight from the external registry-api
+     * payload — a malformed row (empty string, non-numeric junk) must not
+     * reach raw string interpolation into the URL. Non-numeric lat/lng is
+     * skipped entirely (same as the missing-coordinate case) rather than
+     * building a garbage URL. sprintf('%F', …) formats the numeric value
+     * deterministically (fixed-point, locale-independent — never scientific
+     * notation) and rawurlencode() escapes the resulting query value, so no
+     * unescaped external data is ever concatenated into the URL string.
      */
     protected function attachStreetviewUrls(): void
     {
@@ -435,13 +465,14 @@ class CompanyStructure extends MetisSection
             $lat = $p['latitude'] ?? null;
             $lng = $p['longitude'] ?? null;
 
-            if ($mid === '' || $lat === null || $lng === null) {
+            if ($mid === '' || ! is_numeric($lat) || ! is_numeric($lng)) {
                 continue;
             }
 
+            $location = rawurlencode(sprintf('%F,%F', $lat, $lng));
             $this->enrichmentData['properties'][$mid] ??= [];
             $this->enrichmentData['properties'][$mid]['streetview_url'] =
-                "https://maps.googleapis.com/maps/api/streetview?size=640x400&location={$lat},{$lng}&key={$apiKey}";
+                "https://maps.googleapis.com/maps/api/streetview?size=640x400&location={$location}&key=".rawurlencode($apiKey);
         }
     }
 

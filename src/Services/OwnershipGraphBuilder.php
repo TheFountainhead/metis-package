@@ -28,6 +28,11 @@ class OwnershipGraphBuilder
      * a user asked to see enriched). Shared with CompanyStructure's cvr
      * collection for the enrichment pool, so a stub's cvr is never sent
      * there either.
+     *
+     * Cross-reference (F-E): NOT the same set as JS's COMPANY_KINDS
+     * (resources/js/ownership-graph.js) — that one additionally includes
+     * 'other'/'foreign' and gates CVR-page navigation, not enrichment.
+     * Related but independent; do not merge into one shared list.
      */
     public const ENRICHABLE_KINDS = ['searched', 'subsidiary', 'legal', 'reel'];
 
@@ -341,6 +346,21 @@ class OwnershipGraphBuilder
         ], fn ($v) => $v !== null);
     }
 
+    /**
+     * Known company owner_kind values a company-ancestor row can legitimately
+     * carry (reel = beneficial/ultimate owner, legal = direct/legal owner —
+     * see ENRICHABLE_KINDS above, which both feed). Any other value (e.g. a
+     * future/unexpected API value like 'ultimate', or simply absent) is
+     * normalised to 'legal' below — NOT passed through raw. A raw passthrough
+     * would let an unrecognised owner_kind collide with 'other' (the distinct
+     * kind addAncestors() itself synthesises for orphan-parent stubs, below)
+     * and would silently exclude a genuine company-ancestor from
+     * ENRICHABLE_KINDS-gated enrichment (companyEnrichmentFromInfo's pool
+     * call, applyEnrichment's card/signals) purely because the API used a
+     * kind string this builder didn't happen to already know about.
+     */
+    protected const KNOWN_COMPANY_OWNER_KINDS = ['legal', 'reel'];
+
     protected function addAncestors(array $ancestors, string $query, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
     {
         foreach ($ancestors as $i => $a) {
@@ -349,7 +369,10 @@ class OwnershipGraphBuilder
             $cvr = $a['cvr'] ?? null;
             // Row index folded in so two distinct same-named persons never collapse (fase 1).
             $id = $cvr ?: 'person:'.md5($i.'|'.($a['person_name'] ?? '').'|'.($a['parent_of_cvr'] ?? ''));
-            $kind = $foreign ? 'foreign' : (! $isCompany ? 'person' : ($a['owner_kind'] ?? 'legal'));
+            $ownerKind = $a['owner_kind'] ?? 'legal';
+            $kind = $foreign ? 'foreign' : (! $isCompany ? 'person' : (
+                in_array($ownerKind, self::KNOWN_COMPANY_OWNER_KINDS, true) ? $ownerKind : 'legal'
+            ));
 
             if (! isset($seen[$id])) {
                 $seen[$id] = true;

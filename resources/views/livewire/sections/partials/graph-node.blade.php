@@ -51,8 +51,19 @@
              doesn't skip evaluation — the 2a.1 lesson repeated in the docblock
              above), so `node.agg.count` (no `?.`) would throw on a node with
              agg=undefined the instant it's rendered, not just when shown. --}}
+        {{-- :title (multi-agent review, F-E): the agg span shows a SUM, but
+             when valued < count that sum silently under-counts properties
+             with no vurdering (aggregateProperties() in OwnershipGraphBuilder
+             only adds a property's valuation to the sum when it is non-null)
+             — the tooltip spells out that the figure is a minimum, not the
+             true total, whenever coverage is partial. Null-safe (`node.agg?`)
+             for the same evaluate-regardless-of-x-show reason as x-text
+             above; empty string (no title attribute rendered) when agg is
+             absent OR coverage is already complete (valued === count), so a
+             fully-vurderet node gets no misleading "minimum" caveat. --}}
         <span class="mgraph-node__agg" x-show="node.agg" x-cloak
-              x-text="node.agg ? (node.agg.count + ' ejendomme · ' + fmtDKK(node.agg.value) + (node.agg.valued < node.agg.count ? ' (' + node.agg.valued + ' vurderet)' : '')) : ''"></span>
+              x-text="node.agg ? (node.agg.count + ' ejendomme · ' + fmtDKK(node.agg.value) + (node.agg.valued < node.agg.count ? ' (' + node.agg.valued + ' vurderet)' : '')) : ''"
+              :title="node.agg && node.agg.valued < node.agg.count ? ('Minimum — sum af foreliggende vurderinger (' + node.agg.valued + ' af ' + node.agg.count + ')') : ''"></span>
         <span class="mgraph-node__signals" x-show="node.signals?.length" x-cloak>
             <template x-for="s in (node.signals ?? [])" :key="s">
                 <span class="mgraph-signal" :class="'mgraph-signal--' + s" :title="signalTitle(s)" x-text="signalGlyph(s)"></span>
