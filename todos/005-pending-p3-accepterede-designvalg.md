@@ -12,3 +12,11 @@ tags: [code-review, wontfix-log]
 - Cache::get/put-par vs remember (pattern P2): remember kan ikke udtrykke cache-ikke-tomt
 - Agent-native P3: udvidet/afskåret visning findes kun i UI-state — de rå endpoints giver fuld data; acceptabelt for 2a.1
 - Git-history P2: cap/expand-feltet ramt 3× i fix-kæden → skrøbelighedsflag: kør builder-testfilen FØR enhver fremtidig ændring dér
+
+## Tilføjet efter multi-agent-review af #112 (26/7)
+- substr($id,4) på 'bfe:'-prefix: FALSK POSITIV fra pattern-agent ('bfe:' er 4 tegn) — verificeret m. php -r + eksisterende tests
+- equity===0 → intet signal (hverken negative_equity eller no_financials): bevidst grænse (<0); 0-egenkapital vises neutralt
+- enrichmentStatus har ingen 'building'-mellemtilstand: bevidst — berigelsen ER hurtig (pooled+cachet); building-UX hører til properties
+- foreign/other-noder kan klik-navigeres men beriges ikke: navigation ≠ berigelse (krydsreference-kommentarer tilføjet)
+- fetchCompanyInfosPooled genopbygger auth manuelt (kan ikke genbruge PendingRequest til pool): dokumenteret i kode
+- Julik P3 (closest() på detached element i touch-vindue): meget lav sandsynlighed; cache closest-resultatet hvis vandtæthed ønskes senere

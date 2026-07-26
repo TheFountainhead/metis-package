@@ -2,6 +2,8 @@
 
 namespace TheFountainhead\Metis\Services;
 
+use Carbon\CarbonImmutable;
+
 /**
  * Builds the flat {nodes, edges} model for the ownership graph.
  *
@@ -11,11 +13,29 @@ namespace TheFountainhead\Metis\Services;
  * model directly, because pollForUpdates() rebuilds from source and would
  * silently wipe any appended state (review finding, spec v3).
  *
- * $enrichment is RESERVED for fase 2a.2 (per-cvr hover-card data) so the
- * signature never changes between the two PRs. It is unused here.
+ * $enrichment (fase 2a.2) carries per-cvr and per-property hover-card data:
+ * ['companies' => [cvr => [...]], 'properties' => [matrikelId => [...]]].
+ * It is applied as the LAST step of build(), after truncateToCap, so
+ * card/aggregate data is never computed for a node that got cut by the cap.
  */
 class OwnershipGraphBuilder
 {
+    /**
+     * Node kinds eligible for company-card/signals enrichment (fase 2a.2
+     * scope). Deliberately excludes 'person' and 'foreign' (spec: no
+     * enrichment for individuals before fase 2b) and 'other' (orphan-parent
+     * stubs synthesised in addAncestors() — a placeholder id, not a company
+     * a user asked to see enriched). Shared with CompanyStructure's cvr
+     * collection for the enrichment pool, so a stub's cvr is never sent
+     * there either.
+     *
+     * Cross-reference (F-E): NOT the same set as JS's COMPANY_KINDS
+     * (resources/js/ownership-graph.js) — that one additionally includes
+     * 'other'/'foreign' and gates CVR-page navigation, not enrichment.
+     * Related but independent; do not merge into one shared list.
+     */
+    public const ENRICHABLE_KINDS = ['searched', 'subsidiary', 'legal', 'reel'];
+
     public function build(
         string $query,
         ?string $companyName,
@@ -24,6 +44,7 @@ class OwnershipGraphBuilder
         array $enrichment,
         array $expandedNodeIds,
         array $caps,
+        ?CarbonImmutable $now = null,
     ): array {
         $nodes = [[
             'id' => 'searched',
@@ -34,10 +55,21 @@ class OwnershipGraphBuilder
         $edges = [];
         $edgeSeen = [];
 
+        // usage-bagudkompatibilitet: enrichment['properties'][mid]['usage'] wins
+        // over the legacy properties['usage'][mid] map (2a.1 shape) so Task 3 can
+        // migrate the usage-populating component without a big-bang cutover.
+        $usage = $properties['usage'] ?? [];
+        foreach ($enrichment['properties'] ?? [] as $mid => $entry) {
+            if (($entry['usage'] ?? null) !== null) {
+                $usage[$mid] = $entry['usage'];
+            }
+        }
+
         $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
         $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
-        $this->addProperties($properties['list'] ?? [], $properties['usage'] ?? [], $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
+        $this->addProperties($properties['list'] ?? [], $usage, $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
         $this->truncateToCap($caps['total_nodes'], $nodes, $edges);
+        $this->applyEnrichment($nodes, $enrichment, $properties['list'] ?? [], $query, $now);
 
         return ['nodes' => $nodes, 'edges' => $edges];
     }
@@ -173,6 +205,162 @@ class OwnershipGraphBuilder
         unset($node);
     }
 
+    /**
+     * Last step of build(): attaches per-node enrichment data — runs AFTER
+     * truncateToCap so aggregates/cards are never computed for a node the cap
+     * already removed. Three independent sub-steps: (a) value aggregate per
+     * owner, derived from $propertyList regardless of whether enrichment was
+     * fetched at all; (b) company card+signals, only for nodes present in
+     * enrichment['companies']; (c) property card, only for nodes present in
+     * enrichment['properties'].
+     */
+    protected function applyEnrichment(array &$nodes, array $enrichment, array $propertyList, string $query, ?CarbonImmutable $now): void
+    {
+        $nodeIds = array_flip(array_column($nodes, 'id'));
+        $agg = $this->aggregateProperties($propertyList, $nodeIds, $query);
+        $companies = $enrichment['companies'] ?? [];
+        $propertiesById = $enrichment['properties'] ?? [];
+        // lat/lng come from the portfolio row itself (the skråfoto link needs
+        // them), not from enrichment — keyed by matrikel_id, last row wins for
+        // a co-owned property (identical coordinates regardless of owner).
+        $coordsByMid = [];
+        foreach ($propertyList as $p) {
+            $mid = (string) ($p['matrikel_id'] ?? '');
+            if ($mid !== '') {
+                $coordsByMid[$mid] = ['lat' => $p['latitude'] ?? null, 'lng' => $p['longitude'] ?? null];
+            }
+        }
+
+        foreach ($nodes as &$node) {
+            if (isset($agg[$node['id']])) {
+                $node['agg'] = $agg[$node['id']];
+            }
+
+            if ($node['kind'] === 'property') {
+                // Keyed off the node id, not meta.bfe — meta.bfe is deliberately
+                // null for non-matriculated properties (addProperties), but the
+                // matrikel_id (and its enrichment lookup) still applies to them.
+                $mid = substr($node['id'], 4);
+                if (isset($propertiesById[$mid])) {
+                    $node['card'] = $this->propertyCard($propertiesById[$mid], $coordsByMid[$mid] ?? []);
+                }
+
+                continue;
+            }
+
+            $cvr = $node['cvr'];
+            // Company enrichment is scoped to actual company kinds (spec:
+            // person/foreign nodes get no enrichment before fase 2b, and
+            // 'other' orphan-parent stubs never had their cvr sent to the
+            // pool in the first place — see CompanyStructure::fetchEnrichmentData).
+            if ($cvr !== null && in_array($node['kind'], self::ENRICHABLE_KINDS, true) && isset($companies[$cvr])) {
+                $node['card'] = $this->companyCard($companies[$cvr]);
+                $node['signals'] = $this->companySignals($companies[$cvr], $now);
+            }
+        }
+        unset($node);
+    }
+
+    /**
+     * Groups the property list by owner-node-id, reusing the SAME
+     * ownedTargetId-style normalisation as addProperties (owner_cvr → node id,
+     * or 'searched' when it equals the query) so aggregates land on the exact
+     * node a property was hung on — including the searched-company case.
+     * Independent of enrichment: this is derived purely from the property
+     * list, so it is present even when no enrichment was ever fetched.
+     */
+    protected function aggregateProperties(array $propertyList, array $nodeIds, string $query): array
+    {
+        $agg = [];
+        foreach ($propertyList as $p) {
+            $owner = $p['owner_cvr'] ?? null;
+            $ownerId = $owner === null ? null : (isset($nodeIds[$owner]) ? $owner : ($owner === $query ? 'searched' : null));
+            if ($ownerId === null) {
+                continue;
+            }
+
+            $agg[$ownerId] ??= ['count' => 0, 'value' => 0, 'valued' => 0];
+            $agg[$ownerId]['count']++;
+            $valuation = $p['valuation'] ?? null;
+            if ($valuation !== null) {
+                $agg[$ownerId]['value'] += $valuation;
+                $agg[$ownerId]['valued']++;
+            }
+        }
+
+        return $agg;
+    }
+
+    protected function companyCard(array $company): array
+    {
+        return array_filter([
+            'equity' => $company['equity'] ?? null,
+            'result' => $company['result'] ?? null,
+            'fiscal_year' => $company['fiscal_year'] ?? null,
+            'employees' => $company['employees'] ?? null,
+            'website' => $company['website'] ?? null,
+            'founded_date' => $company['founded_date'] ?? null,
+            'industry' => $company['industry'] ?? null,
+        ], fn ($v) => $v !== null);
+    }
+
+    /**
+     * negative_equity: latest equity < 0. newly_founded: founded within the
+     * last 12 months of a caller-supplied, deterministic $now — without $now
+     * this signal can never be evaluated (never CarbonImmutable::now(), which
+     * would make build() non-deterministic). no_financials: the company IS in
+     * the enrichment map but carries no equity figure — distinct from a
+     * company absent from enrichment entirely (no signals key at all, handled
+     * by the caller), because "not fetched yet" must never look "financially
+     * healthy".
+     */
+    protected function companySignals(array $company, ?CarbonImmutable $now): array
+    {
+        $signals = [];
+        $equity = $company['equity'] ?? null;
+
+        if ($equity !== null && $equity < 0) {
+            $signals[] = 'negative_equity';
+        } elseif ($equity === null) {
+            $signals[] = 'no_financials';
+        }
+
+        $foundedDate = $company['founded_date'] ?? null;
+        if ($now !== null && $foundedDate !== null && CarbonImmutable::parse($foundedDate)->greaterThan($now->subMonths(12))) {
+            $signals[] = 'newly_founded';
+        }
+
+        return $signals;
+    }
+
+    protected function propertyCard(array $property, array $coords): array
+    {
+        return array_filter([
+            'usage' => $property['usage'] ?? null,
+            'latest_sale_date' => $property['latest_sale_date'] ?? null,
+            'latest_sale_price' => $property['latest_sale_price'] ?? null,
+            'valuation' => $property['valuation'] ?? null,
+            'streetview_url' => $property['streetview_url'] ?? null,
+            'lat' => $coords['lat'] ?? null,
+            'lng' => $coords['lng'] ?? null,
+        ], fn ($v) => $v !== null);
+    }
+
+    /**
+     * Known company owner_kind values a company-ancestor row can legitimately
+     * carry (reel = beneficial/ultimate owner, legal = direct/legal owner —
+     * see ENRICHABLE_KINDS above, which both feed). Any other value (e.g. a
+     * future/unexpected API value like 'ultimate', or simply absent) is
+     * normalised to 'legal' below — NOT passed through raw. A raw passthrough
+     * would let an unrecognised owner_kind collide with 'other' (the distinct
+     * kind addAncestors() itself synthesises for orphan-parent stubs, below)
+     * and would silently exclude a genuine company-ancestor from
+     * ENRICHABLE_KINDS-gated enrichment (companyEnrichmentFromInfo's pool
+     * call, applyEnrichment's card/signals) purely because the API used a
+     * kind string this builder didn't happen to already know about.
+     */
+    protected const KNOWN_COMPANY_OWNER_KINDS = ['legal', 'reel'];
+
     protected function addAncestors(array $ancestors, string $query, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
     {
         foreach ($ancestors as $i => $a) {
@@ -181,7 +369,10 @@ class OwnershipGraphBuilder
             $cvr = $a['cvr'] ?? null;
             // Row index folded in so two distinct same-named persons never collapse (fase 1).
             $id = $cvr ?: 'person:'.md5($i.'|'.($a['person_name'] ?? '').'|'.($a['parent_of_cvr'] ?? ''));
-            $kind = $foreign ? 'foreign' : (! $isCompany ? 'person' : ($a['owner_kind'] ?? 'legal'));
+            $ownerKind = $a['owner_kind'] ?? 'legal';
+            $kind = $foreign ? 'foreign' : (! $isCompany ? 'person' : (
+                in_array($ownerKind, self::KNOWN_COMPANY_OWNER_KINDS, true) ? $ownerKind : 'legal'
+            ));
 
             if (! isset($seen[$id])) {
                 $seen[$id] = true;
@@ -238,15 +429,78 @@ class OwnershipGraphBuilder
                 // maxDepth+1 down keeps grandchildren gated behind their own expand.
                 $this->addSubsidiaries($children, $cvr, $depth + 1, $expandedHere ? $depth + 1 : $maxDepth, $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
             } elseif (($n = count($children)) > 0) {
-                // Signal hidden children on THIS node (find it and set expand).
-                foreach ($nodes as &$node) {
-                    if ($node['id'] === $cvr) {
-                        $node['expand'] = ['relations' => $n, 'properties' => $node['expand']['properties'] ?? 0];
-                        break;
+                // Depth-cap boundary reached (Task 9, Resights-dybde-4-fundet):
+                // a lineær kæde of hidden descendants costs one expand-click per
+                // level for no space saved. If N's ENTIRE hidden subtree (every
+                // descendant, not just direct children) is small (≤3 nodes), skip
+                // the expand-signal and render it fully — deterministically, from
+                // the raw structure, with no expandedNodeIds involvement (Resights
+                // must be visible on the FIRST build for the RS HoldCo case).
+                // Larger subtrees keep the unchanged expand-button behaviour.
+                if ($this->countDescendants($children) <= 3) {
+                    $this->addSubtreeFully($children, $cvr, $depth + 1, $nodes, $seen, $edges, $edgeSeen);
+                } else {
+                    // Signal hidden children on THIS node (find it and set expand).
+                    foreach ($nodes as &$node) {
+                        if ($node['id'] === $cvr) {
+                            $node['expand'] = ['relations' => $n, 'properties' => $node['expand']['properties'] ?? 0];
+                            break;
+                        }
                     }
+                    unset($node);
                 }
-                unset($node);
             }
+        }
+    }
+
+    /**
+     * Counts every descendant (children, grandchildren, ...) of $subs,
+     * recursively — NOT just the direct children count used for the
+     * expand-signal. Drives the Task 9 auto-expand threshold: a linear
+     * chain of 3 single-child levels is 3 descendants, not 1.
+     */
+    protected function countDescendants(array $subs): int
+    {
+        $count = 0;
+        foreach ($subs as $s) {
+            if (! ($s['cvr'] ?? null)) {
+                continue;
+            }
+            $count++;
+            $count += $this->countDescendants($s['children'] ?? []);
+        }
+
+        return $count;
+    }
+
+    /**
+     * Renders an entire hidden subtree unconditionally (Task 9 auto-expand),
+     * with no depth cap and no expandedNodeIds involvement — every node down
+     * to the leaves is added. Reuses the exact same node/edge shape and
+     * dedup (`$seen`/`$edgeSeen`) as addSubsidiaries so a node that is ALSO
+     * reachable another way (ancestor dedup, multi-parent co-owner) still
+     * collapses to one node, one id, consistent with the rest of the
+     * builder. 'depth' keeps incrementing for truncateToCap's deepest-layer-
+     * first ordering, since auto-expanded nodes are still real, total-cap-
+     * countable nodes (brief: "kan stadig trunkeres af total-cap").
+     */
+    protected function addSubtreeFully(array $subs, string $parentId, int $depth, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
+    {
+        foreach ($subs as $s) {
+            $cvr = $s['cvr'] ?? null;
+            if (! $cvr) {
+                continue;
+            }
+            if (! isset($seen[$cvr])) {
+                $seen[$cvr] = true;
+                $nodes[] = ['id' => $cvr, 'label' => $s['name'] ?? ('CVR '.$cvr), 'cvr' => $cvr, 'kind' => 'subsidiary', 'share' => $s['ownership_share'] ?? null, 'expand' => null, 'depth' => $depth];
+            }
+            if (! isset($edgeSeen[$parentId.'|'.$cvr])) {
+                $edgeSeen[$parentId.'|'.$cvr] = true;
+                $edges[] = ['from' => $parentId, 'to' => $cvr, 'label' => $this->shareLabel($s['ownership_share'] ?? null)];
+            }
+
+            $this->addSubtreeFully($s['children'] ?? [], $cvr, $depth + 1, $nodes, $seen, $edges, $edgeSeen);
         }
     }
 

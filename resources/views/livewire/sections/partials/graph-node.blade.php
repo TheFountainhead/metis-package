@@ -10,10 +10,24 @@
      OwnershipGraphBuilder::build()); every text field is bound via x-text so
      Alpine escapes it (never interpolated as raw HTML). --}}
 <template x-for="node in nodes" :key="node.id">
+    {{-- Card entry point (fase 2a.2, review-gap fix): hover/click open the
+         singleton card (ownership-graph.blade.php's `card.node`) — wired
+         HERE, not in the host JS, because the codebase convention is that
+         interaction attributes live in the Blade (frame-pan and the expand
+         buttons below are both wired the same way). nodeEnter/nodeLeave own
+         hover-intent/grace timing; nodeClick owns the _moved-drag-guard and
+         touch-vs-hover-mode branching (all in the T5 Alpine component).
+         @click (not @click.stop) so it does NOT shadow the expand buttons'
+         own @click.stop below — those already stop propagation before it
+         would reach this handler, so a node click only ever fires nodeClick
+         when the click didn't land on an expand button. --}}
     <div
         class="mgraph-node"
         :class="'mgraph-node--' + node.kind"
         :style="`left:${node.x}px; top:${node.y}px; width:${node.w}px; height:${node.h}px;`"
+        @mouseenter="nodeEnter(node)"
+        @mouseleave="nodeLeave()"
+        @click="nodeClick(node)"
     >
         <div class="mgraph-node__name" x-text="node.label"></div>
         <div class="mgraph-node__meta" x-show="node.cvr" x-cloak>
@@ -29,6 +43,32 @@
             <span class="mgraph-node__cvr" x-show="node.meta?.bfe" x-text="'BFE ' + (node.meta?.bfe ?? '')"></span>
             <span class="mgraph-node__usage" x-show="node.meta?.usage" x-text="node.meta?.usage ?? ''"></span>
         </div>
+        {{-- Enrichment (fase 2a.2): value aggregate + signal icons.
+             node.agg / node.signals are only present when OwnershipGraphBuilder
+             computed them (applyEnrichment) — most nodes have neither, so every
+             x-text expression below needs its own null-safe fallback: Alpine
+             evaluates x-text on EVERY node regardless of x-show (display:none
+             doesn't skip evaluation — the 2a.1 lesson repeated in the docblock
+             above), so `node.agg.count` (no `?.`) would throw on a node with
+             agg=undefined the instant it's rendered, not just when shown. --}}
+        {{-- :title (multi-agent review, F-E): the agg span shows a SUM, but
+             when valued < count that sum silently under-counts properties
+             with no vurdering (aggregateProperties() in OwnershipGraphBuilder
+             only adds a property's valuation to the sum when it is non-null)
+             — the tooltip spells out that the figure is a minimum, not the
+             true total, whenever coverage is partial. Null-safe (`node.agg?`)
+             for the same evaluate-regardless-of-x-show reason as x-text
+             above; empty string (no title attribute rendered) when agg is
+             absent OR coverage is already complete (valued === count), so a
+             fully-vurderet node gets no misleading "minimum" caveat. --}}
+        <span class="mgraph-node__agg" x-show="node.agg" x-cloak
+              x-text="node.agg ? (node.agg.count + ' ejendomme · ' + fmtDKK(node.agg.value) + (node.agg.valued < node.agg.count ? ' (' + node.agg.valued + ' vurderet)' : '')) : ''"
+              :title="node.agg && node.agg.valued < node.agg.count ? ('Minimum — sum af foreliggende vurderinger (' + node.agg.valued + ' af ' + node.agg.count + ')') : ''"></span>
+        <span class="mgraph-node__signals" x-show="node.signals?.length" x-cloak>
+            <template x-for="s in (node.signals ?? [])" :key="s">
+                <span class="mgraph-signal" :class="'mgraph-signal--' + s" :title="signalTitle(s)" x-text="signalGlyph(s)"></span>
+            </template>
+        </span>
         {{-- Expand affordances. @mousedown.stop so the frame's pan never starts;
              _expanding gives a per-node loading state until the watcher re-renders.
              Same evaluate-regardless-of-x-show reasoning as above: most nodes have

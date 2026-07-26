@@ -11,9 +11,10 @@ function buildGraph(array $overrides = []): array
         companyName: $overrides['companyName'] ?? 'FDL-Invest ApS',
         structure: $overrides['structure'] ?? ['ancestors' => [], 'subsidiaries' => []],
         properties: $overrides['properties'] ?? ['list' => [], 'usage' => []],
-        enrichment: [],
+        enrichment: $overrides['enrichment'] ?? [],
         expandedNodeIds: $overrides['expandedNodeIds'] ?? [],
         caps: $overrides['caps'] ?? ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
+        now: $overrides['now'] ?? null,
     );
 }
 
@@ -55,14 +56,47 @@ it('synthesises a stub node for a pruned parent cvr', function () {
     expect($stub)->not->toBeNull()->and($stub['kind'])->toBe('other');
 });
 
+/**
+ * F-C fix (multi-agent review): an unrecognised owner_kind on a COMPANY
+ * ancestor row (e.g. a future/unexpected API value like 'ultimate') must
+ * normalise to 'legal', not pass through raw. Before this fix, a raw
+ * passthrough could (a) collide with 'other' — the distinct kind
+ * addAncestors() synthesises for orphan-parent stubs just below, in the SAME
+ * method — and (b) silently exclude a genuine company-ancestor from
+ * ENRICHABLE_KINDS-gated enrichment purely because the API used a kind
+ * string this builder didn't already recognise. This test asserts BOTH
+ * halves: the node's kind is normalised to 'legal', AND it still receives
+ * its company card via applyEnrichment() (proving ENRICHABLE_KINDS gate
+ * passes for the normalised kind).
+ */
+it('normalises an unknown company owner_kind to legal and still enriches the node (F-C)', function () {
+    $g = buildGraph([
+        'structure' => ['ancestors' => [
+            ['person_name' => 'Ultimate Holding ApS', 'is_company' => true, 'cvr' => '33333333', 'owner_kind' => 'ultimate', 'ownership_share' => 100.0, 'parent_of_cvr' => null],
+        ], 'subsidiaries' => []],
+        'enrichment' => ['companies' => ['33333333' => ['equity' => 5.0]], 'properties' => []],
+    ]);
+
+    $node = collect($g['nodes'])->firstWhere('id', '33333333');
+    expect($node['kind'])->toBe('legal')
+        ->and($node)->toHaveKey('card');
+});
+
 it('adds subsidiaries two levels deep with edges parent→child', function () {
+    // Level-3 subtree enlarged to 4 hidden descendants (Task 9: ≤3 auto-
+    // renders instead of signalling) so this fixture's ORIGINAL intent —
+    // "a hidden third level stays hidden behind an expand signal" — still
+    // holds after the auto-expand-lineær-kæder change.
     $subs = [[
         'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0,
         'children' => [[
             'cvr' => '44018942', 'name' => 'Trygve 1 ApS', 'ownership_share' => 100.0,
-            'children' => [[
-                'cvr' => '44027992', 'name' => 'Schneidereit Trygve 1 A/S', 'ownership_share' => 67.0, 'children' => [],
-            ]],
+            'children' => [
+                ['cvr' => '44027992', 'name' => 'Schneidereit Trygve 1 A/S', 'ownership_share' => 67.0, 'children' => []],
+                ['cvr' => '44027993', 'name' => 'D', 'ownership_share' => 1.0, 'children' => []],
+                ['cvr' => '44027994', 'name' => 'E', 'ownership_share' => 1.0, 'children' => []],
+                ['cvr' => '44027995', 'name' => 'F', 'ownership_share' => 1.0, 'children' => []],
+            ],
         ]],
     ]];
     $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs]]);
@@ -74,7 +108,7 @@ it('adds subsidiaries two levels deep with edges parent→child', function () {
         ->and(collect($g['edges'])->firstWhere('to', '44018942')['from'])->toBe('44507781');
 
     $trygve1 = collect($g['nodes'])->firstWhere('id', '44018942');
-    expect($trygve1['expand']['relations'])->toBe(1);                 // 1 hidden child signalled
+    expect($trygve1['expand']['relations'])->toBe(4);                 // 4 hidden children signalled
 });
 
 it('marks subsidiary nodes with kind subsidiary and labels edges with the share', function () {
@@ -115,6 +149,138 @@ it('is idempotent: duplicate expand ids change nothing', function () {
     $twice = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'expandedNodeIds' => ['sub:44507781', 'sub:44507781']]);
 
     expect($twice)->toEqual($once);
+});
+
+it('auto-renders a linear chain of 2 hidden nodes fully instead of an expand button (Task 9)', function () {
+    // Root at depth 1 (cap 2) → Mid at depth 2 (cap boundary) → Leaf at
+    // depth 3, hidden. Leaf's hidden subtree is just Leaf itself: 1 node
+    // — well under the ≤3 threshold. A SECOND single-child level is added
+    // (Leaf → Grandleaf) to make this a genuine 2-node LINEAR CHAIN, per
+    // brief Step 1(a): "lineær kæde (2 skjulte noder) → begge renderes,
+    // INGEN expand-knap på forælderen."
+    $subs = [[
+        'cvr' => '10000001', 'name' => 'Root', 'ownership_share' => 100.0,
+        'children' => [[
+            'cvr' => '10000002', 'name' => 'Mid', 'ownership_share' => 100.0,
+            'children' => [[
+                'cvr' => '10000003', 'name' => 'Leaf', 'ownership_share' => 100.0,
+                'children' => [[
+                    'cvr' => '10000004', 'name' => 'Grandleaf', 'ownership_share' => 100.0, 'children' => [],
+                ]],
+            ]],
+        ]],
+    ]];
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs]]);
+
+    $ids = collect($g['nodes'])->pluck('id');
+    expect($ids)->toContain('10000003')->toContain('10000004');
+
+    $mid = collect($g['nodes'])->firstWhere('id', '10000002');
+    expect($mid['expand'])->toBeNull();
+});
+
+it('renders the RS HoldCo linear chain to Resights fully on the FIRST build, no expandedNodeIds needed (Lars Horsbøl case)', function () {
+    // 5% → 100% → 100%: searched → RS HoldCo (depth 1) → RS BidCo (depth 2,
+    // cap boundary) → Resights (depth 3, hidden, 1-node subtree). This is
+    // the exact production UX gap that motivated Task 9 (Resights sat two
+    // expand-clicks deep). Resights must be visible WITHOUT the caller ever
+    // expanding anything.
+    $subs = [[
+        'cvr' => '45429075', 'name' => 'RS HoldCo', 'ownership_share' => 5.0,
+        'children' => [[
+            'cvr' => '45429334', 'name' => 'RS BidCo', 'ownership_share' => 100.0,
+            'children' => [[
+                'cvr' => '41527080', 'name' => 'Resights', 'ownership_share' => 100.0, 'children' => [],
+            ]],
+        ]],
+    ]];
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs]]);
+
+    expect(collect($g['nodes'])->pluck('id'))->toContain('41527080');
+
+    $bidco = collect($g['nodes'])->firstWhere('id', '45429334');
+    expect($bidco['expand'])->toBeNull();
+});
+
+it('keeps the expand button unchanged for a hidden subtree of 4 nodes (Task 9 boundary)', function () {
+    // 4 hidden descendants (one direct child with 3 of its own) is JUST over
+    // the ≤3 threshold — the parent must keep the ordinary expand.relations
+    // signal, none of the descendants auto-render.
+    $subs = [[
+        'cvr' => '20000001', 'name' => 'Root', 'ownership_share' => 100.0,
+        'children' => [[
+            'cvr' => '20000002', 'name' => 'Mid', 'ownership_share' => 100.0,
+            'children' => [[
+                'cvr' => '20000003', 'name' => 'Hidden1', 'ownership_share' => 100.0, 'children' => [
+                    ['cvr' => '20000004', 'name' => 'Hidden2', 'ownership_share' => 1.0, 'children' => []],
+                    ['cvr' => '20000005', 'name' => 'Hidden3', 'ownership_share' => 1.0, 'children' => []],
+                    ['cvr' => '20000006', 'name' => 'Hidden4', 'ownership_share' => 1.0, 'children' => []],
+                ],
+            ]],
+        ]],
+    ]];
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs]]);
+
+    $ids = collect($g['nodes'])->pluck('id');
+    expect($ids)->not->toContain('20000003')
+        ->not->toContain('20000004')->not->toContain('20000005')->not->toContain('20000006');
+
+    // expand.relations signals DIRECT hidden children only (unchanged
+    // semantics) — Mid has exactly 1 direct child (Hidden1); the 4-node
+    // count is the SUBTREE size that decided auto-expand did NOT trigger.
+    $mid = collect($g['nodes'])->firstWhere('id', '20000002');
+    expect($mid['expand']['relations'])->toBe(1);
+});
+
+it('total-cap-truncates an auto-expanded node with correct capped-signal, per the normal removeNode rules (Task 9)', function () {
+    // Root's hidden 2-node chain (Mid2 → Leaf) auto-renders because it is
+    // ≤3, but a TIGHT total_nodes cap still forces truncateToCap to cut the
+    // deepest layer — auto-expanded nodes are ordinary rendered nodes and
+    // must remain subject to the total cap exactly like any other, folding
+    // onto the parent with capped_relations: true (not resolvable via
+    // expandNode, since there was never an expand click to replay).
+    $subs = [[
+        'cvr' => '30000001', 'name' => 'Root', 'ownership_share' => 100.0,
+        'children' => [[
+            'cvr' => '30000002', 'name' => 'Mid', 'ownership_share' => 100.0,
+            'children' => [[
+                'cvr' => '30000003', 'name' => 'Leaf', 'ownership_share' => 100.0, 'children' => [],
+            ]],
+        ]],
+    ]];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'caps' => ['subsidiary_depth' => 1, 'properties_per_company' => 6, 'total_nodes' => 3],
+    ]);
+
+    // searched + Root + Mid = cap 3; Leaf (the deepest, auto-expanded layer)
+    // must be the one truncated.
+    $ids = collect($g['nodes'])->pluck('id');
+    expect($ids)->toContain('30000002')->not->toContain('30000003');
+
+    $mid = collect($g['nodes'])->firstWhere('id', '30000002');
+    expect($mid['expand']['relations'])->toBe(1)
+        ->and($mid['expand']['capped_relations'])->toBeTrue();
+
+    $nodeIds = collect($g['nodes'])->pluck('id')->all();
+    foreach ($g['edges'] as $edge) {
+        expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
+    }
+});
+
+it('is deterministic: auto-expanding a linear chain produces identical output across builds (Task 9)', function () {
+    $subs = [[
+        'cvr' => '45429075', 'name' => 'RS HoldCo', 'ownership_share' => 5.0,
+        'children' => [[
+            'cvr' => '45429334', 'name' => 'RS BidCo', 'ownership_share' => 100.0,
+            'children' => [[
+                'cvr' => '41527080', 'name' => 'Resights', 'ownership_share' => 100.0, 'children' => [],
+            ]],
+        ]],
+    ]];
+    $args = ['structure' => ['ancestors' => [], 'subsidiaries' => $subs]];
+
+    expect(buildGraph($args))->toEqual(buildGraph($args));
 });
 
 function fdlProperty(array $overrides = []): array
@@ -203,9 +369,15 @@ it('hangs property nodes on the searched company when owner_cvr matches query', 
 });
 
 it('preserves existing relations count when adding hidden properties to a node', function () {
+    // Grandchildren enlarged to 4 (Task 9: ≤3 hidden descendants now
+    // auto-render instead of signalling) so Child still carries a real
+    // expand.relations count for this test's properties-roll-up assertion.
     $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => [
         ['cvr' => '12345678', 'name' => 'Child', 'ownership_share' => 100.0, 'children' => [
             ['cvr' => '87654321', 'name' => 'Grandchild', 'ownership_share' => 100.0, 'children' => []],
+            ['cvr' => '87654322', 'name' => 'Grandchild2', 'ownership_share' => 100.0, 'children' => []],
+            ['cvr' => '87654323', 'name' => 'Grandchild3', 'ownership_share' => 100.0, 'children' => []],
+            ['cvr' => '87654324', 'name' => 'Grandchild4', 'ownership_share' => 100.0, 'children' => []],
         ]],
     ]]];
     // Create 9 properties owned by parent and 9 owned by child
@@ -220,7 +392,7 @@ it('preserves existing relations count when adding hidden properties to a node',
 
     $childNode = collect($g['nodes'])->firstWhere('id', '12345678');
     expect($childNode['expand'])->toHaveKeys(['relations', 'properties'])
-        ->and($childNode['expand']['relations'])->toBe(1)
+        ->and($childNode['expand']['relations'])->toBe(4)
         ->and($childNode['expand']['properties'])->toBe(3);
 });
 
@@ -272,19 +444,23 @@ it('does not set expand.capped_relations on a node whose hidden count comes only
     // Regression guard: depth-cap signalling (addSubsidiaries, well under the
     // total_nodes cap) must NOT carry capped_relations — those ARE resolvable
     // via expandNode(), so the Blade must still render a real button for them.
+    // Hidden level-3 subtree enlarged to 4 nodes (Task 9: ≤3 auto-renders).
     $subs = [[
         'cvr' => '44507781', 'name' => 'A', 'ownership_share' => 50.0,
         'children' => [[
             'cvr' => '44018942', 'name' => 'B', 'ownership_share' => 100.0,
-            'children' => [[
-                'cvr' => '44027992', 'name' => 'C', 'ownership_share' => 67.0, 'children' => [],
-            ]],
+            'children' => [
+                ['cvr' => '44027992', 'name' => 'C', 'ownership_share' => 67.0, 'children' => []],
+                ['cvr' => '44027993', 'name' => 'D', 'ownership_share' => 1.0, 'children' => []],
+                ['cvr' => '44027994', 'name' => 'E', 'ownership_share' => 1.0, 'children' => []],
+                ['cvr' => '44027995', 'name' => 'F', 'ownership_share' => 1.0, 'children' => []],
+            ],
         ]],
     ]];
     $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs]]);
 
     $trygve1 = collect($g['nodes'])->firstWhere('id', '44018942');
-    expect($trygve1['expand']['relations'])->toBe(1);
+    expect($trygve1['expand']['relations'])->toBe(4);
     expect($trygve1['expand']['capped_relations'] ?? false)->toBeFalse();
 });
 
@@ -294,13 +470,21 @@ it('flags only capped_properties, leaving a coexisting legitimate depth-cap rela
     // resolvable) at once. Tagging the whole expand object with one shared
     // 'capped' flag would incorrectly freeze the still-live relations button
     // too — the flag must be per-field.
+    // DepthCappedChild's OWN hidden subtree carries 3 further children of its
+    // own, so the total hidden subtree below Root is 4 nodes (> 3) — Task 9's
+    // auto-expand-≤3 rule does not kick in here, and Root keeps a real,
+    // resolvable expand.relations signal (the point of this test).
     $subs = [[
         'cvr' => '95000000', 'name' => 'Root', 'ownership_share' => 100.0,
         'children' => [[
-            // One child beyond the depth cap (subsidiary_depth=1) → Root gets
-            // a legitimate, resolvable expand.relations = 1 (depth-cap signal,
-            // set by addSubsidiaries — never touched by removeNode).
-            'cvr' => '95000001', 'name' => 'DepthCappedChild', 'ownership_share' => 100.0, 'children' => [],
+            // One direct child beyond the depth cap (subsidiary_depth=1) → Root
+            // gets a legitimate, resolvable expand.relations = 1 (depth-cap
+            // signal, set by addSubsidiaries — never touched by removeNode).
+            'cvr' => '95000001', 'name' => 'DepthCappedChild', 'ownership_share' => 100.0, 'children' => [
+                ['cvr' => '95000002', 'name' => 'GC1', 'ownership_share' => 1.0, 'children' => []],
+                ['cvr' => '95000003', 'name' => 'GC2', 'ownership_share' => 1.0, 'children' => []],
+                ['cvr' => '95000004', 'name' => 'GC3', 'ownership_share' => 1.0, 'children' => []],
+            ],
         ]],
     ]];
     // 9 properties on Root; a tight total_nodes (2: searched + Root) forces
@@ -456,4 +640,105 @@ it('does not crash when a removed subsidiary with its own expand.properties has 
     foreach ($g['edges'] as $edge) {
         expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
     }
+});
+
+it('derives value aggregate per owner from the property list with coverage', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]];
+    $props = [
+        fdlProperty(['matrikel_id' => '1000001', 'valuation' => 500000]),
+        fdlProperty(['matrikel_id' => '1000002', 'valuation' => null]),
+    ];
+    $g = buildGraph(['structure' => ['ancestors' => [], 'subsidiaries' => $subs], 'properties' => ['list' => $props, 'usage' => []]]);
+
+    expect(collect($g['nodes'])->firstWhere('id', '44507781')['agg'])
+        ->toMatchArray(['count' => 2, 'value' => 500000, 'valued' => 1]);
+});
+
+it('computes signals in the builder with a deterministic now', function () {
+    $enrichment = ['companies' => ['44507781' => ['equity' => -12000.0, 'fiscal_year' => '2025', 'founded_date' => '2026-03-01']], 'properties' => []];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]]],
+        'enrichment' => $enrichment,
+        'now' => \Carbon\CarbonImmutable::parse('2026-07-26'),
+    ]);
+
+    expect(collect($g['nodes'])->firstWhere('id', '44507781')['signals'])
+        ->toContain('negative_equity')->toContain('newly_founded');
+});
+
+it('marks enriched companies without financials explicitly and leaves unenriched nodes without signals key', function () {
+    $enrichment = ['companies' => ['44507781' => ['founded_date' => '2010-01-01']], 'properties' => []];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => [
+            ['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []],
+            ['cvr' => '45170209', 'name' => 'I', 'ownership_share' => 100.0, 'children' => []],
+        ]],
+        'enrichment' => $enrichment,
+        'now' => \Carbon\CarbonImmutable::parse('2026-07-26'),
+    ]);
+
+    expect(collect($g['nodes'])->firstWhere('id', '44507781')['signals'])->toContain('no_financials')
+        ->and(collect($g['nodes'])->firstWhere('id', '45170209'))->not->toHaveKey('signals');
+});
+
+it('attaches property card data from the enrichment property map', function () {
+    $subs = [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]];
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => [fdlProperty(['latitude' => 55.25, 'longitude' => 12.17])], 'usage' => []],
+        'enrichment' => ['companies' => [], 'properties' => ['2573669' => ['usage' => 'Fritliggende enfamiliehus', 'latest_sale_price' => 1200000, 'streetview_url' => 'https://example/sv']]],
+    ]);
+
+    $card = collect($g['nodes'])->firstWhere('id', 'bfe:2573669')['card'];
+    expect($card)->toMatchArray(['usage' => 'Fritliggende enfamiliehus', 'latest_sale_price' => 1200000, 'streetview_url' => 'https://example/sv', 'lat' => 55.25, 'lng' => 12.17])
+        ->and($card)->not->toHaveKey('valuation');   // null-felter udeladt
+});
+
+it('remains deterministic and idempotent with enrichment input', function () {
+    $args = ['structure' => ['ancestors' => [], 'subsidiaries' => [['cvr' => '44507781', 'name' => 'K', 'ownership_share' => 50.0, 'children' => []]]],
+        'enrichment' => ['companies' => ['44507781' => ['equity' => 5.0]], 'properties' => []],
+        'now' => \Carbon\CarbonImmutable::parse('2026-07-26')];
+    expect(buildGraph($args))->toEqual(buildGraph($args));
+});
+
+/**
+ * Spec (fase 2a.2): person/foreign nodes get NO enrichment before fase 2b —
+ * even when a person row happens to carry a cvr (is_company=false ancestor
+ * rows sometimes still have a stray cvr in the raw registry payload). Before
+ * this fix, applyEnrichment() only gated on cvr !== null, so a person node
+ * with a cvr would get a company card/signals meant for an actual company.
+ */
+it('does not attach company card/signals to a person node even when it carries a cvr (F3)', function () {
+    $g = buildGraph([
+        'structure' => ['ancestors' => [
+            ['person_name' => 'Frederik Larnæs', 'is_company' => false, 'cvr' => '11111111', 'ownership_share' => 100.0, 'parent_of_cvr' => null],
+        ], 'subsidiaries' => []],
+        'enrichment' => ['companies' => ['11111111' => ['equity' => 5.0, 'website' => 'example.dk']], 'properties' => []],
+    ]);
+
+    $person = collect($g['nodes'])->firstWhere('id', '11111111');
+    expect($person['kind'])->toBe('person')
+        ->and($person)->not->toHaveKey('card')
+        ->and($person)->not->toHaveKey('signals');
+});
+
+/**
+ * 'other' orphan-parent stub nodes (synthesised in addAncestors() when a
+ * parent_of_cvr was pruned upstream) are placeholders, not companies a user
+ * asked to see enriched — even if enrichment data happens to be present for
+ * that cvr (e.g. left over from a previous graph that had the real company
+ * loaded), the stub must not render a card.
+ */
+it('does not attach company card/signals to an "other" orphan-parent stub node (F3)', function () {
+    $g = buildGraph([
+        'structure' => ['ancestors' => [
+            ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '22222222', 'ownership_share' => 100.0, 'parent_of_cvr' => '99999999'],
+        ], 'subsidiaries' => []],
+        'enrichment' => ['companies' => ['99999999' => ['equity' => 5.0]], 'properties' => []],
+    ]);
+
+    $stub = collect($g['nodes'])->firstWhere('id', '99999999');
+    expect($stub['kind'])->toBe('other')
+        ->and($stub)->not->toHaveKey('card')
+        ->and($stub)->not->toHaveKey('signals');
 });

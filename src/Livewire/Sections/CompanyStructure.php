@@ -27,6 +27,9 @@ class CompanyStructure extends MetisSection
     public int $companiesFound = 0;
     public ?string $companyName = null;
 
+    /** @var 'pending'|'loaded'|'failed' */
+    public string $enrichmentStatus = 'pending';
+
     /**
      * The flat {nodes, edges} graph model, kept as public state so the Alpine
      * graph can `$wire.$watch('graphModel', …)` it: an enrichment poll deepens
@@ -57,6 +60,13 @@ class CompanyStructure extends MetisSection
     protected array $structureData = [];
 
     protected array $propertyData = ['list' => [], 'usage' => []];
+
+    /**
+     * Builder enrichment input (Task 3) — same PROTECTED-state caveat as
+     * $structureData/$propertyData above: lost on hydration, rehydrated in
+     * rehydrateBeforeRebuild() from enrichmentStatus === 'loaded'.
+     */
+    protected array $enrichmentData = ['companies' => [], 'properties' => []];
 
     protected function sectionTitle(): string
     {
@@ -162,6 +172,17 @@ class CompanyStructure extends MetisSection
             $this->enriching = false;
             $this->rehydrateBeforeRebuild();
             $this->rebuild();
+
+            // F1 fix (Opus review): this call was DOCUMENTED on loadEnrichment()'s
+            // own docblock ("the existing enrichment poll-completion path calls
+            // this at the end") but never actually wired up — a company whose
+            // subsidiary-tree enrichment was still 'running'/'pending' at mount
+            // would sit at enrichmentStatus='pending' forever, since nothing else
+            // ever calls loadEnrichment() again once $enriching flips false here.
+            // loadEnrichment() itself gates on propertiesStatus (F2) and on
+            // enrichmentStatus==='loaded' (F3), so calling it unconditionally
+            // here is safe — it degrades to a no-op when either gate isn't ready.
+            $this->loadEnrichment();
         }
     }
 
@@ -182,6 +203,16 @@ class CompanyStructure extends MetisSection
         $this->rebuild();
     }
 
+    /**
+     * F2 fix (Opus review): calls loadEnrichment() exactly once, at the end,
+     * for every SETTLED propertiesStatus outcome ('loaded'/'empty'/'failed')
+     * — 'building' is the one non-terminal outcome and does NOT call it, since
+     * the Blade's own re-poll will call loadProperties() again shortly.
+     * loadEnrichment() has its own gates (propertiesStatus must be settled;
+     * enrichmentStatus must not already be 'loaded') — it decides whether
+     * this call actually does anything, so a single unconditional call here
+     * is always safe, never a duplicate pool/batch fetch.
+     */
     public function loadProperties(): void
     {
         $this->rehydrateBeforeRebuild();
@@ -195,42 +226,162 @@ class CompanyStructure extends MetisSection
 
         if ($portfolio === null) {
             $this->propertiesStatus = 'failed';
+        } else {
+            $list = $portfolio['properties'] ?? [];
+            $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
 
-            return;
+            if ($list === [] && $count > 0) {
+                $this->propertiesAttempts++;
+
+                // Loft nået: porteføljen bliver aldrig færdig (eller backend hænger).
+                // 'failed' i stedet for evig 'building' giver bladen en retry-knap
+                // (som nulstiller $propertiesAttempts) i stedet for en uendelig spinner.
+                // Ellers: backend bygger stadig (verificeret prod-adfærd: første kald
+                // tomt, andet fuldt) — bladen re-forsøger m. stigende delay.
+                $this->propertiesStatus = $this->propertiesAttempts >= self::MAX_PROPERTIES_ATTEMPTS ? 'failed' : 'building';
+            } elseif ($list === []) {
+                $this->propertiesStatus = 'empty';
+            } else {
+                $this->propertyData = ['list' => $list, 'usage' => $this->usageMapFor($list)];
+                $this->propertiesStatus = 'loaded';
+                $this->rebuild();
+            }
         }
 
-        $list = $portfolio['properties'] ?? [];
-        $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
-
-        if ($list === [] && $count > 0) {
-            $this->propertiesAttempts++;
-
-            // Loft nået: porteføljen bliver aldrig færdig (eller backend hænger).
-            // 'failed' i stedet for evig 'building' giver bladen en retry-knap
-            // (som nulstiller $propertiesAttempts) i stedet for en uendelig spinner.
-            // Ellers: backend bygger stadig (verificeret prod-adfærd: første kald
-            // tomt, andet fuldt) — bladen re-forsøger m. stigende delay.
-            $this->propertiesStatus = $this->propertiesAttempts >= self::MAX_PROPERTIES_ATTEMPTS ? 'failed' : 'building';
-
-            return;
+        if ($this->propertiesStatus !== 'building') {
+            $this->loadEnrichment();
         }
-
-        if ($list === []) {
-            $this->propertiesStatus = 'empty';
-
-            return;
-        }
-
-        $this->propertyData = ['list' => $list, 'usage' => $this->usageMapFor($list)];
-        $this->propertiesStatus = 'loaded';
-        $this->rebuild();
     }
 
+    /**
+     * F2+F3 interaction fix (Opus re-review, 2026-07-26): a prior failed (or
+     * empty) properties outcome can ALREADY have driven enrichmentStatus to
+     * 'loaded' — loadProperties()'s trailing loadEnrichment() call runs once
+     * propertiesStatus settles to 'failed', and 'failed' counts as settled
+     * (F2), so enrichment proceeds against an empty propertyData and reaches
+     * 'loaded' with empty property cards. If the user then retries and the
+     * portfolio succeeds this time, loadProperties()'s OWN trailing
+     * loadEnrichment() call would hit F3's already-loaded gate and no-op
+     * PERMANENTLY — enrichmentData['properties'] never gets the real batch
+     * data, and F4's rehydration guard never fires either (it only runs
+     * inside loadEnrichment(), which F3 blocks before rehydration is even
+     * reached). Resetting enrichmentStatus to 'pending' here — same
+     * discipline as the propertiesAttempts reset just above — means the
+     * trailing loadEnrichment() after a successful retry runs fresh, exactly
+     * as if enrichment had never happened for this component.
+     */
     public function retryProperties(): void
     {
         $this->propertiesStatus = 'pending';
         $this->propertiesAttempts = 0;
+        $this->enrichmentStatus = 'pending';
         $this->loadProperties();
+    }
+
+    /**
+     * Fase 2a.2: fetches per-company financials/contact/etc (pooled) and the
+     * full per-property batch map (usage + latest sale + valuation), then
+     * rebuilds so OwnershipGraphBuilder can attach cards/signals to nodes.
+     *
+     * THREE independent gates, all must be satisfied or this is a no-op that
+     * leaves enrichmentStatus untouched:
+     *
+     * 1. `$this->enriching` — the subsidiary tree is still growing, so
+     *    enriching now would be wasted work on cvr's the next poll may
+     *    prune/replace. pollForUpdates() calls this again once it flips
+     *    $enriching false (F1 fix).
+     * 2. `$this->propertiesStatus` not yet settled (`'pending'`/`'building'`)
+     *    — the property list (and therefore the matrikel-ids to batch-enrich)
+     *    isn't final yet. 'loaded', 'empty', AND 'failed' all count as
+     *    "settled": a portfolio that will never load is not a reason to
+     *    withhold company-level enrichment forever (F2 fix — previously
+     *    this method had NO properties-gate at all, so calling it before the
+     *    portfolio landed produced a permanently-empty properties map that
+     *    nothing ever repaired, because loadProperties() never touched
+     *    enrichmentData and the rehydration guard only fires when
+     *    enrichmentStatus is ALREADY 'loaded').
+     * 3. `$this->enrichmentStatus === 'loaded'` already — repeat calls (the
+     *    Blade's x-init trigger can re-fire across morphs) must not re-pool
+     *    every company and re-batch every property each time (F3 fix). Use
+     *    retryEnrichment() to force a genuine re-fetch after a 'failed' state.
+     *
+     * Pool-delfejl (fetchCompanyInfosPooled): individual cvr's are null in
+     * the map — those nodes simply get no card (handled entirely by the
+     * builder's `isset($companies[$cvr])` check). A total exception (the
+     * pooled call itself throwing, e.g. connection refused) is the only path
+     * that flips this to 'failed' — reusing the same swallow-and-flag shape
+     * as loadProperties()'s 'failed' branch.
+     */
+    public function loadEnrichment(): void
+    {
+        if ($this->enriching) {
+            return;
+        }
+        if (! in_array($this->propertiesStatus, ['loaded', 'empty', 'failed'], true)) {
+            return;
+        }
+        if ($this->enrichmentStatus === 'loaded') {
+            return;
+        }
+
+        $this->rehydrateBeforeRebuild();
+
+        try {
+            $this->fetchEnrichmentData();
+        } catch (\Throwable $e) {
+            $this->enrichmentStatus = 'failed';
+
+            return;
+        }
+
+        $this->enrichmentStatus = 'loaded';
+        $this->rebuild();
+    }
+
+    /**
+     * F5: explicit retry after enrichmentStatus === 'failed' (mirrors
+     * retryProperties() above) — resets to 'pending' so loadEnrichment()'s
+     * own idempotency gate (F3) doesn't immediately no-op the retry.
+     */
+    public function retryEnrichment(): void
+    {
+        $this->enrichmentStatus = 'pending';
+        $this->loadEnrichment();
+    }
+
+    /**
+     * Reduces a company-info payload to the builder's flat enrichment shape.
+     * financials arrives newest-first from the API (CompanyOverview.php's
+     * assumption) but is NOT trusted blindly here — sorted explicitly by
+     * `year` so an unsorted/out-of-order payload still resolves to the
+     * actual latest fiscal year, not just array index 0.
+     *
+     * KONTRAKT: ALLE beløb i enrichment/card-shapen (dette array, og alt der
+     * flyder derfra ind i graphModel/node.card) er HELE KRONER — aldrig
+     * t.DKK/tusinder, aldrig mio. registry-api's financials-endpoint leverer
+     * equity/profit_loss i **t.DKK** (verificeret: CompanyOverview-bladets
+     * "Beløb i t.DKK"-deklaration for samme financials-shape), så begge felter
+     * ganges med 1000 HER, ved kilden — én gang, aldrig længere nede i
+     * kæden (builder, Blade, JS). Uden dette var frontend's fmtDKK() (som
+     * antager hele kroner) 1000× for lav i sin visning (fx en egenkapital på
+     * 2.527 t.DKK / 2.527.000 kr. blev vist som "3 tkr." i stedet for
+     * "2,5 mio. kr."). Ejendoms-beløb (valuation/latest_sale_price, se
+     * propertyEnrichmentFromBatch() nedenfor) er DERIMOD allerede hele kroner
+     * fra kilden — ingen konvertering der.
+     */
+    protected function companyEnrichmentFromInfo(array $company): array
+    {
+        $latest = collect($company['financials'] ?? [])->sortByDesc('year')->first();
+
+        return [
+            'equity' => isset($latest['equity']) ? $latest['equity'] * 1000 : null,
+            'result' => isset($latest['profit_loss']) ? $latest['profit_loss'] * 1000 : null,
+            'fiscal_year' => $latest['year'] ?? null,
+            'employees' => $company['employees'] ?? null,
+            'website' => data_get($company, 'contact.website'),
+            'founded_date' => $company['founded_date'] ?? null,
+            'industry' => $company['industry'] ?? null,
+        ];
     }
 
     /**
@@ -244,6 +395,26 @@ class CompanyStructure extends MetisSection
         $ids = collect($properties)->pluck('matrikel_id')->filter()->map(fn ($m) => (string) $m)->unique()->values()->all();
         $batch = rescue(fn () => app(RegistryApi::class)->fetchPropertiesBatch($ids), null) ?? [];
 
+        return collect($this->propertyEnrichmentFromBatch($batch))->map(fn ($entry) => $entry['usage'] ?? null)->all();
+    }
+
+    /**
+     * Full per-property enrichment map from a properties/batch response:
+     * usage (via BbrUsageCategory, same primary-building selection as the
+     * former usageMapFor()) + latest_transaction date/price + valuation.
+     * Streetview URLs are NOT built here — they need portfolio lat/lng,
+     * which this batch response does not carry; loadEnrichment() layers
+     * those in afterwards, keyed by the same matrikel_id.
+     *
+     * Unlike companyEnrichmentFromInfo()'s equity/result (t.DKK → kroner,
+     * see that method's docblock), latest_sale_price/valuation are ALREADY
+     * hele kroner straight from properties/batch — verified against the
+     * existing prod-verbatim fixture (260000/534000-scale values, matching
+     * the KONTRAKT that this whole enrichment/card shape is hele kroner
+     * throughout). No *1000 conversion here.
+     */
+    protected function propertyEnrichmentFromBatch(array $batch): array
+    {
         return collect($batch)->mapWithKeys(function ($p) {
             $buildings = collect($p['bbr']['buildings'] ?? []);
             // Primær bygning: største areal blandt ikke-småbygninger (9xx-koder =
@@ -251,8 +422,58 @@ class CompanyStructure extends MetisSection
             $primary = $buildings->filter(fn ($b) => (int) ($b['usage'] ?? 0) < 900)->sortByDesc('total_area')->first()
                 ?? $buildings->sortByDesc('total_area')->first();
 
-            return [(string) ($p['matrikel_id'] ?? '') => $primary ? BbrUsageCategory::label($primary['usage'] ?? null) : null];
+            return [(string) ($p['matrikel_id'] ?? '') => [
+                'usage' => $primary ? BbrUsageCategory::label($primary['usage'] ?? null) : null,
+                // Verified verbatim against a real prod registry-api payload
+                // (read-only curl, 2026-07-26): latest_transaction is
+                // {"transaction_type","transaction_date","registration_date","price"}
+                // — the date field is `transaction_date`, NOT `date`.
+                'latest_sale_date' => $p['latest_transaction']['transaction_date'] ?? null,
+                'latest_sale_price' => $p['latest_transaction']['price'] ?? null,
+                'valuation' => $p['valuation']['estimated_value'] ?? null,
+            ]];
         })->all();
+    }
+
+    /**
+     * Streetview URLs per property: built only when BOTH the portfolio row
+     * carries lat/lng AND the google_maps_api_key config is set — otherwise
+     * omitted entirely (the builder's array_filter drops null card fields).
+     * Keyed onto the SAME enrichment['properties'][matrikel_id] map
+     * propertyEnrichmentFromBatch() produced, so a property with no batch
+     * entry at all still gets a streetview_url if it has coordinates.
+     *
+     * is_numeric() guard (multi-agent review, F-B): the portfolio row's
+     * latitude/longitude come straight from the external registry-api
+     * payload — a malformed row (empty string, non-numeric junk) must not
+     * reach raw string interpolation into the URL. Non-numeric lat/lng is
+     * skipped entirely (same as the missing-coordinate case) rather than
+     * building a garbage URL. sprintf('%F', …) formats the numeric value
+     * deterministically (fixed-point, locale-independent — never scientific
+     * notation) and rawurlencode() escapes the resulting query value, so no
+     * unescaped external data is ever concatenated into the URL string.
+     */
+    protected function attachStreetviewUrls(): void
+    {
+        $apiKey = config('metis.google_maps_api_key');
+        if (! $apiKey) {
+            return;
+        }
+
+        foreach ($this->propertyData['list'] ?? [] as $p) {
+            $mid = (string) ($p['matrikel_id'] ?? '');
+            $lat = $p['latitude'] ?? null;
+            $lng = $p['longitude'] ?? null;
+
+            if ($mid === '' || ! is_numeric($lat) || ! is_numeric($lng)) {
+                continue;
+            }
+
+            $location = rawurlencode(sprintf('%F,%F', $lat, $lng));
+            $this->enrichmentData['properties'][$mid] ??= [];
+            $this->enrichmentData['properties'][$mid]['streetview_url'] =
+                "https://maps.googleapis.com/maps/api/streetview?size=640x400&location={$location}&key=".rawurlencode($apiKey);
+        }
     }
 
     /**
@@ -260,7 +481,17 @@ class CompanyStructure extends MetisSection
      * both are re-checked here: $structureData empty → refetch; $propertyData
      * empty while $propertiesStatus still says 'loaded' → refetch, or the
      * property nodes would silently vanish from the next rebuild. Called at
-     * the start of every action that rebuilds (poll, expand, loadProperties).
+     * the start of every action that rebuilds (poll, expand, loadProperties,
+     * loadEnrichment). Symmetric third check: $enrichmentData empty while
+     * $enrichmentStatus still says 'loaded' → re-run loadEnrichment's fetch
+     * (every source it reads is cached, so this is cheap), or company/property
+     * cards would silently vanish from the next rebuild after a fresh request.
+     * F4 fix (Opus review): guards BOTH enrichmentData['companies'] AND
+     * enrichmentData['properties'] — guarding only 'companies' let the
+     * properties half of the map get lost asymmetrically (e.g. a fresh
+     * request where company cards happened to be non-empty from some other
+     * path but the property batch map wasn't), silently dropping property
+     * cards from the rebuilt graph without ever triggering a refetch.
      */
     protected function rehydrateBeforeRebuild(): void
     {
@@ -270,6 +501,55 @@ class CompanyStructure extends MetisSection
         if ($this->propertiesStatus === 'loaded' && $this->propertyData['list'] === []) {
             $this->refreshPropertyData();
         }
+        if ($this->enrichmentStatus === 'loaded'
+            && ($this->enrichmentData['companies'] === [] || $this->enrichmentData['properties'] === [])) {
+            $this->refreshEnrichmentData();
+        }
+    }
+
+    /**
+     * Re-fetches enrichment via the same pooled/cached sources loadEnrichment()
+     * used — cheap (24h company-info cache, 5min portfolio cache). Does NOT
+     * flip enrichmentStatus: it already says 'loaded' from a prior request, and
+     * a transient re-fetch error here shouldn't regress the section into an
+     * error the user never triggered (mirrors refreshPropertyData's swallow).
+     * Unlike loadEnrichment(), a total failure here is swallowed rather than
+     * flipping to 'failed' — same reasoning as refreshPropertyData().
+     */
+    protected function refreshEnrichmentData(): void
+    {
+        rescue(fn () => $this->fetchEnrichmentData());
+    }
+
+    /**
+     * Shared fetch body for loadEnrichment()/refreshEnrichmentData(): pools
+     * company-info for every cvr in the graph, batches property enrichment
+     * for the currently-loaded portfolio, and layers streetview URLs on top.
+     * Callers decide what a total failure means (loadEnrichment flips to
+     * 'failed'; refreshEnrichmentData swallows it) — this method itself lets
+     * exceptions propagate.
+     *
+     * Only ENRICHABLE_KINDS nodes get their cvr sent to the pool — mirrors
+     * the kind-gate in OwnershipGraphBuilder::applyEnrichment() so person/
+     * foreign nodes and 'other' orphan-parent stubs never trigger a pool
+     * request whose card/signals would be discarded anyway.
+     */
+    protected function fetchEnrichmentData(): void
+    {
+        $cvrs = collect($this->graphModel['nodes'] ?? [])
+            ->filter(fn ($node) => in_array($node['kind'] ?? null, OwnershipGraphBuilder::ENRICHABLE_KINDS, true))
+            ->pluck('cvr')->filter()->unique()->values()->all();
+        $companies = $cvrs === [] ? [] : app(RegistryApi::class)->fetchCompanyInfosPooled($cvrs);
+
+        $this->enrichmentData['companies'] = collect($companies)
+            ->filter()
+            ->map(fn ($company) => $this->companyEnrichmentFromInfo($company))
+            ->all();
+
+        $matrikelIds = collect($this->propertyData['list'] ?? [])->pluck('matrikel_id')->filter()->map(fn ($m) => (string) $m)->unique()->values()->all();
+        $batch = $matrikelIds === [] ? [] : (rescue(fn () => app(RegistryApi::class)->fetchPropertiesBatch($matrikelIds), null) ?? []);
+        $this->enrichmentData['properties'] = $this->propertyEnrichmentFromBatch($batch);
+        $this->attachStreetviewUrls();
     }
 
     /**
@@ -312,6 +592,13 @@ class CompanyStructure extends MetisSection
         $this->propertyData = ['list' => $list, 'usage' => $this->usageMapFor($list)];
     }
 
+    /**
+     * `now` is intentionally CarbonImmutable::now() — non-determinism lives
+     * HERE, in the component layer, never inside OwnershipGraphBuilder
+     * itself (which stays pure/deterministic: same input → same output, per
+     * its class docblock). Every rebuild() call gets a fresh "now", exactly
+     * like a real page render would.
+     */
     protected function rebuild(): void
     {
         $this->graphModel = app(OwnershipGraphBuilder::class)->build(
@@ -319,9 +606,10 @@ class CompanyStructure extends MetisSection
             companyName: $this->companyName,
             structure: $this->structureData,
             properties: $this->propertyData,
-            enrichment: [],
+            enrichment: $this->enrichmentData,
             expandedNodeIds: $this->expandedNodeIds,
             caps: ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
+            now: \Carbon\CarbonImmutable::now(),
         );
     }
 

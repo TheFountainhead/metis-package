@@ -394,6 +394,18 @@ it('cacher company-info ved andet kald', function () {
         ->and($second['name'])->toBe('Frankston ApS');
 });
 
+it('cacher company-info under den nye nøgle-konvention', function () {
+    Http::fake([
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => ['cvr' => '12345678', 'name' => 'Frankston ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $api->fetchCompanyInfo('12345678');
+
+    expect(Cache::get('metis:company_info:12345678'))->not->toBeNull()
+        ->and(Cache::get('metis.company-info.12345678'))->toBeNull();
+});
+
 it('cacher IKKE et null-svar fra company-info', function () {
     Http::fake([
         '*/v1/cvr/company/*' => Http::response('Server error', 500),
@@ -405,4 +417,130 @@ it('cacher IKKE et null-svar fra company-info', function () {
 
     expect($first)->toBeNull()->and($second)->toBeNull();
     Http::assertSentCount(2);
+});
+
+it('cacher company-structure under den nye nøgle-konvention', function () {
+    Http::fake([
+        '*/v1/cvr/company-structure' => Http::response(['data' => ['root' => ['cvr' => '12345678', 'name' => 'Frankston ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $api->fetchCompanyStructureCached('12345678');
+
+    expect(Cache::get('metis:company_structure:12345678'))->not->toBeNull()
+        ->and(Cache::get('metis.company-structure.12345678'))->toBeNull();
+});
+
+it('fetchCompanyInfosPooled: springer allerede cachede cvr\'er over og henter kun manglende via pool', function () {
+    // 12345678 er allerede cachet — skal IKKE udløse et HTTP-kald.
+    Cache::put('metis:company_info:12345678', ['cvr' => '12345678', 'name' => 'Cached ApS'], 86400);
+
+    Http::fake([
+        '*/v1/cvr/company/22222222' => Http::response(['data' => ['company' => ['cvr' => '22222222', 'name' => 'B ApS']]]),
+        '*/v1/cvr/company/33333333' => Http::response(['data' => ['company' => ['cvr' => '33333333', 'name' => 'C ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled(['12345678', '22222222', '33333333']);
+
+    Http::assertSentCount(2);
+    expect($result['12345678']['name'])->toBe('Cached ApS')
+        ->and($result['22222222']['name'])->toBe('B ApS')
+        ->and($result['33333333']['name'])->toBe('C ApS');
+});
+
+it('fetchCompanyInfosPooled: ét fejlet kald giver kun null for det cvr, ikke for de andre', function () {
+    Http::fake([
+        '*/v1/cvr/company/11111111' => Http::response(['data' => ['company' => ['cvr' => '11111111', 'name' => 'OK ApS']]]),
+        '*/v1/cvr/company/22222222' => Http::response('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled(['11111111', '22222222']);
+
+    expect($result['11111111']['name'])->toBe('OK ApS')
+        ->and($result['22222222'])->toBeNull();
+});
+
+it('fetchCompanyInfosPooled: cacher succesfulde svar 24t så et efterfølgende kald ikke rammer HTTP', function () {
+    Http::fake([
+        '*/v1/cvr/company/44444444' => Http::response(['data' => ['company' => ['cvr' => '44444444', 'name' => 'D ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $api->fetchCompanyInfosPooled(['44444444']);
+
+    Http::assertSentCount(1);
+    expect(Cache::get('metis:company_info:44444444')['name'])->toBe('D ApS');
+
+    // Andet kald (fx via almindelig fetchCompanyInfo) skal ramme cachen, ikke HTTP.
+    $second = $api->fetchCompanyInfo('44444444');
+
+    Http::assertSentCount(1);
+    expect($second['name'])->toBe('D ApS');
+});
+
+it('fetchCompanyInfosPooled: cacher ALDRIG et null/tomt svar', function () {
+    Http::fake([
+        '*/v1/cvr/company/55555555' => Http::response('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled(['55555555']);
+
+    expect($result['55555555'])->toBeNull()
+        ->and(Cache::get('metis:company_info:55555555'))->toBeNull();
+});
+
+it('fetchCompanyInfosPooled: tomt input giver tomt array uden HTTP-kald', function () {
+    Http::fake();
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled([]);
+
+    expect($result)->toBe([]);
+    Http::assertNothingSent();
+});
+
+it('fetchCompanyInfosPooled: dupliceret ucachet cvr deduperes til ét HTTP-kald', function () {
+    Http::fake([
+        '*/v1/cvr/company/66666666' => Http::response(['data' => ['company' => ['cvr' => '66666666', 'name' => 'E ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled(['66666666', '66666666']);
+
+    Http::assertSentCount(1);
+    expect($result)->toHaveCount(1)
+        ->and($result['66666666']['name'])->toBe('E ApS');
+});
+
+/**
+ * Http::fake() can't observe concurrency — it fakes the underlying transfer,
+ * not the pool's throttling, and Guzzle's EachPromise offers no hook to spy
+ * on how many requests were in flight at once. A functional HTTP-count
+ * assertion (as used by the tests above) would pass identically whether
+ * concurrency is 6 or unbounded — the regression this guards against is
+ * literally "someone deletes the named `concurrency: 6` argument", which
+ * only an assertion on the actual call to Http::pool() can catch.
+ *
+ * Http::spy() is the clean way to see that argument: it swaps in a Mockery
+ * spy for the Http facade, so pool() never executes for real (no network,
+ * no timeout) but every call is recorded. A partialMock()+passthru() would
+ * be preferable (real pool() semantics + argument assertion in one test),
+ * but Laravel's Http::pool() only exists via Factory::__call() forwarding
+ * to a fresh PendingRequest — Mockery's passthru() invokes that via a
+ * *static* call to the parent class's __call, which drops the mock's own
+ * $this and therefore its faked stubCallbacks, so it fires a real HTTP
+ * request (observed: ~10s hang before this was caught). Spy avoids that
+ * entirely since it never delegates to the real implementation.
+ */
+it('fetchCompanyInfosPooled: bounds Http::pool() to a concurrency of 6, never unlimited', function () {
+    $spy = Http::spy();
+
+    $api = new RegistryApi;
+    $api->fetchCompanyInfosPooled(['77777777']);
+
+    $spy->shouldHaveReceived('pool')
+        ->withArgs(fn ($callback, $concurrency) => is_callable($callback) && $concurrency === 6);
 });
