@@ -501,3 +501,16 @@ it('fetchCompanyInfosPooled: tomt input giver tomt array uden HTTP-kald', functi
     expect($result)->toBe([]);
     Http::assertNothingSent();
 });
+
+it('fetchCompanyInfosPooled: dupliceret ucachet cvr deduperes til ét HTTP-kald', function () {
+    Http::fake([
+        '*/v1/cvr/company/66666666' => Http::response(['data' => ['company' => ['cvr' => '66666666', 'name' => 'E ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled(['66666666', '66666666']);
+
+    Http::assertSentCount(1);
+    expect($result)->toHaveCount(1)
+        ->and($result['66666666']['name'])->toBe('E ApS');
+});

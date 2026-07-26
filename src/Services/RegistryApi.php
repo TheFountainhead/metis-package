@@ -279,6 +279,8 @@ class RegistryApi
             return [];
         }
 
+        $cvrs = array_values(array_unique($cvrs));
+
         $results = [];
         $missing = [];
 
