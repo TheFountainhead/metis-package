@@ -10,10 +10,24 @@
      OwnershipGraphBuilder::build()); every text field is bound via x-text so
      Alpine escapes it (never interpolated as raw HTML). --}}
 <template x-for="node in nodes" :key="node.id">
+    {{-- Card entry point (fase 2a.2, review-gap fix): hover/click open the
+         singleton card (ownership-graph.blade.php's `card.node`) — wired
+         HERE, not in the host JS, because the codebase convention is that
+         interaction attributes live in the Blade (frame-pan and the expand
+         buttons below are both wired the same way). nodeEnter/nodeLeave own
+         hover-intent/grace timing; nodeClick owns the _moved-drag-guard and
+         touch-vs-hover-mode branching (all in the T5 Alpine component).
+         @click (not @click.stop) so it does NOT shadow the expand buttons'
+         own @click.stop below — those already stop propagation before it
+         would reach this handler, so a node click only ever fires nodeClick
+         when the click didn't land on an expand button. --}}
     <div
         class="mgraph-node"
         :class="'mgraph-node--' + node.kind"
         :style="`left:${node.x}px; top:${node.y}px; width:${node.w}px; height:${node.h}px;`"
+        @mouseenter="nodeEnter(node)"
+        @mouseleave="nodeLeave()"
+        @click="nodeClick(node)"
     >
         <div class="mgraph-node__name" x-text="node.label"></div>
         <div class="mgraph-node__meta" x-show="node.cvr" x-cloak>
