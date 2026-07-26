@@ -358,24 +358,29 @@ class CompanyStructure extends MetisSection
      *
      * KONTRAKT: ALLE beløb i enrichment/card-shapen (dette array, og alt der
      * flyder derfra ind i graphModel/node.card) er HELE KRONER — aldrig
-     * t.DKK/tusinder, aldrig mio. registry-api's financials-endpoint leverer
-     * equity/profit_loss i **t.DKK** (verificeret: CompanyOverview-bladets
-     * "Beløb i t.DKK"-deklaration for samme financials-shape), så begge felter
-     * ganges med 1000 HER, ved kilden — én gang, aldrig længere nede i
-     * kæden (builder, Blade, JS). Uden dette var frontend's fmtDKK() (som
-     * antager hele kroner) 1000× for lav i sin visning (fx en egenkapital på
-     * 2.527 t.DKK / 2.527.000 kr. blev vist som "3 tkr." i stedet for
-     * "2,5 mio. kr."). Ejendoms-beløb (valuation/latest_sale_price, se
-     * propertyEnrichmentFromBatch() nedenfor) er DERIMOD allerede hele kroner
-     * fra kilden — ingen konvertering der.
+     * t.DKK/tusinder, aldrig mio. registry-api's financials-rækker er
+     * kilde-afhængige i enhed (company-info.blade.php's $toTdkk er den
+     * autoritative regel, prod-verificeret 26/7 mod Lars Horsbøl Holding
+     * 40072772): rækker med source=pdf er i t.DKK, alle andre (API) er
+     * allerede HELE KRONER. Konverteringen sker HER, ved kilden — én gang,
+     * aldrig længere nede i kæden (builder, Blade, JS). En ubetinget *1000
+     * gjorde API-rækker 1000× for høje (92.438.600 kr. vist som "92.438,6
+     * mio. kr."); ingen konvertering gjorde pdf-rækker 1000× for lave
+     * (2.527 t.DKK vist som "3 tkr."). Ejendoms-beløb
+     * (valuation/latest_sale_price, se propertyEnrichmentFromBatch()
+     * nedenfor) er altid hele kroner fra kilden — ingen konvertering der.
      */
     protected function companyEnrichmentFromInfo(array $company): array
     {
         $latest = collect($company['financials'] ?? [])->sortByDesc('year')->first();
 
+        $toKroner = fn ($value) => $value === null ? null : (
+            ($latest['source'] ?? '') === 'pdf' ? (int) round($value * 1000) : (int) $value
+        );
+
         return [
-            'equity' => isset($latest['equity']) ? $latest['equity'] * 1000 : null,
-            'result' => isset($latest['profit_loss']) ? $latest['profit_loss'] * 1000 : null,
+            'equity' => $toKroner($latest['equity'] ?? null),
+            'result' => $toKroner($latest['profit_loss'] ?? null),
             'fiscal_year' => $latest['year'] ?? null,
             'employees' => $company['employees'] ?? null,
             'website' => data_get($company, 'contact.website'),
