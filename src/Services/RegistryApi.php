@@ -9,6 +9,14 @@ use Illuminate\Support\Facades\Http;
 
 class RegistryApi
 {
+    /**
+     * Bounds fetchCompanyInfosPooled()'s Http::pool() fan-out. Without an
+     * explicit value, this Laravel version treats null concurrency as
+     * UNLIMITED — a graph with ~120 stub-companies would fire every request
+     * at once against registry-api instead of trickling through a queue.
+     */
+    protected const POOL_CONCURRENCY = 6;
+
     protected function client()
     {
         // F1 pilot — if user has set personal token in session (via /alerts
@@ -308,7 +316,7 @@ class RegistryApi
                 ->timeout(30)
                 ->baseUrl($baseUrl)
                 ->get("/v1/cvr/company/{$cvr}"))
-            ->all());
+            ->all(), concurrency: self::POOL_CONCURRENCY);
 
         foreach ($missing as $cvr) {
             $response = $responses[$cvr] ?? null;

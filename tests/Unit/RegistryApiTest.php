@@ -514,3 +514,33 @@ it('fetchCompanyInfosPooled: dupliceret ucachet cvr deduperes til ét HTTP-kald'
     expect($result)->toHaveCount(1)
         ->and($result['66666666']['name'])->toBe('E ApS');
 });
+
+/**
+ * Http::fake() can't observe concurrency — it fakes the underlying transfer,
+ * not the pool's throttling, and Guzzle's EachPromise offers no hook to spy
+ * on how many requests were in flight at once. A functional HTTP-count
+ * assertion (as used by the tests above) would pass identically whether
+ * concurrency is 6 or unbounded — the regression this guards against is
+ * literally "someone deletes the named `concurrency: 6` argument", which
+ * only an assertion on the actual call to Http::pool() can catch.
+ *
+ * Http::spy() is the clean way to see that argument: it swaps in a Mockery
+ * spy for the Http facade, so pool() never executes for real (no network,
+ * no timeout) but every call is recorded. A partialMock()+passthru() would
+ * be preferable (real pool() semantics + argument assertion in one test),
+ * but Laravel's Http::pool() only exists via Factory::__call() forwarding
+ * to a fresh PendingRequest — Mockery's passthru() invokes that via a
+ * *static* call to the parent class's __call, which drops the mock's own
+ * $this and therefore its faked stubCallbacks, so it fires a real HTTP
+ * request (observed: ~10s hang before this was caught). Spy avoids that
+ * entirely since it never delegates to the real implementation.
+ */
+it('fetchCompanyInfosPooled: bounds Http::pool() to a concurrency of 6, never unlimited', function () {
+    $spy = Http::spy();
+
+    $api = new RegistryApi;
+    $api->fetchCompanyInfosPooled(['77777777']);
+
+    $spy->shouldHaveReceived('pool')
+        ->withArgs(fn ($callback, $concurrency) => is_callable($callback) && $concurrency === 6);
+});
