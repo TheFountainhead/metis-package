@@ -391,15 +391,78 @@ class OwnershipGraphBuilder
                 // maxDepth+1 down keeps grandchildren gated behind their own expand.
                 $this->addSubsidiaries($children, $cvr, $depth + 1, $expandedHere ? $depth + 1 : $maxDepth, $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
             } elseif (($n = count($children)) > 0) {
-                // Signal hidden children on THIS node (find it and set expand).
-                foreach ($nodes as &$node) {
-                    if ($node['id'] === $cvr) {
-                        $node['expand'] = ['relations' => $n, 'properties' => $node['expand']['properties'] ?? 0];
-                        break;
+                // Depth-cap boundary reached (Task 9, Resights-dybde-4-fundet):
+                // a lineær kæde of hidden descendants costs one expand-click per
+                // level for no space saved. If N's ENTIRE hidden subtree (every
+                // descendant, not just direct children) is small (≤3 nodes), skip
+                // the expand-signal and render it fully — deterministically, from
+                // the raw structure, with no expandedNodeIds involvement (Resights
+                // must be visible on the FIRST build for the RS HoldCo case).
+                // Larger subtrees keep the unchanged expand-button behaviour.
+                if ($this->countDescendants($children) <= 3) {
+                    $this->addSubtreeFully($children, $cvr, $depth + 1, $nodes, $seen, $edges, $edgeSeen);
+                } else {
+                    // Signal hidden children on THIS node (find it and set expand).
+                    foreach ($nodes as &$node) {
+                        if ($node['id'] === $cvr) {
+                            $node['expand'] = ['relations' => $n, 'properties' => $node['expand']['properties'] ?? 0];
+                            break;
+                        }
                     }
+                    unset($node);
                 }
-                unset($node);
             }
+        }
+    }
+
+    /**
+     * Counts every descendant (children, grandchildren, ...) of $subs,
+     * recursively — NOT just the direct children count used for the
+     * expand-signal. Drives the Task 9 auto-expand threshold: a linear
+     * chain of 3 single-child levels is 3 descendants, not 1.
+     */
+    protected function countDescendants(array $subs): int
+    {
+        $count = 0;
+        foreach ($subs as $s) {
+            if (! ($s['cvr'] ?? null)) {
+                continue;
+            }
+            $count++;
+            $count += $this->countDescendants($s['children'] ?? []);
+        }
+
+        return $count;
+    }
+
+    /**
+     * Renders an entire hidden subtree unconditionally (Task 9 auto-expand),
+     * with no depth cap and no expandedNodeIds involvement — every node down
+     * to the leaves is added. Reuses the exact same node/edge shape and
+     * dedup (`$seen`/`$edgeSeen`) as addSubsidiaries so a node that is ALSO
+     * reachable another way (ancestor dedup, multi-parent co-owner) still
+     * collapses to one node, one id, consistent with the rest of the
+     * builder. 'depth' keeps incrementing for truncateToCap's deepest-layer-
+     * first ordering, since auto-expanded nodes are still real, total-cap-
+     * countable nodes (brief: "kan stadig trunkeres af total-cap").
+     */
+    protected function addSubtreeFully(array $subs, string $parentId, int $depth, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
+    {
+        foreach ($subs as $s) {
+            $cvr = $s['cvr'] ?? null;
+            if (! $cvr) {
+                continue;
+            }
+            if (! isset($seen[$cvr])) {
+                $seen[$cvr] = true;
+                $nodes[] = ['id' => $cvr, 'label' => $s['name'] ?? ('CVR '.$cvr), 'cvr' => $cvr, 'kind' => 'subsidiary', 'share' => $s['ownership_share'] ?? null, 'expand' => null, 'depth' => $depth];
+            }
+            if (! isset($edgeSeen[$parentId.'|'.$cvr])) {
+                $edgeSeen[$parentId.'|'.$cvr] = true;
+                $edges[] = ['from' => $parentId, 'to' => $cvr, 'label' => $this->shareLabel($s['ownership_share'] ?? null)];
+            }
+
+            $this->addSubtreeFully($s['children'] ?? [], $cvr, $depth + 1, $nodes, $seen, $edges, $edgeSeen);
         }
     }
 
