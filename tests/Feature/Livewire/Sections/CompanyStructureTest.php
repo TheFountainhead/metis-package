@@ -81,6 +81,31 @@ function fdlPortfolioProperty(array $overrides = []): array
     ], $overrides);
 }
 
+/**
+ * Fakes the pooled company-info endpoint (/v1/cvr/company/{cvr}) used by
+ * loadEnrichment() via fetchCompanyInfosPooled(). $financials mirrors
+ * CompanyOverview.php's fixture shape (year/equity/assets/profit_loss) —
+ * the SAME field names the real API returns, so loadEnrichment must read
+ * financials the same way CompanyOverview does, not invent new field names.
+ */
+function fakeRegistryCompanyInfo(string $cvr, array $overrides = []): void
+{
+    Http::fake([
+        "*/v1/cvr/company/{$cvr}*" => Http::response(['data' => ['company' => array_merge([
+            'cvr' => $cvr,
+            'name' => 'Kirketorvet Ejendomme ApS',
+            'employees' => 4,
+            'founded_date' => '2010-01-01',
+            'industry' => 'Ejendomshandel',
+            'contact' => ['website' => 'kirketorvet.dk'],
+            'financials' => [
+                ['year' => '2024', 'equity' => 1_000_000, 'assets' => 5_000_000, 'profit_loss' => 100_000],
+                ['year' => '2023', 'equity' => 900_000, 'assets' => 4_500_000, 'profit_loss' => 50_000],
+            ],
+        ], $overrides)]]),
+    ]);
+}
+
 it('does not present the owners subsidiaries as the searched companys own', function () {
     // Scenariet fra JEUDAN-buggen: søgt selskab har ejere men (transient) tomme
     // subsidiaries; ejerens struktur har en portefølje af andre selskaber.
@@ -927,4 +952,313 @@ it('retryProperties resets propertiesAttempts so the cap does not carry over', f
 
     expect($c->get('propertiesStatus'))->toBe('loaded')
         ->and($c->get('propertiesAttempts'))->toBe(0);
+});
+
+// ---- Task 3: enrichment step — pooled financials, full batch map, streetview URL ----
+
+it('loadEnrichment attaches company card/signals to graph nodes', function () {
+    // Http::fake() matches the FIRST-registered pattern (see the pollForUpdates
+    // P0 test's comment above) — the specific per-cvr fakes must be registered
+    // BEFORE fakeRegistryStructure()'s generic '*cvr/company/*' catch-all, or
+    // the wildcard shadows them and every cvr gets the bare fallback fixture.
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryCompanyInfo('44018942');
+    fakeRegistryCompanyInfo('44027992');
+    fakeRegistryStructure();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadEnrichment');
+
+    expect($c->get('enrichmentStatus'))->toBe('loaded');
+
+    $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+    expect($node['card'] ?? null)->not->toBeNull()
+        ->and($node['card']['equity'])->toBe(1_000_000)
+        ->and($node['card']['fiscal_year'])->toBe('2024')
+        ->and($node['card']['website'])->toBe('kirketorvet.dk')
+        ->and($node['card']['industry'])->toBe('Ejendomshandel')
+        ->and($node['card']['founded_date'])->toBe('2010-01-01')
+        ->and($node['card']['employees'])->toBe(4);
+});
+
+it('reads the LATEST financials row for equity/result/fiscal_year even when the financials list arrives unsorted', function () {
+    // Guards against the builder-review note: loadEnrichment (not the
+    // builder) must reduce an unsorted financials array to its latest row —
+    // mirroring CompanyOverview's newest-first assumption is NOT safe to
+    // assume blindly, so this fixture deliberately scrambles the order.
+    // NB: this test defines its OWN complete fake set (not fakeRegistryStructure())
+    // because the generic '*cvr/company/*' fallback that helper registers would
+    // otherwise shadow the specific financials fixture below (first-match-wins).
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => [
+            'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS',
+            'financials' => [
+                // Deliberately unsorted: the 2022 row (oldest) is listed FIRST,
+                // and the actual latest (2024) is listed LAST.
+                ['year' => '2022', 'equity' => -500_000, 'assets' => 1_000_000, 'profit_loss' => -50_000],
+                ['year' => '2024', 'equity' => 2_000_000, 'assets' => 6_000_000, 'profit_loss' => 300_000],
+                ['year' => '2023', 'equity' => 1_500_000, 'assets' => 5_000_000, 'profit_loss' => 150_000],
+            ],
+        ]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadEnrichment');
+
+    $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+    // Must resolve to the 2024 row (the actual latest year), not the first
+    // or last array element.
+    expect($node['card']['equity'])->toBe(2_000_000)
+        ->and($node['card']['fiscal_year'])->toBe('2024');
+});
+
+it('gates loadEnrichment while enriching — stays pending, no company-info calls', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        // Still running: $enriching stays true after mount.
+        '*enrichment*' => Http::response(['data' => ['status' => 'running']]),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+    expect($c->get('enriching'))->toBeTrue();
+
+    $c->call('loadEnrichment');
+
+    expect($c->get('enrichmentStatus'))->toBe('pending');
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/44507781'));
+});
+
+it('pool partial failure leaves the other companies enriched — only the failed cvr is null', function () {
+    // Own complete fake set (not fakeRegistryStructure()) — see the unsorted-
+    // financials test's comment above for why the two can't be combined.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0,
+                'children' => [[
+                    'cvr' => '44018942', 'name' => 'Trygve 1 ApS', 'ownership_share' => 100.0, 'children' => [],
+                ]],
+            ]],
+        ]]),
+        '*cvr/company/44507781*' => Http::response(['data' => ['company' => [
+            'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS',
+            'financials' => [['year' => '2024', 'equity' => 1_000_000, 'assets' => 5_000_000, 'profit_loss' => 100_000]],
+        ]]]),
+        '*cvr/company/44018942*' => Http::response('Server error', 500),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadEnrichment');
+
+    expect($c->get('enrichmentStatus'))->toBe('loaded');
+
+    $ok = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+    $failed = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44018942');
+    expect($ok['card'] ?? null)->not->toBeNull();
+    expect($failed['card'] ?? null)->toBeNull();
+    expect($failed['signals'] ?? null)->toBeNull();
+});
+
+it('flips enrichmentStatus to failed when the whole pooled call throws, with retry available', function () {
+    fakeRegistryStructure();
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+
+    // Force fetchCompanyInfosPooled() to throw entirely (not per-cvr null) —
+    // simulate a total outage by binding a RegistryApi double that throws.
+    $mock = Mockery::mock(\TheFountainhead\Metis\Services\RegistryApi::class)->makePartial();
+    $mock->shouldReceive('fetchCompanyInfosPooled')->andThrow(new \RuntimeException('pool down'));
+    app()->instance(\TheFountainhead\Metis\Services\RegistryApi::class, $mock);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadEnrichment');
+
+    expect($c->get('enrichmentStatus'))->toBe('failed');
+});
+
+it('builds a streetview URL per property only when lat/lng exist AND the google maps api key is configured', function () {
+    config(['metis.google_maps_api_key' => 'test-key-123']);
+
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(
+        properties: [fdlPortfolioProperty(['latitude' => 55.25, 'longitude' => 12.17])],
+        batchUsage: 'present',
+    );
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryCompanyInfo('44018942');
+    fakeRegistryCompanyInfo('44027992');
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties')
+        ->call('loadEnrichment');
+
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop['card']['streetview_url'] ?? null)->not->toBeNull()
+        ->and($prop['card']['streetview_url'])->toContain('test-key-123')
+        ->and($prop['card']['streetview_url'])->toContain('55.25')
+        ->and($prop['card']['streetview_url'])->toContain('12.17');
+});
+
+it('omits the streetview URL when the google maps api key is not configured', function () {
+    config(['metis.google_maps_api_key' => null]);
+
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(
+        properties: [fdlPortfolioProperty(['latitude' => 55.25, 'longitude' => 12.17])],
+        batchUsage: 'present',
+    );
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryCompanyInfo('44018942');
+    fakeRegistryCompanyInfo('44027992');
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties')
+        ->call('loadEnrichment');
+
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop['card']['streetview_url'] ?? null)->toBeNull();
+});
+
+it('omits the streetview URL when the property has no lat/lng even with the api key configured', function () {
+    config(['metis.google_maps_api_key' => 'test-key-123']);
+
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty()], batchUsage: 'present'); // no latitude/longitude
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryCompanyInfo('44018942');
+    fakeRegistryCompanyInfo('44027992');
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties')
+        ->call('loadEnrichment');
+
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop['card']['streetview_url'] ?? null)->toBeNull();
+});
+
+it('maps property batch data into the full enrichment map: usage, latest sale date/price, valuation', function () {
+    fakeRegistryStructure();
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => [
+            'properties' => [fdlPortfolioProperty(['owner_cvr' => '44507781'])],
+            'property_count' => 1, 'total_count' => 1,
+        ]]]),
+        '*/properties/batch*' => Http::response(['data' => [[
+            'matrikel_id' => '2573669',
+            'bbr' => ['buildings' => [['usage' => 130, 'total_area' => 150]]],
+            'latest_transaction' => ['date' => '2022-06-01', 'price' => 1_200_000],
+            'valuation' => ['estimated_value' => 1_400_000],
+        ]]]),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties')
+        ->call('loadEnrichment');
+
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop['card']['usage'])->toBe('Bolig')
+        ->and($prop['card']['latest_sale_date'])->toBe('2022-06-01')
+        ->and($prop['card']['latest_sale_price'])->toBe(1_200_000)
+        ->and($prop['card']['valuation'])->toBe(1_400_000);
+});
+
+it('regression: rehydrates enrichmentData across two separate requests (P0 pattern) — poll then expandNode', function () {
+    // Request A: loadEnrichment() succeeds — enrichmentStatus becomes 'loaded'
+    // and the company card appears in graphModel.
+    fakeRegistryStructure();
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryCompanyInfo('44018942');
+    fakeRegistryCompanyInfo('44027992');
+
+    $first = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadEnrichment');
+    expect($first->get('enrichmentStatus'))->toBe('loaded');
+    expect(collect($first->get('graphModel')['nodes'])->firstWhere('id', '44507781')['card'] ?? null)->not->toBeNull();
+
+    // Request B: a FRESH component instance — protected $enrichmentData is
+    // lost to hydration, but public $enrichmentStatus (hydrated normally,
+    // forced here to simulate a real hydrated request) still says 'loaded'.
+    // expandNode() must detect enrichmentData['companies'] === [] and refetch
+    // (all sources cached) before rebuilding, or cards silently vanish.
+    fakeRegistryStructure();
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryCompanyInfo('44018942');
+    fakeRegistryCompanyInfo('44027992');
+
+    $second = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->set('enrichmentStatus', 'loaded')
+        ->call('expandNode', 'sub:44018942');
+
+    $nodes = collect($second->get('graphModel')['nodes']);
+    expect($nodes->firstWhere('id', '44507781')['card'] ?? null)->not->toBeNull();
+    expect($nodes->pluck('id'))->toContain('44027992'); // the expand itself still worked
+});
+
+it('regression: rehydrates enrichmentData across two separate requests (P0 pattern) — pollForUpdates completion', function () {
+    $enrichmentCalls = 0;
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/44507781*' => Http::response(['data' => ['company' => [
+            'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS',
+            'financials' => [['year' => '2024', 'equity' => 1_000_000, 'assets' => 5_000_000, 'profit_loss' => 100_000]],
+        ]]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        '*enrichment*' => function () use (&$enrichmentCalls) {
+            $enrichmentCalls++;
+
+            // Request A's mount (call 1) sees 'completed' immediately (Request A
+            // just establishes the enriched state via a direct loadEnrichment()
+            // call, not via polling — so $enriching must be false for that call
+            // to do real work). Request B's mount (call 2) sees 'running' so
+            // $enriching=true and the explicit pollForUpdates call does real
+            // work; pollForUpdates' own status check (call 3) sees 'completed'.
+            return Http::response(['data' => ['status' => $enrichmentCalls === 2 ? 'running' : 'completed']]);
+        },
+    ]);
+
+    // Request A: loadEnrichment() succeeds — enrichmentStatus becomes 'loaded'.
+    $first = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadEnrichment');
+    expect($first->get('enrichmentStatus'))->toBe('loaded');
+
+    // Request B: a FRESH component instance — protected $enrichmentData lost to
+    // hydration, public $enrichmentStatus forced to 'loaded' to simulate a real
+    // hydrated request. pollForUpdates() completing must detect the mismatch
+    // and refetch enrichment before rebuilding, or the company card vanishes.
+    $second = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->set('enrichmentStatus', 'loaded')
+        ->call('pollForUpdates');
+
+    expect(collect($second->get('graphModel')['nodes'])->firstWhere('id', '44507781')['card'] ?? null)->not->toBeNull();
 });

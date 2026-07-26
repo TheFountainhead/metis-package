@@ -38,6 +38,11 @@ return [
         'key' => env('REGISTRY_API_KEY'),
     ],
 
+    // Google Static Street View API key — used by CompanyStructure's
+    // enrichment step to build a per-property streetview URL. Only when
+    // this AND a property's lat/lng both exist is a URL built (fase 2a.2).
+    'google_maps_api_key' => env('GOOGLE_MAPS_API_KEY'),
+
     'turnstile' => [
         'site_key' => env('TURNSTILE_SITE_KEY'),
         'secret_key' => env('TURNSTILE_SECRET_KEY'),

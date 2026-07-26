@@ -71,6 +71,15 @@
                         {{ __('Ejendomme kunne ikke hentes.') }}
                         <button type="button" wire:click="retryProperties" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
+                @elseif(in_array($propertiesStatus, ['loaded', 'empty']))
+                    {{-- Fase 2a.2: the property step (regardless of outcome) is the
+                         signal enrichment can safely start — the graph's node set is
+                         settled at that point. Invisible x-init trigger, same
+                         wire:key-per-attempt discipline as the 'building' branch
+                         above so this element doesn't get reused across a
+                         propertiesStatus transition (Task 4 owns the rest of the
+                         enrichment-loading UI). --}}
+                    <div wire:key="enrichment-trigger-{{ $propertiesStatus }}" x-data x-init="$wire.loadEnrichment()"></div>
                 @endif
 
                 {{-- Historical owners (collapsible) --}}
