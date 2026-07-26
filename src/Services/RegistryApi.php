@@ -235,7 +235,7 @@ class RegistryApi
 
     public function fetchCompanyInfo(string $cvr): ?array
     {
-        $cacheKey = "metis.company-info.{$cvr}";
+        $cacheKey = $this->companyInfoCacheKey($cvr);
 
         if (! is_null($cached = Cache::get($cacheKey))) {
             return $cached;
@@ -259,6 +259,81 @@ class RegistryApi
         return $company;
     }
 
+    /**
+     * Pooled variant af fetchCompanyInfo() til graf-berigelse: slår cache op
+     * pr. cvr FØRST, henter kun de manglende samtidigt via Http::pool, og
+     * returnerer en map cvr => company-array|null.
+     *
+     * Uafhængige kald (modsat fetchPropertiesBatch's alt-eller-intet): ét
+     * cvr's 500'er eller timeout må ikke koste de andre kortene i grafen —
+     * det svarer til hvordan komponenten allerede itererer selskaber
+     * enkeltvis via fetchCompanyInfo(), blot samtidigt.
+     *
+     * Pool-requests kan ikke genbruge en PendingRequest fra client() (poolen
+     * bygger sine egne requests via closure), så base-url/token/headers
+     * genskabes eksplicit på hver pool-request.
+     */
+    public function fetchCompanyInfosPooled(array $cvrs): array
+    {
+        if (empty($cvrs)) {
+            return [];
+        }
+
+        $results = [];
+        $missing = [];
+
+        foreach ($cvrs as $cvr) {
+            $cacheKey = $this->companyInfoCacheKey($cvr);
+
+            if (! is_null($cached = Cache::get($cacheKey))) {
+                $results[$cvr] = $cached;
+            } else {
+                $missing[] = $cvr;
+            }
+        }
+
+        if (empty($missing)) {
+            return $results;
+        }
+
+        $token = session('metis_user_token') ?: config('metis.registry_api.key');
+        $baseUrl = config('metis.registry_api.url');
+
+        $responses = Http::pool(fn ($pool) => collect($missing)
+            ->map(fn ($cvr) => $pool->as($cvr)
+                ->withToken($token)
+                ->acceptJson()
+                ->timeout(30)
+                ->baseUrl($baseUrl)
+                ->get("/v1/cvr/company/{$cvr}"))
+            ->all());
+
+        foreach ($missing as $cvr) {
+            $response = $responses[$cvr] ?? null;
+
+            try {
+                $company = $response instanceof \Illuminate\Http\Client\Response && $response->successful()
+                    ? $response->json('data.company')
+                    : null;
+            } catch (\Throwable $e) {
+                $company = null;
+            }
+
+            if ($company) {
+                Cache::put($this->companyInfoCacheKey($cvr), $company, 86400);
+            }
+
+            $results[$cvr] = $company;
+        }
+
+        return $results;
+    }
+
+    protected function companyInfoCacheKey(string $cvr): string
+    {
+        return "metis:company_info:{$cvr}";
+    }
+
     public function fetchCompanyStructure(string $cvr): array
     {
         return $this->post('/v1/cvr/company-structure', ['cvr' => $cvr]) ?? [];
@@ -272,7 +347,7 @@ class RegistryApi
      */
     public function fetchCompanyStructureCached(string $cvr): array
     {
-        $cacheKey = "metis.company-structure.{$cvr}";
+        $cacheKey = "metis:company_structure:{$cvr}";
 
         if (! is_null($cached = Cache::get($cacheKey))) {
             return $cached;

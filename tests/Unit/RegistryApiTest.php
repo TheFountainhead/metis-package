@@ -394,6 +394,18 @@ it('cacher company-info ved andet kald', function () {
         ->and($second['name'])->toBe('Frankston ApS');
 });
 
+it('cacher company-info under den nye nøgle-konvention', function () {
+    Http::fake([
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => ['cvr' => '12345678', 'name' => 'Frankston ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $api->fetchCompanyInfo('12345678');
+
+    expect(Cache::get('metis:company_info:12345678'))->not->toBeNull()
+        ->and(Cache::get('metis.company-info.12345678'))->toBeNull();
+});
+
 it('cacher IKKE et null-svar fra company-info', function () {
     Http::fake([
         '*/v1/cvr/company/*' => Http::response('Server error', 500),
@@ -405,4 +417,87 @@ it('cacher IKKE et null-svar fra company-info', function () {
 
     expect($first)->toBeNull()->and($second)->toBeNull();
     Http::assertSentCount(2);
+});
+
+it('cacher company-structure under den nye nøgle-konvention', function () {
+    Http::fake([
+        '*/v1/cvr/company-structure' => Http::response(['data' => ['root' => ['cvr' => '12345678', 'name' => 'Frankston ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $api->fetchCompanyStructureCached('12345678');
+
+    expect(Cache::get('metis:company_structure:12345678'))->not->toBeNull()
+        ->and(Cache::get('metis.company-structure.12345678'))->toBeNull();
+});
+
+it('fetchCompanyInfosPooled: springer allerede cachede cvr\'er over og henter kun manglende via pool', function () {
+    // 12345678 er allerede cachet — skal IKKE udløse et HTTP-kald.
+    Cache::put('metis:company_info:12345678', ['cvr' => '12345678', 'name' => 'Cached ApS'], 86400);
+
+    Http::fake([
+        '*/v1/cvr/company/22222222' => Http::response(['data' => ['company' => ['cvr' => '22222222', 'name' => 'B ApS']]]),
+        '*/v1/cvr/company/33333333' => Http::response(['data' => ['company' => ['cvr' => '33333333', 'name' => 'C ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled(['12345678', '22222222', '33333333']);
+
+    Http::assertSentCount(2);
+    expect($result['12345678']['name'])->toBe('Cached ApS')
+        ->and($result['22222222']['name'])->toBe('B ApS')
+        ->and($result['33333333']['name'])->toBe('C ApS');
+});
+
+it('fetchCompanyInfosPooled: ét fejlet kald giver kun null for det cvr, ikke for de andre', function () {
+    Http::fake([
+        '*/v1/cvr/company/11111111' => Http::response(['data' => ['company' => ['cvr' => '11111111', 'name' => 'OK ApS']]]),
+        '*/v1/cvr/company/22222222' => Http::response('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled(['11111111', '22222222']);
+
+    expect($result['11111111']['name'])->toBe('OK ApS')
+        ->and($result['22222222'])->toBeNull();
+});
+
+it('fetchCompanyInfosPooled: cacher succesfulde svar 24t så et efterfølgende kald ikke rammer HTTP', function () {
+    Http::fake([
+        '*/v1/cvr/company/44444444' => Http::response(['data' => ['company' => ['cvr' => '44444444', 'name' => 'D ApS']]]),
+    ]);
+
+    $api = new RegistryApi;
+    $api->fetchCompanyInfosPooled(['44444444']);
+
+    Http::assertSentCount(1);
+    expect(Cache::get('metis:company_info:44444444')['name'])->toBe('D ApS');
+
+    // Andet kald (fx via almindelig fetchCompanyInfo) skal ramme cachen, ikke HTTP.
+    $second = $api->fetchCompanyInfo('44444444');
+
+    Http::assertSentCount(1);
+    expect($second['name'])->toBe('D ApS');
+});
+
+it('fetchCompanyInfosPooled: cacher ALDRIG et null/tomt svar', function () {
+    Http::fake([
+        '*/v1/cvr/company/55555555' => Http::response('Server error', 500),
+    ]);
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled(['55555555']);
+
+    expect($result['55555555'])->toBeNull()
+        ->and(Cache::get('metis:company_info:55555555'))->toBeNull();
+});
+
+it('fetchCompanyInfosPooled: tomt input giver tomt array uden HTTP-kald', function () {
+    Http::fake();
+
+    $api = new RegistryApi;
+    $result = $api->fetchCompanyInfosPooled([]);
+
+    expect($result)->toBe([]);
+    Http::assertNothingSent();
 });
