@@ -336,7 +336,11 @@ class CompanyStructure extends MetisSection
 
             return [(string) ($p['matrikel_id'] ?? '') => [
                 'usage' => $primary ? BbrUsageCategory::label($primary['usage'] ?? null) : null,
-                'latest_sale_date' => $p['latest_transaction']['date'] ?? null,
+                // Verified verbatim against a real prod registry-api payload
+                // (read-only curl, 2026-07-26): latest_transaction is
+                // {"transaction_type","transaction_date","registration_date","price"}
+                // — the date field is `transaction_date`, NOT `date`.
+                'latest_sale_date' => $p['latest_transaction']['transaction_date'] ?? null,
                 'latest_sale_price' => $p['latest_transaction']['price'] ?? null,
                 'valuation' => $p['valuation']['estimated_value'] ?? null,
             ]];

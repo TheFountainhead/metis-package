@@ -1173,8 +1173,22 @@ it('maps property batch data into the full enrichment map: usage, latest sale da
         '*/properties/batch*' => Http::response(['data' => [[
             'matrikel_id' => '2573669',
             'bbr' => ['buildings' => [['usage' => 130, 'total_area' => 150]]],
-            'latest_transaction' => ['date' => '2022-06-01', 'price' => 1_200_000],
-            'valuation' => ['estimated_value' => 1_400_000],
+            // Verbatim shape from a real prod registry-api payload (read-only
+            // curl verification, 2026-07-26) — including fields we don't
+            // consume (transaction_type, registration_date, confidence), so a
+            // future field rename/removal upstream is caught by this fixture
+            // rather than silently drifting from what the API actually sends.
+            'latest_transaction' => [
+                'transaction_type' => 'sale',
+                'transaction_date' => '2024-11-06',
+                'registration_date' => '2024-11-06',
+                'price' => 260000,
+            ],
+            'valuation' => [
+                'estimated_value' => 534000,
+                'valuation_date' => '2020-01-01',
+                'confidence' => null,
+            ],
         ]]]),
     ]);
 
@@ -1184,9 +1198,9 @@ it('maps property batch data into the full enrichment map: usage, latest sale da
 
     $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
     expect($prop['card']['usage'])->toBe('Bolig')
-        ->and($prop['card']['latest_sale_date'])->toBe('2022-06-01')
-        ->and($prop['card']['latest_sale_price'])->toBe(1_200_000)
-        ->and($prop['card']['valuation'])->toBe(1_400_000);
+        ->and($prop['card']['latest_sale_date'])->toBe('2024-11-06')
+        ->and($prop['card']['latest_sale_price'])->toBe(260000)
+        ->and($prop['card']['valuation'])->toBe(534000);
 });
 
 it('regression: rehydrates enrichmentData across two separate requests (P0 pattern) — poll then expandNode', function () {
