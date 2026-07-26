@@ -20,6 +20,17 @@ use Carbon\CarbonImmutable;
  */
 class OwnershipGraphBuilder
 {
+    /**
+     * Node kinds eligible for company-card/signals enrichment (fase 2a.2
+     * scope). Deliberately excludes 'person' and 'foreign' (spec: no
+     * enrichment for individuals before fase 2b) and 'other' (orphan-parent
+     * stubs synthesised in addAncestors() — a placeholder id, not a company
+     * a user asked to see enriched). Shared with CompanyStructure's cvr
+     * collection for the enrichment pool, so a stub's cvr is never sent
+     * there either.
+     */
+    public const ENRICHABLE_KINDS = ['searched', 'subsidiary', 'legal', 'reel'];
+
     public function build(
         string $query,
         ?string $companyName,
@@ -233,7 +244,11 @@ class OwnershipGraphBuilder
             }
 
             $cvr = $node['cvr'];
-            if ($cvr !== null && isset($companies[$cvr])) {
+            // Company enrichment is scoped to actual company kinds (spec:
+            // person/foreign nodes get no enrichment before fase 2b, and
+            // 'other' orphan-parent stubs never had their cvr sent to the
+            // pool in the first place — see CompanyStructure::fetchEnrichmentData).
+            if ($cvr !== null && in_array($node['kind'], self::ENRICHABLE_KINDS, true) && isset($companies[$cvr])) {
                 $node['card'] = $this->companyCard($companies[$cvr]);
                 $node['signals'] = $this->companySignals($companies[$cvr], $now);
             }

@@ -497,10 +497,17 @@ class CompanyStructure extends MetisSection
      * Callers decide what a total failure means (loadEnrichment flips to
      * 'failed'; refreshEnrichmentData swallows it) — this method itself lets
      * exceptions propagate.
+     *
+     * Only ENRICHABLE_KINDS nodes get their cvr sent to the pool — mirrors
+     * the kind-gate in OwnershipGraphBuilder::applyEnrichment() so person/
+     * foreign nodes and 'other' orphan-parent stubs never trigger a pool
+     * request whose card/signals would be discarded anyway.
      */
     protected function fetchEnrichmentData(): void
     {
-        $cvrs = collect($this->graphModel['nodes'] ?? [])->pluck('cvr')->filter()->unique()->values()->all();
+        $cvrs = collect($this->graphModel['nodes'] ?? [])
+            ->filter(fn ($node) => in_array($node['kind'] ?? null, OwnershipGraphBuilder::ENRICHABLE_KINDS, true))
+            ->pluck('cvr')->filter()->unique()->values()->all();
         $companies = $cvrs === [] ? [] : app(RegistryApi::class)->fetchCompanyInfosPooled($cvrs);
 
         $this->enrichmentData['companies'] = collect($companies)

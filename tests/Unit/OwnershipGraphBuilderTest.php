@@ -674,3 +674,45 @@ it('remains deterministic and idempotent with enrichment input', function () {
         'now' => \Carbon\CarbonImmutable::parse('2026-07-26')];
     expect(buildGraph($args))->toEqual(buildGraph($args));
 });
+
+/**
+ * Spec (fase 2a.2): person/foreign nodes get NO enrichment before fase 2b —
+ * even when a person row happens to carry a cvr (is_company=false ancestor
+ * rows sometimes still have a stray cvr in the raw registry payload). Before
+ * this fix, applyEnrichment() only gated on cvr !== null, so a person node
+ * with a cvr would get a company card/signals meant for an actual company.
+ */
+it('does not attach company card/signals to a person node even when it carries a cvr (F3)', function () {
+    $g = buildGraph([
+        'structure' => ['ancestors' => [
+            ['person_name' => 'Frederik Larnæs', 'is_company' => false, 'cvr' => '11111111', 'ownership_share' => 100.0, 'parent_of_cvr' => null],
+        ], 'subsidiaries' => []],
+        'enrichment' => ['companies' => ['11111111' => ['equity' => 5.0, 'website' => 'example.dk']], 'properties' => []],
+    ]);
+
+    $person = collect($g['nodes'])->firstWhere('id', '11111111');
+    expect($person['kind'])->toBe('person')
+        ->and($person)->not->toHaveKey('card')
+        ->and($person)->not->toHaveKey('signals');
+});
+
+/**
+ * 'other' orphan-parent stub nodes (synthesised in addAncestors() when a
+ * parent_of_cvr was pruned upstream) are placeholders, not companies a user
+ * asked to see enriched — even if enrichment data happens to be present for
+ * that cvr (e.g. left over from a previous graph that had the real company
+ * loaded), the stub must not render a card.
+ */
+it('does not attach company card/signals to an "other" orphan-parent stub node (F3)', function () {
+    $g = buildGraph([
+        'structure' => ['ancestors' => [
+            ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '22222222', 'ownership_share' => 100.0, 'parent_of_cvr' => '99999999'],
+        ], 'subsidiaries' => []],
+        'enrichment' => ['companies' => ['99999999' => ['equity' => 5.0]], 'properties' => []],
+    ]);
+
+    $stub = collect($g['nodes'])->firstWhere('id', '99999999');
+    expect($stub['kind'])->toBe('other')
+        ->and($stub)->not->toHaveKey('card')
+        ->and($stub)->not->toHaveKey('signals');
+});

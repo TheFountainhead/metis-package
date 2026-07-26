@@ -997,6 +997,41 @@ it('loadEnrichment attaches company card/signals to graph nodes (via the real pr
         ->and($node['card']['employees'])->toBe(4);
 });
 
+/**
+ * F3 fix: fetchEnrichmentData() must only send ENRICHABLE_KINDS cvrs to
+ * fetchCompanyInfosPooled() — an 'other' orphan-parent stub (synthesised
+ * when a parent_of_cvr was pruned upstream) has a cvr but is a placeholder,
+ * not a company the user asked to see enriched. Before this fix, the pool
+ * call would fire a request for the stub's cvr too (wasted request against
+ * registry-api for a node that never renders a card either way).
+ */
+it('excludes an "other" orphan-parent stub cvr from the enrichment pool call (F3)', function () {
+    fakeRegistryCompanyInfo('11111111');
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0, 'parent_of_cvr' => '99999999'],
+            ],
+            'subsidiaries' => [],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    expect($c->get('enrichmentStatus'))->toBe('loaded');
+
+    $stub = collect($c->get('graphModel')['nodes'])->firstWhere('id', '99999999');
+    expect($stub['kind'])->toBe('other');
+
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/99999999'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/11111111'));
+});
+
 it('reads the LATEST financials row for equity/result/fiscal_year even when the financials list arrives unsorted', function () {
     // Guards against the builder-review note: loadEnrichment (not the
     // builder) must reduce an unsorted financials array to its latest row —
