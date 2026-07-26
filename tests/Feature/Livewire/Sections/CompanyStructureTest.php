@@ -955,8 +955,19 @@ it('retryProperties resets propertiesAttempts so the cap does not carry over', f
 });
 
 // ---- Task 3: enrichment step — pooled financials, full batch map, streetview URL ----
+// Opus-review fixes (F1-F6, 2026-07-26): pollForUpdates() now actually calls
+// loadEnrichment() on completion (F1); loadEnrichment() gates on propertiesStatus
+// being settled (F2) and on enrichmentStatus not already 'loaded' (F3);
+// rehydrateBeforeRebuild() guards BOTH companies and properties halves of
+// enrichmentData (F4); retryEnrichment() exists for the 'failed' state (F5);
+// wire:key on the blade's x-init trigger includes propertiesStatus itself (F6a).
+//
+// Test-discipline fix (reviewer's main complaint): the P0 regression tests
+// below no longer shortcut via ->set('enrichmentStatus', 'loaded') — they
+// reach 'loaded' via the REAL path (mount → loadProperties(), which now
+// triggers loadEnrichment() itself per F2).
 
-it('loadEnrichment attaches company card/signals to graph nodes', function () {
+it('loadEnrichment attaches company card/signals to graph nodes (via the real properties → enrichment path)', function () {
     // Http::fake() matches the FIRST-registered pattern (see the pollForUpdates
     // P0 test's comment above) — the specific per-cvr fakes must be registered
     // BEFORE fakeRegistryStructure()'s generic '*cvr/company/*' catch-all, or
@@ -965,11 +976,16 @@ it('loadEnrichment attaches company card/signals to graph nodes', function () {
     fakeRegistryCompanyInfo('44018942');
     fakeRegistryCompanyInfo('44027992');
     fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty(['owner_cvr' => '44507781'])], batchUsage: 'present');
 
+    // Real path: mount (propertiesStatus starts 'pending', so loadEnrichment()
+    // would gate/no-op if called directly here) → loadProperties() settles
+    // propertiesStatus to 'loaded' AND itself triggers loadEnrichment() (F2).
     $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadEnrichment');
+        ->call('loadProperties');
 
-    expect($c->get('enrichmentStatus'))->toBe('loaded');
+    expect($c->get('propertiesStatus'))->toBe('loaded')
+        ->and($c->get('enrichmentStatus'))->toBe('loaded');
 
     $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
     expect($node['card'] ?? null)->not->toBeNull()
@@ -1006,10 +1022,17 @@ it('reads the LATEST financials row for equity/result/fiscal_year even when the 
             ],
         ]]]),
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0, 'total_count' => 0]]]),
     ]);
 
+    // Real path: propertiesStatus settles to 'empty' (no properties in the
+    // fixture) — one of loadEnrichment()'s valid "settled" gate states (F2) —
+    // and loadProperties() triggers loadEnrichment() itself.
     $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadEnrichment');
+        ->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('empty')
+        ->and($c->get('enrichmentStatus'))->toBe('loaded');
 
     $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
     // Must resolve to the 2024 row (the actual latest year), not the first
@@ -1039,6 +1062,42 @@ it('gates loadEnrichment while enriching — stays pending, no company-info call
     Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/44507781'));
 });
 
+it('gates loadEnrichment on propertiesStatus being settled (F2 regression) — enrichment before properties land stays pending; enrichment after properties complete gets usage+streetview', function () {
+    config(['metis.google_maps_api_key' => 'test-key-123']);
+
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(
+        properties: [fdlPortfolioProperty(['owner_cvr' => '44507781', 'latitude' => 55.25, 'longitude' => 12.17])],
+        batchUsage: 'present',
+    );
+
+    // propertiesStatus is 'pending' right after mount (wire:init="loadProperties"
+    // hasn't fired yet in a Livewire::test() context — it only fires client-side).
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+    expect($c->get('propertiesStatus'))->toBe('pending');
+
+    // Calling loadEnrichment() directly BEFORE the property step has ever run
+    // must stay 'pending' — this is the F2 regression: previously this call
+    // would have "succeeded" with an empty properties map that nothing ever
+    // repaired (loadProperties() never touched enrichmentData, and the
+    // rehydration guard only fires once enrichmentStatus is ALREADY 'loaded').
+    $c->call('loadEnrichment');
+    expect($c->get('enrichmentStatus'))->toBe('pending');
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/44507781'));
+
+    // Now let the property step actually settle — loadProperties() itself
+    // triggers loadEnrichment() once propertiesStatus lands on 'loaded' (F2).
+    $c->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('loaded')
+        ->and($c->get('enrichmentStatus'))->toBe('loaded');
+
+    $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($prop['card']['usage'] ?? null)->toBe('Bolig')
+        ->and($prop['card']['streetview_url'] ?? null)->not->toBeNull();
+});
+
 it('pool partial failure leaves the other companies enriched — only the failed cvr is null', function () {
     // Own complete fake set (not fakeRegistryStructure()) — see the unsorted-
     // financials test's comment above for why the two can't be combined.
@@ -1058,10 +1117,13 @@ it('pool partial failure leaves the other companies enriched — only the failed
         '*cvr/company/44018942*' => Http::response('Server error', 500),
         '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0, 'total_count' => 0]]]),
     ]);
 
+    // Real path: loadProperties() settles propertiesStatus ('empty', no
+    // properties in the fixture) and itself triggers loadEnrichment() (F2).
     $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadEnrichment');
+        ->call('loadProperties');
 
     expect($c->get('enrichmentStatus'))->toBe('loaded');
 
@@ -1072,8 +1134,7 @@ it('pool partial failure leaves the other companies enriched — only the failed
     expect($failed['signals'] ?? null)->toBeNull();
 });
 
-it('flips enrichmentStatus to failed when the whole pooled call throws, with retry available', function () {
-    fakeRegistryStructure();
+it('flips enrichmentStatus to failed when the whole pooled call throws, and retryEnrichment() recovers (F5)', function () {
     Http::fake([
         '*cvr/company-structure*' => Http::response(['data' => [
             'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
@@ -1082,18 +1143,57 @@ it('flips enrichmentStatus to failed when the whole pooled call throws, with ret
         ]]),
         '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
         '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0, 'total_count' => 0]]]),
     ]);
 
     // Force fetchCompanyInfosPooled() to throw entirely (not per-cvr null) —
-    // simulate a total outage by binding a RegistryApi double that throws.
+    // simulate a total outage by binding a RegistryApi double that throws
+    // on the FIRST call, then succeeds (so retryEnrichment() can recover).
+    $callCount = 0;
     $mock = Mockery::mock(\TheFountainhead\Metis\Services\RegistryApi::class)->makePartial();
-    $mock->shouldReceive('fetchCompanyInfosPooled')->andThrow(new \RuntimeException('pool down'));
+    $mock->shouldReceive('fetchCompanyInfosPooled')->andReturnUsing(function ($cvrs) use (&$callCount) {
+        $callCount++;
+        if ($callCount === 1) {
+            throw new \RuntimeException('pool down');
+        }
+
+        return ['44507781' => ['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'financials' => []]];
+    });
     app()->instance(\TheFountainhead\Metis\Services\RegistryApi::class, $mock);
 
+    // Real path: loadProperties() settles propertiesStatus and triggers
+    // loadEnrichment() itself, which hits the throwing pool call.
     $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadEnrichment');
+        ->call('loadProperties');
 
     expect($c->get('enrichmentStatus'))->toBe('failed');
+
+    // F5: retryEnrichment() resets to 'pending' then re-runs loadEnrichment(),
+    // which now hits the SECOND (successful) mock response.
+    $c->call('retryEnrichment');
+
+    expect($c->get('enrichmentStatus'))->toBe('loaded');
+});
+
+it('loadEnrichment does not re-fetch once enrichmentStatus is already loaded (F3 idempotency) — repeated calls make exactly one HTTP round', function () {
+    fakeRegistryCompanyInfo('44507781');
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty(['owner_cvr' => '44507781'])], batchUsage: 'present');
+
+    // loadProperties() already triggers loadEnrichment() once (F2) — this
+    // establishes enrichmentStatus='loaded' via the real path.
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+    expect($c->get('enrichmentStatus'))->toBe('loaded');
+
+    $countBefore = count(\Illuminate\Support\Facades\Http::recorded());
+
+    // Simulating the Blade's x-init trigger re-firing across a morph:
+    // repeated direct calls must be pure no-ops — no new HTTP at all.
+    $c->call('loadEnrichment');
+    $c->call('loadEnrichment');
+
+    expect(count(\Illuminate\Support\Facades\Http::recorded()))->toBe($countBefore);
 });
 
 it('builds a streetview URL per property only when lat/lng exist AND the google maps api key is configured', function () {
@@ -1108,9 +1208,9 @@ it('builds a streetview URL per property only when lat/lng exist AND the google 
     fakeRegistryCompanyInfo('44018942');
     fakeRegistryCompanyInfo('44027992');
 
+    // loadProperties() alone now suffices — it triggers loadEnrichment() (F2).
     $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadProperties')
-        ->call('loadEnrichment');
+        ->call('loadProperties');
 
     $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
     expect($prop['card']['streetview_url'] ?? null)->not->toBeNull()
@@ -1132,8 +1232,7 @@ it('omits the streetview URL when the google maps api key is not configured', fu
     fakeRegistryCompanyInfo('44027992');
 
     $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadProperties')
-        ->call('loadEnrichment');
+        ->call('loadProperties');
 
     $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
     expect($prop['card']['streetview_url'] ?? null)->toBeNull();
@@ -1149,8 +1248,7 @@ it('omits the streetview URL when the property has no lat/lng even with the api 
     fakeRegistryCompanyInfo('44027992');
 
     $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadProperties')
-        ->call('loadEnrichment');
+        ->call('loadProperties');
 
     $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
     expect($prop['card']['streetview_url'] ?? null)->toBeNull();
@@ -1192,9 +1290,9 @@ it('maps property batch data into the full enrichment map: usage, latest sale da
         ]]]),
     ]);
 
+    // loadProperties() alone suffices — triggers loadEnrichment() itself (F2).
     $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadProperties')
-        ->call('loadEnrichment');
+        ->call('loadProperties');
 
     $prop = collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property');
     expect($prop['card']['usage'])->toBe('Bolig')
@@ -1203,39 +1301,135 @@ it('maps property batch data into the full enrichment map: usage, latest sale da
         ->and($prop['card']['valuation'])->toBe(534000);
 });
 
-it('regression: rehydrates enrichmentData across two separate requests (P0 pattern) — poll then expandNode', function () {
-    // Request A: loadEnrichment() succeeds — enrichmentStatus becomes 'loaded'
-    // and the company card appears in graphModel.
+it('pollForUpdates completing enrichment ($enriching flips false) itself calls loadEnrichment (F1 regression)', function () {
+    // F1: this is the CORE bug the review found — pollForUpdates() flipping
+    // $enriching to false previously never called loadEnrichment() at all,
+    // so a company whose subsidiary-tree discovery was still 'running' at
+    // mount would sit at enrichmentStatus='pending' forever.
+    fakeRegistryCompanyInfo('44507781');
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'FDL-Invest ApS', 'owners' => []]]]),
+        // mount sees 'running' (so $enriching=true); the explicit pollForUpdates
+        // call sees 'completed'.
+        '*enrichment*' => Http::sequence()
+            ->push(['data' => ['status' => 'running']])
+            ->push(['data' => ['status' => 'completed']]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => [
+            'properties' => [fdlPortfolioProperty(['owner_cvr' => '44507781'])],
+            'property_count' => 1, 'total_count' => 1,
+        ]]]),
+        '*/properties/batch*' => Http::response(['data' => []]),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+    expect($c->get('enriching'))->toBeTrue();
+
+    // The property step already settled independently of enrichment status
+    // (loadProperties() is called via wire:init in real usage; call it
+    // directly here) — propertiesStatus becomes 'loaded', satisfying F2's
+    // OTHER gate, so once $enriching flips false below, loadEnrichment()
+    // has nothing standing in its way except the completion call itself.
+    $c->call('loadProperties');
+    expect($c->get('propertiesStatus'))->toBe('loaded')
+        // loadProperties()'s own trailing loadEnrichment() call gated on
+        // $enriching still being true at this point — still 'pending'.
+        ->and($c->get('enrichmentStatus'))->toBe('pending');
+
+    $c->call('pollForUpdates');
+
+    expect($c->get('enriching'))->toBeFalse()
+        ->and($c->get('enrichmentStatus'))->toBe('loaded');
+
+    $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+    expect($node['card'] ?? null)->not->toBeNull();
+});
+
+it('rebuild() uses a real, test-observable "now" — dropping the now argument would make this test red (F6b)', function () {
+    // Guards against a future regression where rebuild() stops passing `now`
+    // to the builder (or passes a hardcoded/null value): freeze time so a
+    // company founded exactly 1 month ago is deterministically "newly_founded".
+    \Illuminate\Support\Facades\Date::setTestNow(\Carbon\CarbonImmutable::parse('2026-07-26'));
+
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => [],
+            ]],
+        ]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => [
+            'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS',
+            // Founded 1 month before the frozen "now" — must resolve to
+            // 'newly_founded' via a real Carbon::now() call inside rebuild(),
+            // not a null/absent `now` (which would make the builder skip the
+            // newly_founded check entirely — see OwnershipGraphBuilder's
+            // companySignals() docblock).
+            'founded_date' => '2026-06-26',
+            'financials' => [],
+        ]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0, 'total_count' => 0]]]),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+    expect($node['signals'] ?? [])->toContain('newly_founded');
+
+    \Illuminate\Support\Facades\Date::setTestNow();
+});
+
+// ---- Review fix: rehydrateBeforeRebuild() guards BOTH halves of enrichmentData (F4) ----
+
+it('regression: rehydrates enrichmentData across two separate requests via the REAL properties→enrichment path (P0 pattern) — poll then expandNode', function () {
+    // Request A: the REAL path (loadProperties() → its own trailing
+    // loadEnrichment() call, F2) — NOT a ->set('enrichmentStatus', 'loaded')
+    // shortcut (reviewer's main complaint about the previous version of this
+    // test: a shortcut proves nothing about whether the real trigger chain
+    // actually reaches 'loaded').
     fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty(['owner_cvr' => '44507781'])], batchUsage: 'present');
     fakeRegistryCompanyInfo('44507781');
     fakeRegistryCompanyInfo('44018942');
     fakeRegistryCompanyInfo('44027992');
 
     $first = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadEnrichment');
+        ->call('loadProperties');
     expect($first->get('enrichmentStatus'))->toBe('loaded');
     expect(collect($first->get('graphModel')['nodes'])->firstWhere('id', '44507781')['card'] ?? null)->not->toBeNull();
+    $propNode = collect($first->get('graphModel')['nodes'])->firstWhere('kind', 'property');
+    expect($propNode['card']['usage'] ?? null)->not->toBeNull();
 
     // Request B: a FRESH component instance — protected $enrichmentData is
-    // lost to hydration, but public $enrichmentStatus (hydrated normally,
-    // forced here to simulate a real hydrated request) still says 'loaded'.
-    // expandNode() must detect enrichmentData['companies'] === [] and refetch
-    // (all sources cached) before rebuilding, or cards silently vanish.
+    // lost to hydration, but public $enrichmentStatus/$propertiesStatus
+    // (hydrated normally, forced here to simulate a real hydrated request)
+    // still say 'loaded'. expandNode() must detect enrichmentData['companies']
+    // AND ['properties'] both being empty (F4) and refetch (all sources
+    // cached) before rebuilding, or cards silently vanish.
     fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty(['owner_cvr' => '44507781'])], batchUsage: 'present');
     fakeRegistryCompanyInfo('44507781');
     fakeRegistryCompanyInfo('44018942');
     fakeRegistryCompanyInfo('44027992');
 
     $second = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->set('propertiesStatus', 'loaded')
         ->set('enrichmentStatus', 'loaded')
         ->call('expandNode', 'sub:44018942');
 
     $nodes = collect($second->get('graphModel')['nodes']);
     expect($nodes->firstWhere('id', '44507781')['card'] ?? null)->not->toBeNull();
     expect($nodes->pluck('id'))->toContain('44027992'); // the expand itself still worked
+    $propNode2 = $nodes->firstWhere('kind', 'property');
+    expect($propNode2['card']['usage'] ?? null)->not->toBeNull(); // F4: properties half rehydrated too
 });
 
-it('regression: rehydrates enrichmentData across two separate requests (P0 pattern) — pollForUpdates completion', function () {
+it('regression: rehydrates enrichmentData across two separate requests via the REAL properties→enrichment path (P0 pattern) — pollForUpdates completion', function () {
     $enrichmentCalls = 0;
     Http::fake([
         '*cvr/company-structure*' => Http::response(['data' => [
@@ -1252,25 +1446,36 @@ it('regression: rehydrates enrichmentData across two separate requests (P0 patte
             $enrichmentCalls++;
 
             // Request A's mount (call 1) sees 'completed' immediately (Request A
-            // just establishes the enriched state via a direct loadEnrichment()
-            // call, not via polling — so $enriching must be false for that call
+            // just establishes the enriched state via the REAL loadProperties()
+            // path, not via polling — so $enriching must be false for that call
             // to do real work). Request B's mount (call 2) sees 'running' so
             // $enriching=true and the explicit pollForUpdates call does real
             // work; pollForUpdates' own status check (call 3) sees 'completed'.
             return Http::response(['data' => ['status' => $enrichmentCalls === 2 ? 'running' : 'completed']]);
         },
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => [
+            'properties' => [fdlPortfolioProperty(['owner_cvr' => '44507781'])],
+            'property_count' => 1, 'total_count' => 1,
+        ]]]),
+        '*/properties/batch*' => Http::response(['data' => []]),
     ]);
 
-    // Request A: loadEnrichment() succeeds — enrichmentStatus becomes 'loaded'.
+    // Request A: the REAL path — mount (enrichment already 'completed', so
+    // $enriching=false) → loadProperties() settles propertiesStatus AND
+    // triggers loadEnrichment() itself (F2), reaching 'loaded' without any
+    // ->set() shortcut.
     $first = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadEnrichment');
+        ->call('loadProperties');
     expect($first->get('enrichmentStatus'))->toBe('loaded');
 
     // Request B: a FRESH component instance — protected $enrichmentData lost to
-    // hydration, public $enrichmentStatus forced to 'loaded' to simulate a real
-    // hydrated request. pollForUpdates() completing must detect the mismatch
-    // and refetch enrichment before rebuilding, or the company card vanishes.
+    // hydration, public $enrichmentStatus/$propertiesStatus forced to 'loaded'
+    // to simulate a real hydrated request (mount alone can't reach 'loaded'
+    // properties synchronously — that's wire:init's job in the real page).
+    // pollForUpdates() completing must detect the mismatch and refetch
+    // enrichment before rebuilding (F1 + F4), or the company card vanishes.
     $second = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->set('propertiesStatus', 'loaded')
         ->set('enrichmentStatus', 'loaded')
         ->call('pollForUpdates');
 

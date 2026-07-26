@@ -72,14 +72,27 @@
                         <button type="button" wire:click="retryProperties" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
                 @elseif(in_array($propertiesStatus, ['loaded', 'empty']))
-                    {{-- Fase 2a.2: the property step (regardless of outcome) is the
-                         signal enrichment can safely start — the graph's node set is
-                         settled at that point. Invisible x-init trigger, same
-                         wire:key-per-attempt discipline as the 'building' branch
-                         above so this element doesn't get reused across a
-                         propertiesStatus transition (Task 4 owns the rest of the
-                         enrichment-loading UI). --}}
-                    <div wire:key="enrichment-trigger-{{ $propertiesStatus }}" x-data x-init="$wire.loadEnrichment()"></div>
+                    {{-- Fase 2a.2: loadProperties() itself already calls loadEnrichment()
+                         once the property step settles (component-side, F2 fix) — this
+                         x-init is a safety-net trigger for the case where propertiesStatus
+                         was ALREADY settled on a fresh page load (so loadProperties()'s own
+                         trailing call never ran in this request). loadEnrichment()'s own
+                         gates (F2/F3) make a redundant fire here a no-op. wire:key includes
+                         $propertiesStatus itself (F6 fix) — not just $propertiesAttempts,
+                         which never changes across the loaded/empty transition it's meant
+                         to re-init on — so the x-init deterministically re-fires exactly
+                         once when the status transitions into 'loaded' or 'empty'. --}}
+                    <div wire:key="enrichment-trigger-{{ $propertiesStatus }}-{{ $propertiesAttempts }}" x-data x-init="$wire.loadEnrichment()"></div>
+                @endif
+
+                {{-- Company/property-enrichment fetch status (F5): mirrors the
+                     properties-failed note above — a discreet retry affordance,
+                     no other visible enrichment UI (Task 4 owns the rest). --}}
+                @if($enrichmentStatus === 'failed')
+                    <p class="mgraph-note">
+                        {{ __('Nøgletal kunne ikke hentes.') }}
+                        <button type="button" wire:click="retryEnrichment" class="underline">{{ __('Prøv igen') }}</button>
+                    </p>
                 @endif
 
                 {{-- Historical owners (collapsible) --}}

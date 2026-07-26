@@ -172,6 +172,17 @@ class CompanyStructure extends MetisSection
             $this->enriching = false;
             $this->rehydrateBeforeRebuild();
             $this->rebuild();
+
+            // F1 fix (Opus review): this call was DOCUMENTED on loadEnrichment()'s
+            // own docblock ("the existing enrichment poll-completion path calls
+            // this at the end") but never actually wired up — a company whose
+            // subsidiary-tree enrichment was still 'running'/'pending' at mount
+            // would sit at enrichmentStatus='pending' forever, since nothing else
+            // ever calls loadEnrichment() again once $enriching flips false here.
+            // loadEnrichment() itself gates on propertiesStatus (F2) and on
+            // enrichmentStatus==='loaded' (F3), so calling it unconditionally
+            // here is safe — it degrades to a no-op when either gate isn't ready.
+            $this->loadEnrichment();
         }
     }
 
@@ -192,6 +203,16 @@ class CompanyStructure extends MetisSection
         $this->rebuild();
     }
 
+    /**
+     * F2 fix (Opus review): calls loadEnrichment() exactly once, at the end,
+     * for every SETTLED propertiesStatus outcome ('loaded'/'empty'/'failed')
+     * — 'building' is the one non-terminal outcome and does NOT call it, since
+     * the Blade's own re-poll will call loadProperties() again shortly.
+     * loadEnrichment() has its own gates (propertiesStatus must be settled;
+     * enrichmentStatus must not already be 'loaded') — it decides whether
+     * this call actually does anything, so a single unconditional call here
+     * is always safe, never a duplicate pool/batch fetch.
+     */
     public function loadProperties(): void
     {
         $this->rehydrateBeforeRebuild();
@@ -205,35 +226,31 @@ class CompanyStructure extends MetisSection
 
         if ($portfolio === null) {
             $this->propertiesStatus = 'failed';
+        } else {
+            $list = $portfolio['properties'] ?? [];
+            $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
 
-            return;
+            if ($list === [] && $count > 0) {
+                $this->propertiesAttempts++;
+
+                // Loft nået: porteføljen bliver aldrig færdig (eller backend hænger).
+                // 'failed' i stedet for evig 'building' giver bladen en retry-knap
+                // (som nulstiller $propertiesAttempts) i stedet for en uendelig spinner.
+                // Ellers: backend bygger stadig (verificeret prod-adfærd: første kald
+                // tomt, andet fuldt) — bladen re-forsøger m. stigende delay.
+                $this->propertiesStatus = $this->propertiesAttempts >= self::MAX_PROPERTIES_ATTEMPTS ? 'failed' : 'building';
+            } elseif ($list === []) {
+                $this->propertiesStatus = 'empty';
+            } else {
+                $this->propertyData = ['list' => $list, 'usage' => $this->usageMapFor($list)];
+                $this->propertiesStatus = 'loaded';
+                $this->rebuild();
+            }
         }
 
-        $list = $portfolio['properties'] ?? [];
-        $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
-
-        if ($list === [] && $count > 0) {
-            $this->propertiesAttempts++;
-
-            // Loft nået: porteføljen bliver aldrig færdig (eller backend hænger).
-            // 'failed' i stedet for evig 'building' giver bladen en retry-knap
-            // (som nulstiller $propertiesAttempts) i stedet for en uendelig spinner.
-            // Ellers: backend bygger stadig (verificeret prod-adfærd: første kald
-            // tomt, andet fuldt) — bladen re-forsøger m. stigende delay.
-            $this->propertiesStatus = $this->propertiesAttempts >= self::MAX_PROPERTIES_ATTEMPTS ? 'failed' : 'building';
-
-            return;
+        if ($this->propertiesStatus !== 'building') {
+            $this->loadEnrichment();
         }
-
-        if ($list === []) {
-            $this->propertiesStatus = 'empty';
-
-            return;
-        }
-
-        $this->propertyData = ['list' => $list, 'usage' => $this->usageMapFor($list)];
-        $this->propertiesStatus = 'loaded';
-        $this->rebuild();
     }
 
     public function retryProperties(): void
@@ -248,11 +265,27 @@ class CompanyStructure extends MetisSection
      * full per-property batch map (usage + latest sale + valuation), then
      * rebuilds so OwnershipGraphBuilder can attach cards/signals to nodes.
      *
-     * Gated: a no-op while $enriching is true (poll-payload hensyn — the
-     * subsidiary tree is still growing, so enriching it now would be wasted
-     * work on cvr's the next poll may prune/replace). The existing enrichment
-     * poll-completion path (pollForUpdates, when it flips $enriching to
-     * false) calls this at the end so it fires exactly once the tree settles.
+     * THREE independent gates, all must be satisfied or this is a no-op that
+     * leaves enrichmentStatus untouched:
+     *
+     * 1. `$this->enriching` — the subsidiary tree is still growing, so
+     *    enriching now would be wasted work on cvr's the next poll may
+     *    prune/replace. pollForUpdates() calls this again once it flips
+     *    $enriching false (F1 fix).
+     * 2. `$this->propertiesStatus` not yet settled (`'pending'`/`'building'`)
+     *    — the property list (and therefore the matrikel-ids to batch-enrich)
+     *    isn't final yet. 'loaded', 'empty', AND 'failed' all count as
+     *    "settled": a portfolio that will never load is not a reason to
+     *    withhold company-level enrichment forever (F2 fix — previously
+     *    this method had NO properties-gate at all, so calling it before the
+     *    portfolio landed produced a permanently-empty properties map that
+     *    nothing ever repaired, because loadProperties() never touched
+     *    enrichmentData and the rehydration guard only fires when
+     *    enrichmentStatus is ALREADY 'loaded').
+     * 3. `$this->enrichmentStatus === 'loaded'` already — repeat calls (the
+     *    Blade's x-init trigger can re-fire across morphs) must not re-pool
+     *    every company and re-batch every property each time (F3 fix). Use
+     *    retryEnrichment() to force a genuine re-fetch after a 'failed' state.
      *
      * Pool-delfejl (fetchCompanyInfosPooled): individual cvr's are null in
      * the map — those nodes simply get no card (handled entirely by the
@@ -264,6 +297,12 @@ class CompanyStructure extends MetisSection
     public function loadEnrichment(): void
     {
         if ($this->enriching) {
+            return;
+        }
+        if (! in_array($this->propertiesStatus, ['loaded', 'empty', 'failed'], true)) {
+            return;
+        }
+        if ($this->enrichmentStatus === 'loaded') {
             return;
         }
 
@@ -279,6 +318,17 @@ class CompanyStructure extends MetisSection
 
         $this->enrichmentStatus = 'loaded';
         $this->rebuild();
+    }
+
+    /**
+     * F5: explicit retry after enrichmentStatus === 'failed' (mirrors
+     * retryProperties() above) — resets to 'pending' so loadEnrichment()'s
+     * own idempotency gate (F3) doesn't immediately no-op the retry.
+     */
+    public function retryEnrichment(): void
+    {
+        $this->enrichmentStatus = 'pending';
+        $this->loadEnrichment();
     }
 
     /**
@@ -387,6 +437,12 @@ class CompanyStructure extends MetisSection
      * $enrichmentStatus still says 'loaded' → re-run loadEnrichment's fetch
      * (every source it reads is cached, so this is cheap), or company/property
      * cards would silently vanish from the next rebuild after a fresh request.
+     * F4 fix (Opus review): guards BOTH enrichmentData['companies'] AND
+     * enrichmentData['properties'] — guarding only 'companies' let the
+     * properties half of the map get lost asymmetrically (e.g. a fresh
+     * request where company cards happened to be non-empty from some other
+     * path but the property batch map wasn't), silently dropping property
+     * cards from the rebuilt graph without ever triggering a refetch.
      */
     protected function rehydrateBeforeRebuild(): void
     {
@@ -396,7 +452,8 @@ class CompanyStructure extends MetisSection
         if ($this->propertiesStatus === 'loaded' && $this->propertyData['list'] === []) {
             $this->refreshPropertyData();
         }
-        if ($this->enrichmentStatus === 'loaded' && $this->enrichmentData['companies'] === []) {
+        if ($this->enrichmentStatus === 'loaded'
+            && ($this->enrichmentData['companies'] === [] || $this->enrichmentData['properties'] === [])) {
             $this->refreshEnrichmentData();
         }
     }
