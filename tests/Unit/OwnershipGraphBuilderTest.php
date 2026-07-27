@@ -1419,6 +1419,76 @@ it('buildForPerson: a cut role node folds its own hidden children onto the perso
         ->toMatchArray(['relations' => 2, 'capped_relations' => true]); // role node + its hidden child
 });
 
+it('buildForPerson: a DIRECTLY owned demoted child outranks role nodes in truncation (regel 4)', function () {
+    // A company the person owns DIRECTLY but which is also cross-owned by
+    // another of their companies sits at depth 2 — yet it is an ownership
+    // relation of the person, not a subsidiary they merely inherited. It must
+    // therefore be cut in the LAST pass alongside the roots, never in the
+    // deep-subsidiary pass ahead of a board seat.
+    $args = [
+        'ownershipCompanies' => [
+            ownershipCompany('11111111', 100.0, 'Parent'),
+            ownershipCompany('22222222', 40.0, 'OwnedChild'),
+        ],
+        'roleCompanies' => [
+            roleCompany('91111111', 'bestyrelse', 'Board1'),
+            roleCompany('92222222', 'bestyrelse', 'Board2'),
+        ],
+        'crossOwnership' => [['parent_cvr' => '11111111', 'child_cvr' => '22222222', 'ownership_share' => 60.0]],
+    ];
+
+    // 5 nodes uncapped: person root + Parent + OwnedChild + 2 board seats.
+    // Cap 3 leaves room for the person root and the two owned companies only,
+    // so BOTH board seats must go before the demoted-but-directly-owned one.
+    $g = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 3])]));
+    expect(collect($g['nodes'])->pluck('id')->all())->toBe(['person:root', '11111111', '22222222'])
+        ->and(collect($g['nodes'])->where('role_layer', true))->toHaveCount(0);
+
+    // Cap 4: only one role node needs to go; the owned child still survives.
+    $g4 = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 4])]));
+    expect(collect($g4['nodes'])->pluck('id'))->toContain('22222222')
+        ->and(collect($g4['nodes'])->where('role_layer', true))->toHaveCount(1);
+
+    // Cap 2: even the person's own relations are cut back-to-front now, and
+    // the directly-owned child (added after Parent) goes first.
+    $g2 = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 2])]));
+    expect(collect($g2['nodes'])->pluck('id')->all())->toBe(['person:root', '11111111']);
+
+    // A cross-owned child the person does NOT own directly stays an ordinary
+    // depth-2 subsidiary and IS cut before the role nodes.
+    $indirect = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('11111111', 100.0, 'Parent')],
+        'roleCompanies' => [roleCompany('91111111', 'bestyrelse', 'Board1')],
+        'crossOwnership' => [['parent_cvr' => '11111111', 'child_cvr' => '22222222', 'ownership_share' => 60.0]],
+        'caps' => personCaps(['total_nodes' => 3]),
+    ]);
+    expect(collect($indirect['nodes'])->pluck('id')->all())->toBe(['person:root', '11111111', '91111111']);
+});
+
+it('buildForPerson: rejects a per-cvr properties value that is not a plain list', function () {
+    // The person path takes plain LISTS per cvr. Handing it build()'s
+    // ['list' => …, 'usage' => …] wrapper used to fail SILENTLY (array_merge
+    // flattens the wrapper, addProperties finds no owner_cvr on any row and
+    // skips them all, and the graph renders normally with zero properties).
+    expect(fn () => buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'properties' => ['40072772' => ['list' => [fdlProperty(['owner_cvr' => '40072772'])], 'usage' => []]],
+    ]))->toThrow(
+        InvalidArgumentException::class,
+        'buildForPerson(): $properties[40072772] must be a plain list of portfolio rows',
+    );
+
+    // A plain list, an empty list and a null (failed fetch) are all fine.
+    expect(fn () => buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'properties' => [
+            '40072772' => [fdlProperty(['owner_cvr' => '40072772'])],
+            '41527080' => [],
+            '44018942' => null,
+        ],
+    ]))->not->toThrow(InvalidArgumentException::class);
+});
+
 it('buildForPerson: a fetched structure on a demoted depth-2 child gets its full configured depth', function () {
     // Task 7 only fetches structures for depth-1 nodes, so this is a
     // generalisation guard: the depth offset is relative to the node the

@@ -199,7 +199,10 @@ class OwnershipGraphBuilder
             $direct = collect($ownershipCompanies)->firstWhere('cvr', $cvr);
             $role = $roleByCvr->get($cvr);
             $name = $direct['name'] ?? $role['name'] ?? null;
-            $this->addPersonChild($cvr, $name, $direct['ownership_share'] ?? null, $role !== null, $nodes, $seen, 2);
+            // direct: the demotion moved a company the person owns THEMSELVES
+            // below its corporate parent for layout only — truncation must
+            // still treat it as one of their own relations (addPersonChild).
+            $this->addPersonChild($cvr, $name, $direct['ownership_share'] ?? null, $role !== null, $nodes, $seen, 2, direct: $direct !== null);
             $this->addPersonEdge($r['parent_cvr'], $cvr, $this->shareLabel($r['ownership_share'] ?? null), null, $edges, $edgeSeen);
             if ($direct !== null) {
                 $this->addPersonEdge('person:root', $cvr, $this->shareLabel($direct['ownership_share'] ?? null), null, $edges, $edgeSeen);
@@ -256,7 +259,24 @@ class OwnershipGraphBuilder
         // keying of $properties is irrelevant to the outcome. array_filter
         // drops the null (failed-fetch) entries; array_merge preserves the
         // caller's per-cvr order, keeping the per-company cap deterministic.
-        $propertyList = array_merge(...array_values(array_filter($properties)));
+        $fetched = array_filter($properties);
+
+        // Fail LOUDLY on build()'s ['list' => …, 'usage' => …] wrapper. Left
+        // unchecked it degrades silently: array_merge flattens the wrapper,
+        // every row is then a string key's value rather than a portfolio row,
+        // addProperties finds no owner_cvr and skips them all — and the graph
+        // renders perfectly normally, just with zero properties. A person's
+        // whole property layer vanishing with no error is far worse than a
+        // 500 the first time Task 6/7 passes the wrong shape.
+        foreach ($fetched as $cvr => $list) {
+            if (! array_is_list($list)) {
+                throw new \InvalidArgumentException(
+                    "buildForPerson(): \$properties[{$cvr}] must be a plain list of portfolio rows, not build()'s ['list' => …, 'usage' => …] wrapper.",
+                );
+            }
+        }
+
+        $propertyList = array_merge(...array_values($fetched));
 
         $usage = [];
         foreach ($enrichment['properties'] ?? [] as $mid => $entry) {
@@ -278,16 +298,25 @@ class OwnershipGraphBuilder
      * host-JS COMPANY_KINDS click-navigation all work unchanged — fase 2b
      * introduces no new node kind.
      *
-     * Role-layer nodes additionally carry 'role_layer' => true: Task 5's
-     * person-specific truncation priority cuts role nodes BEFORE ownership
-     * roots, and both sit at depth 1, so the layer must be readable off the
-     * node itself.
+     * Two optional layer markers, both read by truncateToCapForPerson, which
+     * cuts the person's OWN relations last and in a fixed order — and since
+     * a node's layer is not derivable from its depth (a directly-owned
+     * company can sit at depth 2 after cross-ownership demotion, and both
+     * role companies and roots sit at depth 1), each must be readable off
+     * the node itself:
+     *
+     *   'role_layer' => true — the person holds a role here. Cut before any
+     *       ownership relation.
+     *   'direct' => true — the person owns this company themselves. Only ever
+     *       set on a DEMOTED (depth ≥2) child, where it is the sole record
+     *       that the node is an ownership relation of the person and not
+     *       inherited subsidiary fill; a depth-1 root needs no marker.
      *
      * $seen dedup means a cvr reachable two ways (owned AND cross-owned, or
      * role AND subsidiary) collapses to one node — first write wins, exactly
      * as in addSubsidiaries/addSubtreeFully.
      */
-    protected function addPersonChild(string $cvr, ?string $name, ?float $share, bool $roleLayer, array &$nodes, array &$seen, int $depth = 1): void
+    protected function addPersonChild(string $cvr, ?string $name, ?float $share, bool $roleLayer, array &$nodes, array &$seen, int $depth = 1, bool $direct = false): void
     {
         if (isset($seen[$cvr])) {
             return;
@@ -297,6 +326,9 @@ class OwnershipGraphBuilder
         $node = ['id' => $cvr, 'label' => $name ?: ('CVR '.$cvr), 'cvr' => $cvr, 'kind' => 'subsidiary', 'share' => $share, 'expand' => null, 'depth' => $depth];
         if ($roleLayer) {
             $node['role_layer'] = true;
+        }
+        if ($direct) {
+            $node['direct'] = true;
         }
 
         $nodes[] = $node;
@@ -409,20 +441,27 @@ class OwnershipGraphBuilder
      * that the company ordering cannot express:
      *
      *   1. property nodes
-     *   2. the deepest subsidiary LAYER(s) — depth 2 and below
-     *   3. role-layer nodes (depth 1, 'role_layer' => true)
-     *   4. ownership roots (depth 1, no role_layer) — LAST
+     *   2. INHERITED subsidiaries, deepest layer first
+     *   3. role-layer nodes ('role_layer' => true)
+     *   4. the person's OWN ownership relations — LAST
+     *
+     * The split between 2 and 4 is by RELATION, not by depth. A company the
+     * person owns directly can be demoted to depth 2 by cross-ownership
+     * (their holding company owns it too) while remaining one of their own
+     * ownership relations — so pass 2 skips 'direct' nodes and pass 4 picks
+     * them up alongside the depth-1 roots. Keying purely on depth would cut a
+     * directly-owned company before a board seat, inverting the priority.
      *
      * The person root is NEVER a candidate: it carries no 'depth' and is not
      * kind 'subsidiary', so no pass can select it, and cutting it would
      * disconnect the whole graph rather than shrink it.
      *
-     * Steps 3 and 4 both operate on depth 1, which is precisely why the
-     * shared truncateToCap cannot be reused: its pass 2 treats one depth
-     * level as one undifferentiated layer and would cut roles and roots in
-     * interleaved write order. A person's directly-owned companies are the
-     * single most important thing on the page — a board seat must give way
-     * to them, never the reverse.
+     * Passes 3 and 4 overlap in depth, which is precisely why the shared
+     * truncateToCap cannot be reused: it treats one depth level as one
+     * undifferentiated layer and would cut roles and roots in interleaved
+     * write order. A person's own holdings are the single most important
+     * thing on the page — a board seat must give way to them, never the
+     * reverse.
      */
     protected function truncateToCapForPerson(int $cap, array &$nodes, array &$edges): void
     {
@@ -438,9 +477,8 @@ class OwnershipGraphBuilder
             $this->removeNode($nodes, $edges, $i, 'properties');
         }
 
-        // --- Pass 2: deepest subsidiary layers, down to (but excluding)
-        // depth 1 — the first level is handled by the two passes below.
-        $this->cutDeepestLayers($cap, $nodes, $edges, minDepth: 2);
+        // --- Pass 2: inherited subsidiaries (depth ≥2, not directly owned).
+        $this->cutDeepestLayers($cap, $nodes, $edges, fn ($n) => ($n['depth'] ?? 1) >= 2 && ($n['direct'] ?? false) !== true);
 
         // --- Pass 3: role-layer nodes, back-to-front. -----------------------
         for ($i = count($nodes) - 1; $i >= 0 && count($nodes) > $cap; $i--) {
@@ -450,22 +488,22 @@ class OwnershipGraphBuilder
             $this->removeNode($nodes, $edges, $i, 'relations');
         }
 
-        // --- Pass 4: ownership roots (everything left at depth 1). ----------
-        $this->cutDeepestLayers($cap, $nodes, $edges, minDepth: 1);
+        // --- Pass 4: the person's own ownership relations, whatever depth. --
+        $this->cutDeepestLayers($cap, $nodes, $edges, fn ($n) => true);
     }
 
     /**
-     * Shared by truncateToCapForPerson's passes 2 and 4: cut subsidiary nodes
-     * deepest-layer-first, back-to-front within a layer, stopping at
-     * $minDepth. Splitting the depth range in two is what lets pass 3 slot
-     * between the deep layers and the first level.
+     * Shared by truncateToCapForPerson's passes 2 and 4: cut the subsidiary
+     * nodes matching $eligible, deepest layer first and back-to-front within
+     * a layer. Narrowing the eligible set per pass is what lets pass 3 slot
+     * between the inherited subsidiaries and the person's own relations.
      */
-    protected function cutDeepestLayers(int $cap, array &$nodes, array &$edges, int $minDepth): void
+    protected function cutDeepestLayers(int $cap, array &$nodes, array &$edges, callable $eligible): void
     {
         while (count($nodes) > $cap) {
             $indexes = array_keys(array_filter(
                 $nodes,
-                fn ($n) => $n['kind'] === 'subsidiary' && ($n['depth'] ?? 1) >= $minDepth,
+                fn ($n) => $n['kind'] === 'subsidiary' && $eligible($n),
             ));
             if ($indexes === []) {
                 return;
