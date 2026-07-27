@@ -162,13 +162,26 @@ class OwnershipGraphBuilder
         // Demoted children: node at depth 2 + the parent→child edge. A child
         // the person ALSO owns directly keeps its person edge too (both facts
         // are true) — the node is deduped by $seen, the edges are not.
+        //
+        // Rule 6: a demoted child can ALSO be a role company (person sits on
+        // its board). Node identity/layer must not depend on write order —
+        // the role loop below runs AFTER this one, so if this loop wrote the
+        // node first with the demotion's own (often absent) name and
+        // roleLayer=false, $seen would win the race and the role loop's
+        // addPersonChild would no-op, leaving the node with the 'CVR <id>'
+        // fallback label and no role_layer. Looking the cvr up in the capped
+        // role list HERE and merging its name + role_layer into this write
+        // makes the outcome identical regardless of which loop runs first.
+        $roleByCvr = collect(array_slice($roleCompanies, 0, $roleCap))->keyBy('cvr');
         foreach ($childRelations as $r) {
             $cvr = $r['child_cvr'];
             if (! isset($seen[$r['parent_cvr']])) {
                 continue; // Parent fell outside the roots cap — no dangling child.
             }
             $direct = collect($ownershipCompanies)->firstWhere('cvr', $cvr);
-            $this->addPersonChild($cvr, $direct['name'] ?? null, $direct['ownership_share'] ?? null, false, $nodes, $seen, 2);
+            $role = $roleByCvr->get($cvr);
+            $name = $direct['name'] ?? $role['name'] ?? null;
+            $this->addPersonChild($cvr, $name, $direct['ownership_share'] ?? null, $role !== null, $nodes, $seen, 2);
             $this->addPersonEdge($r['parent_cvr'], $cvr, $this->shareLabel($r['ownership_share'] ?? null), null, $edges, $edgeSeen);
             if ($direct !== null) {
                 $this->addPersonEdge('person:root', $cvr, $this->shareLabel($direct['ownership_share'] ?? null), null, $edges, $edgeSeen);

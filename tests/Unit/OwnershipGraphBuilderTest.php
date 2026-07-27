@@ -994,8 +994,18 @@ it('buildForPerson: a role company that is also a cross-owned subsidiary is ONE 
     ]);
 
     $edges = collect($g['edges'])->where('to', '44018942');
-    expect(collect($g['nodes'])->where('id', '44018942'))->toHaveCount(1)
+    $nodeMatches = collect($g['nodes'])->where('id', '44018942');
+    expect($nodeMatches)->toHaveCount(1)
         ->and($edges)->toHaveCount(2);
+
+    $node = $nodeMatches->first();
+    // The demotion loop writes this node first (it runs before the role
+    // loop), so the $seen-dedup race must not leave it with the generic
+    // 'CVR <id>' fallback label or role_layer unset — it IS the role
+    // company, and must carry the role company's real name + role_layer,
+    // regardless of which loop happens to write it first.
+    expect($node['label'])->toBe('Drift')
+        ->and($node['role_layer'] ?? null)->toBeTrue();
 
     $roleEdge = $edges->firstWhere('from', 'person:root');
     $parentEdge = $edges->firstWhere('from', '40072772');
