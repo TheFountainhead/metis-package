@@ -55,6 +55,9 @@ class OwnershipGraphBuilder
         $edges = [];
         $edgeSeen = [];
 
+        $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
+        $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
+
         // usage-bagudkompatibilitet: enrichment['properties'][mid]['usage'] wins
         // over the legacy properties['usage'][mid] map (2a.1 shape) so Task 3 can
         // migrate the usage-populating component without a big-bang cutover.
@@ -65,17 +68,34 @@ class OwnershipGraphBuilder
             }
         }
 
-        $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
-        $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
         $this->addProperties($properties['list'] ?? [], $usage, $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
-        $this->truncateToCap($caps['total_nodes'], $nodes, $edges);
-        $this->applyEnrichment($nodes, $enrichment, $properties['list'] ?? [], $query, $now);
+        $this->finalize($nodes, $edges, $properties['list'] ?? [], $enrichment, $caps, $query, $now);
 
         return ['nodes' => $nodes, 'edges' => $edges];
     }
 
     /**
-     * Last step of build(): enforce the total node cap deterministically.
+     * Shared tail of build(): enforce the total node cap, then attach
+     * enrichment — in that order, so aggregates/cards are never computed for
+     * a node the cap already removed. Runs identically regardless of which
+     * structure walk (company ancestors/subsidiaries/properties, or a future
+     * person-graph walk) populated $nodes/$edges beforehand.
+     *
+     * $searchedAlias is the 'searched'-normalisation key used by
+     * applyEnrichment/aggregateProperties (owner === $searchedAlias →
+     * 'searched'). build() passes $query; a future person-entry-point that has
+     * no single searched-company alias passes null, which simply never matches
+     * (an owner === null case is already skipped first, so a null $searchedAlias
+     * can never accidentally match a null owner_cvr).
+     */
+    protected function finalize(array &$nodes, array &$edges, array $propertyList, array $enrichment, array $caps, ?string $searchedAlias, ?CarbonImmutable $now): void
+    {
+        $this->truncateToCap($caps['total_nodes'], $nodes, $edges);
+        $this->applyEnrichment($nodes, $enrichment, $propertyList, $searchedAlias, $now);
+    }
+
+    /**
+     * First step of finalize(): enforce the total node cap deterministically.
      * Priority: property nodes are cut first (back-to-front in addition
      * order), then the deepest subsidiary layer. The ancestor chain is
      * NEVER touched. Removed nodes' edges are removed too, and the removed
@@ -206,18 +226,19 @@ class OwnershipGraphBuilder
     }
 
     /**
-     * Last step of build(): attaches per-node enrichment data — runs AFTER
-     * truncateToCap so aggregates/cards are never computed for a node the cap
-     * already removed. Three independent sub-steps: (a) value aggregate per
+     * Last step of finalize() (itself the last step of build()): attaches
+     * per-node enrichment data — runs AFTER truncateToCap so aggregates/cards
+     * are never computed for a node the cap already removed. Three
+     * independent sub-steps: (a) value aggregate per
      * owner, derived from $propertyList regardless of whether enrichment was
      * fetched at all; (b) company card+signals, only for nodes present in
      * enrichment['companies']; (c) property card, only for nodes present in
      * enrichment['properties'].
      */
-    protected function applyEnrichment(array &$nodes, array $enrichment, array $propertyList, string $query, ?CarbonImmutable $now): void
+    protected function applyEnrichment(array &$nodes, array $enrichment, array $propertyList, ?string $searchedAlias, ?CarbonImmutable $now): void
     {
         $nodeIds = array_flip(array_column($nodes, 'id'));
-        $agg = $this->aggregateProperties($propertyList, $nodeIds, $query);
+        $agg = $this->aggregateProperties($propertyList, $nodeIds, $searchedAlias);
         $companies = $enrichment['companies'] ?? [];
         $propertiesById = $enrichment['properties'] ?? [];
         // lat/lng come from the portfolio row itself (the skråfoto link needs
@@ -264,17 +285,20 @@ class OwnershipGraphBuilder
     /**
      * Groups the property list by owner-node-id, reusing the SAME
      * ownedTargetId-style normalisation as addProperties (owner_cvr → node id,
-     * or 'searched' when it equals the query) so aggregates land on the exact
-     * node a property was hung on — including the searched-company case.
+     * or 'searched' when it equals $searchedAlias) so aggregates land on the
+     * exact node a property was hung on — including the searched-company
+     * case. $searchedAlias is null when there is no searched-company alias
+     * (e.g. a future person-graph entry point); the owner === null case is
+     * skipped first, so a null $searchedAlias can never accidentally match.
      * Independent of enrichment: this is derived purely from the property
      * list, so it is present even when no enrichment was ever fetched.
      */
-    protected function aggregateProperties(array $propertyList, array $nodeIds, string $query): array
+    protected function aggregateProperties(array $propertyList, array $nodeIds, ?string $searchedAlias): array
     {
         $agg = [];
         foreach ($propertyList as $p) {
             $owner = $p['owner_cvr'] ?? null;
-            $ownerId = $owner === null ? null : (isset($nodeIds[$owner]) ? $owner : ($owner === $query ? 'searched' : null));
+            $ownerId = $owner === null ? null : (isset($nodeIds[$owner]) ? $owner : ($owner === $searchedAlias ? 'searched' : null));
             if ($ownerId === null) {
                 continue;
             }
@@ -504,7 +528,7 @@ class OwnershipGraphBuilder
         }
     }
 
-    protected function addProperties(array $props, array $usage, array $expandedNodeIds, int $capPerCompany, string $query, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
+    protected function addProperties(array $props, array $usage, array $expandedNodeIds, int $capPerCompany, ?string $searchedAlias, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
     {
         $nodeIds = array_flip(array_column($nodes, 'id'));
         $perOwner = [];
@@ -514,14 +538,14 @@ class OwnershipGraphBuilder
             $mid = (string) ($p['matrikel_id'] ?? '');
             // Owner must already be a node — properties of pruned companies appear
             // only once their owner is expanded into the graph (spec §Lazy-flow).
-            $ownerId = $owner === null ? null : (isset($nodeIds[$owner]) ? $owner : ($owner === $query ? 'searched' : null));
+            $ownerId = $owner === null ? null : (isset($nodeIds[$owner]) ? $owner : ($owner === $searchedAlias ? 'searched' : null));
             if ($mid === '' || $ownerId === null) {
                 continue;
             }
 
             $perOwner[$ownerId] ??= 0;
             $capLifted = in_array('props:'.$ownerId, $expandedNodeIds, true)
-                || ($ownerId === 'searched' && in_array('props:'.$query, $expandedNodeIds, true));
+                || ($ownerId === 'searched' && $searchedAlias !== null && in_array('props:'.$searchedAlias, $expandedNodeIds, true));
             if (! $capLifted && $perOwner[$ownerId] >= $capPerCompany) {
                 // Count hidden properties on the owner's expand affordance.
                 foreach ($nodes as &$node) {
