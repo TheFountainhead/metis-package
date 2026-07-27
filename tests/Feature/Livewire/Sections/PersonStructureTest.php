@@ -1722,6 +1722,70 @@ it('keeps the graph rendered while a reset enrichment phase is re-run by the pol
         ->and(collect($fresh->graphModel['nodes'])->pluck('id'))->toContain('11111111');
 });
 
+/**
+ * 🚨 The PersonStructure counterpart of 2a's F4 regression test, and the pin
+ * for recoverEnrichmentResults()'s rebuild() call.
+ *
+ * WHY THE OTHER RECOVERY TESTS DO NOT COVER IT: rehydratedFrom() copies the
+ * PUBLIC state across, and $graphModel is public — so the fresh instance
+ * starts with a graph that ALREADY contains the property nodes, and the
+ * graph-derived enrichment scope resolves correctly whether or not recovery
+ * rebuilt first. Mutation-tested: deleting the rebuild() left all 56
+ * PersonStructure tests green. The line was load-bearing production code with
+ * zero coverage.
+ *
+ * WHAT THIS TEST DOES DIFFERENTLY: a genuine fresh mount, with the phase
+ * statuses forced to their post-hydration values while $graphModel is left at
+ * whatever mount produced — a skeleton with NO property nodes, because the
+ * portfolios had not been fetched at mount time. That is the real shape of a
+ * hydrated request: public state says 'loaded', the protected builder inputs
+ * are gone, and the graph on hand predates them.
+ *
+ * Without the rebuild(), enrichmentMatrikelIds() reads that stale skeleton,
+ * finds zero property nodes, sends an empty batch, and the property cards
+ * silently never arrive — the exact failure the 2a suite caught during the
+ * extraction, here on the person side where nothing was watching for it.
+ */
+it('rebuilds before resolving enrichment so recovery sees the just-recovered property nodes', function () {
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => [personPortfolioRow('11111111', '2573669')]],
+        ['11111111' => ['financials' => [['year' => '2024', 'equity' => 500_000, 'profit_loss' => 50_000]]]],
+    );
+
+    // Warm the caches the recovery reads, the way a previous request would
+    // have: one full run through every phase.
+    tickUntilSettled(Livewire::test(PersonStructure::class, ['query' => '0101011234']));
+
+    // A FRESH mount — not rehydratedFrom(), so $graphModel is the one mount
+    // built (skeleton only, no property nodes) rather than a copy of the
+    // finished graph. The statuses are forced to what a hydrated request
+    // would carry.
+    $second = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    expect(collect($second->get('graphModel')['nodes'])->where('kind', 'property'))->toBeEmpty();
+
+    $second->set('structuresStatus', 'loaded')
+        ->set('structureByCompany', ['11111111' => 'loaded'])
+        ->set('propertiesStatus', 'loaded')
+        ->set('propertiesByCompany', ['11111111' => 'loaded'])
+        ->set('enrichmentStatus', 'loaded')
+        ->call('toggleLayer', 'roles');
+
+    $nodes = collect($second->get('graphModel')['nodes']);
+
+    // The property node came back AND carries its batch-derived card. The
+    // card is the load-bearing half: the node itself would return from the
+    // fase-3 recovery regardless, but its usage can only be there if the
+    // batch call was given the matrikel-id — which requires the rebuild.
+    $prop = $nodes->firstWhere('kind', 'property');
+    expect($prop)->not->toBeNull()
+        ->and($prop['card']['usage'] ?? null)->toBe('Bolig');
+
+    expect($nodes->firstWhere('id', '11111111')['card']['equity'] ?? null)->toBe(500_000);
+});
+
 /*
 |--------------------------------------------------------------------------
 | Dashed role edges — CSS variant (Task 1's host-JS counterpart)
