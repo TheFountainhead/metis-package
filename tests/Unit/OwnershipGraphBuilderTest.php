@@ -1118,3 +1118,354 @@ it('buildForPerson: the total node cap still applies via finalize()', function (
         expect($nodeIds)->toContain($edge['from'])->toContain($edge['to']);
     }
 });
+
+/*
+|--------------------------------------------------------------------------
+| buildForPerson() — fase 2b, progressive strukturer/ejendomme (Task 5)
+|--------------------------------------------------------------------------
+|
+| $structures is cvr => ?structure (only the FETCHED ones; null = failed
+| fetch) and $properties is cvr => ?portfolio-LIST (a plain list of rows,
+| NOT build()'s ['list' => …, 'usage' => …] wrapper — the person path takes
+| usage from enrichment only). Both maps grow tick by tick, so every
+| intermediate state must render a deterministic, edge-consistent subgraph.
+*/
+
+it('buildForPerson: walks only the fetched structures and renders a deterministic subgraph (regel 1)', function () {
+    // Two roots, only the FIRST has its structure fetched — the second must
+    // render bare (no children, no crash), exactly as it did before the fetch.
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [
+            ownershipCompany('40072772', 100.0, 'Holding'),
+            ownershipCompany('41527080', 100.0, 'Anden'),
+        ],
+        'structures' => [
+            '40072772' => ['subsidiaries' => [
+                ['cvr' => '44018942', 'name' => 'Drift', 'ownership_share' => 60.0, 'children' => []],
+            ]],
+            '41527080' => null, // failed fetch — must be skipped gracefully
+        ],
+    ]);
+
+    $child = collect($g['nodes'])->firstWhere('id', '44018942');
+    expect($child)->not->toBeNull()
+        ->and($child['kind'])->toBe('subsidiary')
+        ->and($child['depth'])->toBe(2)                       // root is depth 1, its subsidiaries depth 2
+        ->and(collect($g['edges'])->firstWhere('to', '44018942'))
+        ->toMatchArray(['from' => '40072772', 'label' => '60 %'])
+        ->and(collect($g['nodes'])->firstWhere('id', '41527080')['expand'])->toBeNull();
+});
+
+it('buildForPerson: honours the subsidiary depth cap shifted by one under the person root (regel 1)', function () {
+    // subsidiary_depth 2 means two company layers BELOW the root: the root's
+    // children (depth 2) and their children (depth 3). A fourth layer sits
+    // behind an expand affordance. 4 grandchildren keeps the auto-expand
+    // (≤3 descendants) rule out of the way.
+    $deep = ['cvr' => '44018942', 'name' => 'D1', 'ownership_share' => 100.0, 'children' => [
+        ['cvr' => '44018943', 'name' => 'D2', 'ownership_share' => 100.0, 'children' => [
+            ['cvr' => '44018944', 'name' => 'D3', 'ownership_share' => 100.0, 'children' => []],
+            ['cvr' => '44018945', 'name' => 'D3b', 'ownership_share' => 100.0, 'children' => []],
+            ['cvr' => '44018946', 'name' => 'D3c', 'ownership_share' => 100.0, 'children' => []],
+            ['cvr' => '44018947', 'name' => 'D3d', 'ownership_share' => 100.0, 'children' => []],
+        ]],
+    ]];
+
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'structures' => ['40072772' => ['subsidiaries' => [$deep]]],
+    ]);
+
+    $ids = collect($g['nodes'])->pluck('id');
+    expect($ids)->toContain('44018942')->toContain('44018943')->not->toContain('44018944')
+        ->and(collect($g['nodes'])->firstWhere('id', '44018943')['depth'])->toBe(3)
+        ->and(collect($g['nodes'])->firstWhere('id', '44018943')['expand'])
+        ->toBe(['relations' => 4, 'properties' => 0]);
+
+    // sub:<cvr> expansion comes free from the addSubsidiaries reuse.
+    $expanded = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'structures' => ['40072772' => ['subsidiaries' => [$deep]]],
+        'expandedNodeIds' => ['sub:44018943'],
+    ]);
+    expect(collect($expanded['nodes'])->pluck('id'))->toContain('44018944')
+        ->and(collect($expanded['nodes'])->firstWhere('id', '44018944')['depth'])->toBe(4);
+});
+
+it('buildForPerson: auto-expands a small hidden subtree below the depth cap under the person root (regel 1)', function () {
+    // A linear chain of 2 hidden descendants (≤3) renders fully with no
+    // expand affordance — the Task 9 auto-expand rule, reused verbatim.
+    $chain = ['cvr' => '44018942', 'name' => 'D1', 'ownership_share' => 100.0, 'children' => [
+        ['cvr' => '44018943', 'name' => 'D2', 'ownership_share' => 100.0, 'children' => [
+            ['cvr' => '44018944', 'name' => 'D3', 'ownership_share' => 100.0, 'children' => [
+                ['cvr' => '44018945', 'name' => 'D4', 'ownership_share' => 100.0, 'children' => []],
+            ]],
+        ]],
+    ]];
+
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'structures' => ['40072772' => ['subsidiaries' => [$chain]]],
+    ]);
+
+    $ids = collect($g['nodes'])->pluck('id');
+    expect($ids)->toContain('44018944')->toContain('44018945')
+        ->and(collect($g['nodes'])->firstWhere('id', '44018943')['expand'])->toBeNull()
+        ->and(collect($g['nodes'])->firstWhere('id', '44018945')['depth'])->toBe(5);
+});
+
+it('buildForPerson: a cross-ownership child missing from the fetched structure still renders (regel 2)', function () {
+    // Injection fallback: the person's cross-ownership says Holding owns
+    // Drift, but Holding's fetched subsidiaries tree does NOT contain Drift
+    // (registry lag / pruning). The skeleton already drew node + edge, and
+    // arrival of the structure must NOT remove them.
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'crossOwnership' => [['parent_cvr' => '40072772', 'child_cvr' => '44018942', 'ownership_share' => 60.0]],
+        'structures' => ['40072772' => ['subsidiaries' => [
+            ['cvr' => '55000001', 'name' => 'Anden datter', 'ownership_share' => 100.0, 'children' => []],
+        ]]],
+    ]);
+
+    $ids = collect($g['nodes'])->pluck('id');
+    expect($ids)->toContain('44018942')->toContain('55000001')
+        ->and(collect($g['edges'])->firstWhere('to', '44018942'))
+        ->toMatchArray(['from' => '40072772', 'label' => '60 %'])
+        ->and(collect($g['nodes'])->firstWhere('id', '44018942')['label'])->toBe('CVR 44018942');
+});
+
+it('buildForPerson: hangs properties on a subsidiary below a root, not only on the roots (regel 3)', function () {
+    // $properties is keyed by ROOT cvr but a row's owner_cvr may point at any
+    // node in the graph — a root's fetched portfolio can include rows owned
+    // by its subsidiaries.
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'structures' => ['40072772' => ['subsidiaries' => [
+            ['cvr' => '44018942', 'name' => 'Drift', 'ownership_share' => 60.0, 'children' => []],
+        ]]],
+        'properties' => [
+            '40072772' => [
+                fdlProperty(['owner_cvr' => '40072772', 'matrikel_id' => '7000001', 'address' => 'Rodvej 1']),
+                fdlProperty(['owner_cvr' => '44018942', 'matrikel_id' => '7000002', 'address' => 'Dattervej 2']),
+                fdlProperty(['owner_cvr' => '99999999', 'matrikel_id' => '9999999', 'address' => 'Ukendt ejer']),
+            ],
+            '41527080' => null, // failed fetch — skipped, never fatal
+        ],
+    ]);
+
+    expect(collect($g['edges'])->firstWhere('to', 'bfe:7000002')['from'])->toBe('44018942')
+        ->and(collect($g['edges'])->firstWhere('to', 'bfe:7000001')['from'])->toBe('40072772')
+        ->and(collect($g['nodes'])->firstWhere('id', 'bfe:7000002')['label'])->toBe('Dattervej 2')
+        // A row whose owner is not (yet) in the graph is silently skipped.
+        ->and(collect($g['nodes'])->pluck('id'))->not->toContain('bfe:9999999');
+
+    // props:<cvr> expansion + the per-company cap come free from the reuse.
+    $many = collect(range(1, 9))->map(fn ($i) => fdlProperty([
+        'owner_cvr' => '44018942', 'matrikel_id' => (string) (8000000 + $i),
+    ]))->all();
+    $withSub = [
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'structures' => ['40072772' => ['subsidiaries' => [
+            ['cvr' => '44018942', 'name' => 'Drift', 'ownership_share' => 60.0, 'children' => []],
+        ]]],
+        'properties' => ['40072772' => $many],
+    ];
+
+    $capped = buildPersonGraph($withSub);
+    expect(collect($capped['nodes'])->where('kind', 'property'))->toHaveCount(6)
+        ->and(collect($capped['nodes'])->firstWhere('id', '44018942')['expand'])
+        ->toBe(['relations' => 0, 'properties' => 3]);
+
+    $lifted = buildPersonGraph(array_merge($withSub, ['expandedNodeIds' => ['props:44018942']]));
+    expect(collect($lifted['nodes'])->where('kind', 'property'))->toHaveCount(9);
+});
+
+it('buildForPerson: property usage comes from enrichment, and cards/aggregates land via finalize() (regel 3+5)', function () {
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'properties' => ['40072772' => [
+            fdlProperty(['owner_cvr' => '40072772', 'matrikel_id' => '7000001', 'valuation' => 500000]),
+            fdlProperty(['owner_cvr' => '40072772', 'matrikel_id' => '7000002', 'valuation' => 250000]),
+        ]],
+        'enrichment' => ['companies' => [], 'properties' => [
+            '7000001' => ['usage' => 'Etageboligbebyggelse', 'valuation' => 500000],
+        ]],
+    ]);
+
+    expect(collect($g['nodes'])->firstWhere('id', 'bfe:7000001')['meta']['usage'])->toBe('Etageboligbebyggelse')
+        ->and(collect($g['nodes'])->firstWhere('id', 'bfe:7000002')['meta']['usage'])->toBeNull()
+        ->and(collect($g['nodes'])->firstWhere('id', 'bfe:7000001')['card'])->toMatchArray(['usage' => 'Etageboligbebyggelse'])
+        ->and(collect($g['nodes'])->firstWhere('id', '40072772')['agg'])
+        ->toBe(['count' => 2, 'value' => 750000, 'valued' => 2]);
+});
+
+it('buildForPerson: enriches a role company and its subsidiaries reached only through the role layer (regel 5)', function () {
+    $g = buildPersonGraph([
+        'roleCompanies' => [roleCompany('41527080', 'bestyrelse', 'Resights')],
+        'structures' => ['41527080' => ['subsidiaries' => [
+            ['cvr' => '44018942', 'name' => 'Rolle-datter', 'ownership_share' => 100.0, 'children' => []],
+        ]]],
+        'enrichment' => ['companies' => [
+            '41527080' => ['equity' => 12.0, 'website' => 'resights.dk'],
+            '44018942' => ['equity' => -1.0],
+        ], 'properties' => []],
+        'now' => \Carbon\CarbonImmutable::parse('2026-07-27'),
+    ]);
+
+    // Role companies get their own subsidiary layer too, and both the role
+    // company and its subsidiary are ENRICHABLE ('subsidiary' kind). The
+    // role_layer marker does NOT propagate to the subsidiary — only the
+    // person's own direct role relation is a role-layer node.
+    expect(collect($g['nodes'])->firstWhere('id', '41527080')['card'])->toMatchArray(['website' => 'resights.dk'])
+        ->and(collect($g['nodes'])->firstWhere('id', '41527080')['role_layer'])->toBeTrue()
+        ->and(collect($g['nodes'])->firstWhere('id', '44018942')['signals'])->toContain('negative_equity')
+        ->and(collect($g['nodes'])->firstWhere('id', '44018942')['depth'])->toBe(2)
+        ->and(collect($g['nodes'])->firstWhere('id', '44018942'))->not->toHaveKey('role_layer');
+});
+
+it('buildForPerson: truncation cuts properties, then deep subsidiaries, then role nodes, then roots last (regel 4)', function () {
+    // ~130 nodes: 1 person root + 10 ownership roots (each with 4 depth-2 and
+    // 4 depth-3 subsidiaries = 80) + 8 role companies + 30 properties.
+    $owners = collect(range(1, 10))->map(fn ($i) => ownershipCompany((string) (50000000 + $i), 100.0, 'O'.$i))->all();
+    $roles = collect(range(1, 8))->map(fn ($i) => roleCompany((string) (60000000 + $i), 'bestyrelse', 'R'.$i))->all();
+
+    $structures = [];
+    foreach (range(1, 10) as $i) {
+        $root = (string) (50000000 + $i);
+        $structures[$root] = ['subsidiaries' => collect(range(1, 4))->map(fn ($j) => [
+            'cvr' => (string) (70000000 + $i * 10 + $j), 'name' => "S{$i}-{$j}", 'ownership_share' => 100.0,
+            'children' => [['cvr' => (string) (80000000 + $i * 10 + $j), 'name' => "G{$i}-{$j}", 'ownership_share' => 100.0, 'children' => []]],
+        ])->all()];
+    }
+
+    $properties = ['50000001' => collect(range(1, 30))->map(fn ($i) => fdlProperty([
+        'owner_cvr' => '50000001', 'matrikel_id' => (string) (9000000 + $i),
+    ]))->all()];
+
+    $args = [
+        'ownershipCompanies' => $owners, 'roleCompanies' => $roles,
+        'structures' => $structures, 'properties' => $properties,
+        'expandedNodeIds' => ['props:50000001'],
+    ];
+
+    // Uncapped baseline: everything is present. 1 + 10 + 40 + 40 + 8 + 30 = 129.
+    $full = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 1000])]));
+    expect(count($full['nodes']))->toBe(129)
+        ->and(collect($full['nodes'])->where('kind', 'property'))->toHaveCount(30);
+
+    // Cap 110: properties go first, nothing else is touched.
+    $capped110 = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 110])]));
+    expect(count($capped110['nodes']))->toBe(110)
+        ->and(collect($capped110['nodes'])->where('kind', 'property'))->toHaveCount(11)
+        ->and(collect($capped110['nodes'])->where('depth', 3))->toHaveCount(40)   // deep layer untouched
+        ->and(collect($capped110['nodes'])->where('role_layer', true))->toHaveCount(8);
+
+    // Cap 60: all properties gone, the deepest (depth-3) layer eaten next;
+    // role nodes and all depth-1 roots survive.
+    $capped60 = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 60])]));
+    expect(count($capped60['nodes']))->toBe(60)
+        ->and(collect($capped60['nodes'])->where('kind', 'property'))->toHaveCount(0)
+        ->and(collect($capped60['nodes'])->where('depth', 3))->toHaveCount(1)
+        ->and(collect($capped60['nodes'])->where('role_layer', true))->toHaveCount(8)
+        ->and(collect($capped60['nodes'])->whereIn('id', array_column($owners, 'cvr')))->toHaveCount(10);
+
+    // Cap 15: depth 2+3 gone too; NOW the role nodes are cut — before any
+    // ownership root. 1 person root + 10 roots + 8 roles = 19 > 15, so 4
+    // roles survive and every root does.
+    $capped15 = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 15])]));
+    expect(count($capped15['nodes']))->toBe(15)
+        ->and(collect($capped15['nodes'])->where('depth', 2))->toHaveCount(0)
+        ->and(collect($capped15['nodes'])->where('role_layer', true))->toHaveCount(4)
+        ->and(collect($capped15['nodes'])->whereIn('id', array_column($owners, 'cvr')))->toHaveCount(10)
+        ->and(collect($capped15['nodes'])->firstWhere('id', 'person:root'))->not->toBeNull();
+
+    // Cap 6: every role node is gone and roots are cut back-to-front; the
+    // person root is NEVER cut.
+    $capped6 = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 6])]));
+    expect(count($capped6['nodes']))->toBe(6)
+        ->and(collect($capped6['nodes'])->where('role_layer', true))->toHaveCount(0)
+        ->and(collect($capped6['nodes'])->firstWhere('id', 'person:root'))->not->toBeNull()
+        ->and(collect($capped6['nodes'])->pluck('id'))->toContain('50000001')->not->toContain('50000010');
+
+    // Cap 1: only the person root survives — it is never a truncation target.
+    $capped1 = buildPersonGraph(array_merge($args, ['caps' => personCaps(['total_nodes' => 1])]));
+    expect(collect($capped1['nodes'])->pluck('id')->all())->toBe(['person:root'])
+        ->and($capped1['edges'])->toBeEmpty();
+
+    // Every surviving edge still points at surviving nodes, at every cap.
+    foreach ([$capped110, $capped60, $capped15, $capped6] as $g) {
+        $ids = collect($g['nodes'])->pluck('id')->all();
+        foreach ($g['edges'] as $edge) {
+            expect($ids)->toContain($edge['from'])->toContain($edge['to']);
+        }
+    }
+});
+
+it('buildForPerson: a cut role node folds its own hidden children onto the person root (regel 4)', function () {
+    // Pass 2 cuts the role company's subsidiary (depth 2), pass 3 then cuts
+    // the role node itself — its rolled-up hidden count must survive onto the
+    // person root, flagged capped_relations so the Blade does not render an
+    // expand button the rebuild can never satisfy.
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'roleCompanies' => [roleCompany('41527080', 'bestyrelse', 'Resights')],
+        'structures' => ['41527080' => ['subsidiaries' => [
+            ['cvr' => '44018942', 'name' => 'Rolle-datter', 'ownership_share' => 100.0, 'children' => []],
+        ]]],
+        'caps' => personCaps(['total_nodes' => 2]),
+    ]);
+
+    expect(collect($g['nodes'])->pluck('id')->all())->toBe(['person:root', '40072772'])
+        ->and(collect($g['nodes'])->firstWhere('id', 'person:root')['expand'])
+        ->toMatchArray(['relations' => 2, 'capped_relations' => true]); // role node + its hidden child
+});
+
+it('buildForPerson: a fetched structure on a demoted depth-2 child gets its full configured depth', function () {
+    // Task 7 only fetches structures for depth-1 nodes, so this is a
+    // generalisation guard: the depth offset is relative to the node the
+    // structure belongs to, not hardcoded to the first level.
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'crossOwnership' => [['parent_cvr' => '40072772', 'child_cvr' => '44018942', 'ownership_share' => 60.0]],
+        'structures' => ['44018942' => ['subsidiaries' => [
+            ['cvr' => '55000001', 'name' => 'B1', 'ownership_share' => 100.0, 'children' => [
+                ['cvr' => '55000002', 'name' => 'B2', 'ownership_share' => 100.0, 'children' => [
+                    ['cvr' => '55000003', 'name' => 'B3', 'ownership_share' => 100.0, 'children' => []],
+                    ['cvr' => '55000004', 'name' => 'B3b', 'ownership_share' => 100.0, 'children' => []],
+                    ['cvr' => '55000005', 'name' => 'B3c', 'ownership_share' => 100.0, 'children' => []],
+                    ['cvr' => '55000006', 'name' => 'B3d', 'ownership_share' => 100.0, 'children' => []],
+                ]],
+            ]],
+        ]]],
+    ]);
+
+    // subsidiary_depth 2 below the depth-2 child ⇒ depth 3 and 4 render,
+    // depth 5 sits behind the expand affordance.
+    $ids = collect($g['nodes'])->pluck('id');
+    expect(collect($g['nodes'])->firstWhere('id', '55000001')['depth'])->toBe(3)
+        ->and(collect($g['nodes'])->firstWhere('id', '55000002')['depth'])->toBe(4)
+        ->and($ids)->not->toContain('55000003')
+        ->and(collect($g['nodes'])->firstWhere('id', '55000002')['expand'])
+        ->toBe(['relations' => 4, 'properties' => 0]);
+});
+
+it('buildForPerson: the company path keeps the shared truncation priority (no role-layer step)', function () {
+    // Guard: build() must keep cutting properties then the deepest subsidiary
+    // layer, byte-identically to before Task 5.
+    $subs = collect(range(1, 30))->map(fn ($i) => [
+        'cvr' => (string) (70000000 + $i), 'name' => 'S'.$i, 'ownership_share' => 100.0, 'children' => [],
+    ])->all();
+    $props = collect(range(1, 20))->map(fn ($i) => fdlProperty([
+        'owner_cvr' => '70000001', 'matrikel_id' => (string) (9100000 + $i),
+    ]))->all();
+
+    $g = buildGraph([
+        'structure' => ['ancestors' => [], 'subsidiaries' => $subs],
+        'properties' => ['list' => $props, 'usage' => []],
+        'expandedNodeIds' => ['props:70000001'],
+        'caps' => ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 25],
+    ]);
+
+    expect(count($g['nodes']))->toBe(25)
+        ->and(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(0)
+        ->and(collect($g['nodes'])->firstWhere('id', 'searched'))->not->toBeNull();
+});

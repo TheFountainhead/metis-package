@@ -89,15 +89,33 @@ class OwnershipGraphBuilder
      * Filtering happens HERE, not in the view, because the dedup between the
      * two layers is layer-aware (see dedup rule below).
      *
-     * $structures / $properties (cvr => …, only the fetched ones) are the
-     * progressive-loading inputs; they are accepted but not walked yet —
-     * Task 5 adds the subsidiary/property layers. Passing them today is
-     * harmless (an empty property list is handed to finalize()), so the
-     * Livewire section can be written against the final signature.
+     * $structures / $properties are the progressive-loading inputs, both
+     * keyed by cvr and both containing ONLY the cvr's fetched so far — a
+     * value of null means "fetch failed for this cvr" and is skipped, never
+     * fatal. Every tick hands a slightly bigger map to a full rebuild, so
+     * each intermediate state must be a deterministic, edge-consistent
+     * subgraph of the final one.
+     *
+     *   $structures: cvr => ?['subsidiaries' => [...], ...]  (fetchCompanyStructuresPooled shape)
+     *   $properties: cvr => ?list-of-portfolio-rows
+     *
+     * NOTE the $properties shape difference vs. build(): build() takes ONE
+     * ['list' => [...], 'usage' => [...]] wrapper, because CompanyStructure
+     * resolves a matrikel_id => usage map itself (usageMapFor()) alongside
+     * the single portfolio. The person path takes plain LISTS per root cvr
+     * and derives usage from $enrichment['properties'][mid]['usage'] only —
+     * there is no legacy per-cvr usage map to stay backwards-compatible
+     * with, and PersonStructure's enrichment phase is the single place that
+     * produces usage for a person graph. The lists are flattened into ONE
+     * list before addProperties(), so a row hangs on whichever node its
+     * owner_cvr matches (a root OR a subsidiary of any root) regardless of
+     * which root's portfolio it arrived in.
      *
      * finalize() is called with $searchedAlias = null: a person graph has no
      * single searched-COMPANY alias to normalise owner_cvr against (see the
-     * finalize() docblock's null contract).
+     * finalize() docblock's null contract), and with $personPriority = true
+     * so the person-specific truncation order applies (see
+     * truncateToCapForPerson).
      */
     public function buildForPerson(
         string $personName,
@@ -197,9 +215,58 @@ class OwnershipGraphBuilder
             $nodes[0]['expand'] = ['relations' => $hidden, 'properties' => 0];
         }
 
-        // Task 5 walks $structures/$properties here; today the person graph is
-        // the skeleton alone, so finalize() gets an empty property list.
-        $this->finalize($nodes, $edges, [], $enrichment, $caps, null, $now);
+        // --- Fase 2: subsidiary layers under every first-level node ---------
+        //
+        // Walked in $nodes order (skeleton write order = the caller's
+        // companies order), so the traversal — and therefore node/edge
+        // ordering, $seen dedup and the depth values truncation keys off —
+        // is fully determined by the input, not by $structures' key order.
+        //
+        // Depth offset: a first-level node IS depth 1, so its own
+        // subsidiaries start at 2 and the configured subsidiary_depth (= the
+        // number of company layers BELOW the node the structure belongs to)
+        // shifts up by the node's own depth. For the depth-1 nodes Task 7
+        // actually fetches structures for (visible roots + role companies)
+        // this reduces to the specified `2` / `subsidiary_depth + 1`; writing
+        // it relative to $node['depth'] means a demoted depth-2 child would
+        // also get its configured number of layers rather than one fewer,
+        // should a later phase ever fetch its structure.
+        //
+        // Auto-expand (≤3 descendants) and sub:<cvr> expansion come free from
+        // the addSubsidiaries reuse.
+        //
+        // Injection fallback (regel 2): a cross-ownership child that the
+        // parent's fetched tree does NOT contain keeps its skeleton node and
+        // edge — $seen/$edgeSeen only ever SUPPRESS a duplicate write, never
+        // remove one, so an arriving structure can only add.
+        foreach (array_slice($nodes, 1) as $node) {
+            $structure = $structures[$node['id']] ?? null;
+            if ($structure === null) {
+                continue; // Not fetched yet, or the fetch failed for this cvr.
+            }
+
+            $this->addSubsidiaries($structure['subsidiaries'] ?? [], $node['id'], $node['depth'] + 1, $caps['subsidiary_depth'] + $node['depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
+        }
+
+        // --- Fase 3: properties on any company node in the graph ------------
+        //
+        // One flat list across all fetched portfolios: addProperties() hangs
+        // each row on the node matching its owner_cvr (root OR subsidiary)
+        // and skips rows whose owner is not in the graph, so the per-root
+        // keying of $properties is irrelevant to the outcome. array_filter
+        // drops the null (failed-fetch) entries; array_merge preserves the
+        // caller's per-cvr order, keeping the per-company cap deterministic.
+        $propertyList = array_merge(...array_values(array_filter($properties)));
+
+        $usage = [];
+        foreach ($enrichment['properties'] ?? [] as $mid => $entry) {
+            if (($entry['usage'] ?? null) !== null) {
+                $usage[$mid] = $entry['usage'];
+            }
+        }
+
+        $this->addProperties($propertyList, $usage, $expandedNodeIds, $caps['properties_per_company'], null, $nodes, $seen, $edges, $edgeSeen);
+        $this->finalize($nodes, $edges, $propertyList, $enrichment, $caps, null, $now, personPriority: true);
 
         return ['nodes' => $nodes, 'edges' => $edges];
     }
@@ -266,14 +333,27 @@ class OwnershipGraphBuilder
      *
      * $searchedAlias is the 'searched'-normalisation key used by
      * applyEnrichment/aggregateProperties (owner === $searchedAlias →
-     * 'searched'). build() passes $query; a future person-entry-point that has
-     * no single searched-company alias passes null, which simply never matches
+     * 'searched'). build() passes $query; buildForPerson(), which has no
+     * single searched-company alias, passes null, which simply never matches
      * (an owner === null case is already skipped first, so a null $searchedAlias
      * can never accidentally match a null owner_cvr).
+     *
+     * $personPriority selects the truncation variant. The two graphs have
+     * genuinely different cut orders (the person graph has a role layer and a
+     * never-cut person root; the company graph has an ancestor chain), and
+     * the ordering must be chosen from the ENTRY POINT, not inferred inside
+     * truncateToCap from node contents — a person graph with the roles chip
+     * off contains no role_layer node at all, so content-sniffing would
+     * silently pick the company ordering for it. A named argument at the one
+     * call site that needs it keeps build()'s path byte-identical (it passes
+     * nothing and gets the unchanged shared truncateToCap).
      */
-    protected function finalize(array &$nodes, array &$edges, array $propertyList, array $enrichment, array $caps, ?string $searchedAlias, ?CarbonImmutable $now): void
+    protected function finalize(array &$nodes, array &$edges, array $propertyList, array $enrichment, array $caps, ?string $searchedAlias, ?CarbonImmutable $now, bool $personPriority = false): void
     {
-        $this->truncateToCap($caps['total_nodes'], $nodes, $edges);
+        $personPriority
+            ? $this->truncateToCapForPerson($caps['total_nodes'], $nodes, $edges)
+            : $this->truncateToCap($caps['total_nodes'], $nodes, $edges);
+
         $this->applyEnrichment($nodes, $enrichment, $propertyList, $searchedAlias, $now);
     }
 
@@ -317,6 +397,86 @@ class OwnershipGraphBuilder
             foreach (array_reverse($deepest) as $i) {
                 if (count($nodes) <= $cap) {
                     break;
+                }
+                $this->removeNode($nodes, $edges, $i, 'relations');
+            }
+        }
+    }
+
+    /**
+     * Person-graph variant of truncateToCap (fase 2b). Same mechanics
+     * (removeNode, back-to-front, expand roll-up) but a four-step priority
+     * that the company ordering cannot express:
+     *
+     *   1. property nodes
+     *   2. the deepest subsidiary LAYER(s) — depth 2 and below
+     *   3. role-layer nodes (depth 1, 'role_layer' => true)
+     *   4. ownership roots (depth 1, no role_layer) — LAST
+     *
+     * The person root is NEVER a candidate: it carries no 'depth' and is not
+     * kind 'subsidiary', so no pass can select it, and cutting it would
+     * disconnect the whole graph rather than shrink it.
+     *
+     * Steps 3 and 4 both operate on depth 1, which is precisely why the
+     * shared truncateToCap cannot be reused: its pass 2 treats one depth
+     * level as one undifferentiated layer and would cut roles and roots in
+     * interleaved write order. A person's directly-owned companies are the
+     * single most important thing on the page — a board seat must give way
+     * to them, never the reverse.
+     */
+    protected function truncateToCapForPerson(int $cap, array &$nodes, array &$edges): void
+    {
+        if (count($nodes) <= $cap) {
+            return;
+        }
+
+        // --- Pass 1: property nodes, back-to-front in addition order. -------
+        for ($i = count($nodes) - 1; $i >= 0 && count($nodes) > $cap; $i--) {
+            if ($nodes[$i]['kind'] !== 'property') {
+                continue;
+            }
+            $this->removeNode($nodes, $edges, $i, 'properties');
+        }
+
+        // --- Pass 2: deepest subsidiary layers, down to (but excluding)
+        // depth 1 — the first level is handled by the two passes below.
+        $this->cutDeepestLayers($cap, $nodes, $edges, minDepth: 2);
+
+        // --- Pass 3: role-layer nodes, back-to-front. -----------------------
+        for ($i = count($nodes) - 1; $i >= 0 && count($nodes) > $cap; $i--) {
+            if (($nodes[$i]['role_layer'] ?? false) !== true) {
+                continue;
+            }
+            $this->removeNode($nodes, $edges, $i, 'relations');
+        }
+
+        // --- Pass 4: ownership roots (everything left at depth 1). ----------
+        $this->cutDeepestLayers($cap, $nodes, $edges, minDepth: 1);
+    }
+
+    /**
+     * Shared by truncateToCapForPerson's passes 2 and 4: cut subsidiary nodes
+     * deepest-layer-first, back-to-front within a layer, stopping at
+     * $minDepth. Splitting the depth range in two is what lets pass 3 slot
+     * between the deep layers and the first level.
+     */
+    protected function cutDeepestLayers(int $cap, array &$nodes, array &$edges, int $minDepth): void
+    {
+        while (count($nodes) > $cap) {
+            $indexes = array_keys(array_filter(
+                $nodes,
+                fn ($n) => $n['kind'] === 'subsidiary' && ($n['depth'] ?? 1) >= $minDepth,
+            ));
+            if ($indexes === []) {
+                return;
+            }
+
+            $maxDepth = max(array_map(fn ($i) => $nodes[$i]['depth'] ?? 1, $indexes));
+            $deepest = array_filter($indexes, fn ($i) => ($nodes[$i]['depth'] ?? 1) === $maxDepth);
+
+            foreach (array_reverse($deepest) as $i) {
+                if (count($nodes) <= $cap) {
+                    return;
                 }
                 $this->removeNode($nodes, $edges, $i, 'relations');
             }
