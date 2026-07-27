@@ -308,6 +308,20 @@ it('toggles a layer off and back on, rebuilding the graph each time', function (
         ->and(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('22222222');
 });
 
+it('dispatches graph-refit after a node expand — the expand path must re-frame like a chip toggle', function () {
+    // Re-review New-1: kun toggleLayer dispatchede refit; et udvid der vokser
+    // grafen ud over viewporten efterlod nye noder klippet uden for frame.
+    fakeRegistryCpr(array_map(
+        fn (int $i) => cprOwnershipCompany(str_pad((string) $i, 8, '9', STR_PAD_LEFT), 10.0, "Selskab {$i}"),
+        range(1, 25),
+    ));
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    $test->call('expandNode', 'sub:person:root');
+    $test->assertDispatched('graph-refit');
+});
+
 it('shows chip badges counting each layers companies', function () {
     fakeRegistryCpr([
         cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),

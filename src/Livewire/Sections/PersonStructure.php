@@ -302,6 +302,10 @@ class PersonStructure extends MetisSection
         }
 
         $this->rebuild();
+        // Som toggleLayer(): et udvid er en eksplicit bruger-anmodning om en
+        // ny indramning — uden refit kan nyafslørede noder ligge klippet uden
+        // for viewporten (re-review New-1: udvid-stien manglede dispatchen).
+        $this->dispatch('graph-refit');
     }
 
     /**
