@@ -71,10 +71,23 @@ class PersonStructure extends MetisSection
     /** 'sub:person:root' / 'roles:person:root' / 'sub:<cvr>' / 'props:<cvr>'. */
     public array $expandedNodeIds = [];
 
-    /** Chip badge counts — derived from the classification, cached as public state. */
+    /**
+     * Chip badge counts. Deliberately PRE-cap: they answer "how many relations
+     * does this person have", not "how many are currently drawn". A post-cap
+     * count would shrink to the cap (20/15) and make the hidden remainder
+     * invisible in the very control meant to advertise it — the person-root
+     * expand button is what reveals the difference.
+     */
     public int $ownershipCount = 0;
 
     public int $roleCount = 0;
+
+    /**
+     * True when a refetch after hydration failed and the graph on screen is
+     * therefore the last-good one rather than a fresh build. Drives a Blade
+     * note; also the flag callers check to know a rebuild must be SKIPPED.
+     */
+    public bool $staleData = false;
 
     /**
      * Builder input, held as PROTECTED state: never part of the Livewire wire
@@ -122,15 +135,15 @@ class PersonStructure extends MetisSection
     {
         $this->skeletonStatus = 'loading';
 
-        $result = app(RegistryApi::class)->fetchCompaniesByCprCached($this->query);
+        $result = $this->fetchCompanies();
 
-        if ($this->isFailure($result)) {
+        if ($result === null) {
             $this->skeletonStatus = 'failed';
 
             return;
         }
 
-        $this->companiesData = $result['companies'] ?? [];
+        $this->companiesData = $result;
         [$ownership, $roles] = $this->classify();
 
         if ($ownership === [] && $roles === []) {
@@ -150,14 +163,8 @@ class PersonStructure extends MetisSection
         }
 
         $this->skeletonStatus = 'loaded';
+        $this->staleData = false;
         $this->rebuild();
-
-        // Hand fase 2 its queue: every VISIBLE first-level company (ownership
-        // roots AND role companies — both must be able to reveal subsidiaries).
-        // Truncated companies are deliberately absent; they join the queue only
-        // when the user expands past the cap.
-        $this->structuresStatus = 'loading';
-        $this->structureByCompany = array_fill_keys($this->visibleFirstLevelCvrs(), 'pending');
     }
 
     /**
@@ -203,11 +210,16 @@ class PersonStructure extends MetisSection
             return;
         }
 
+        // Abandon the whole toggle if the inputs could not be recovered — the
+        // layers stay put too, so the chips never describe a graph that was
+        // never rebuilt.
+        if (! $this->rehydrateBeforeRebuild()) {
+            return;
+        }
+
         $next = in_array($layer, $this->layers, true)
             ? array_values(array_diff($this->layers, [$layer]))
             : [...$this->layers, $layer];
-
-        $this->rehydrateBeforeRebuild();
 
         if (count($this->buildGraph($next)['nodes']) <= 1) {
             return;
@@ -227,11 +239,27 @@ class PersonStructure extends MetisSection
         if (! str_starts_with($nodeId, 'sub:') && ! str_starts_with($nodeId, 'roles:') && ! str_starts_with($nodeId, 'props:')) {
             return;
         }
-        if (! in_array($nodeId, $this->expandedNodeIds, true)) {
-            $this->expandedNodeIds[] = $nodeId;
+
+        // Same degradation as toggleLayer(): never rebuild on partial input.
+        if (! $this->rehydrateBeforeRebuild()) {
+            return;
         }
 
-        $this->rehydrateBeforeRebuild();
+        // The person root shows ONE expand button whose count folds the hidden
+        // ownership roots AND the hidden role companies into a single number
+        // (the builder's expand.relations). Lifting only one of the two caps
+        // would therefore reveal fewer companies than the button advertised,
+        // and leave no affordance for the rest — so one click lifts BOTH.
+        $ids = $nodeId === 'sub:person:root' || $nodeId === 'roles:person:root'
+            ? ['sub:person:root', 'roles:person:root']
+            : [$nodeId];
+
+        foreach ($ids as $id) {
+            if (! in_array($id, $this->expandedNodeIds, true)) {
+                $this->expandedNodeIds[] = $id;
+            }
+        }
+
         $this->rebuild();
     }
 
@@ -297,9 +325,9 @@ class PersonStructure extends MetisSection
             return true;
         }
 
-        $result = app(RegistryApi::class)->fetchCrossOwnership($cvrs);
+        $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCrossOwnership($cvrs));
 
-        if ($this->isFailure($result)) {
+        if ($result === null) {
             return false;
         }
 
@@ -308,16 +336,43 @@ class PersonStructure extends MetisSection
         return true;
     }
 
-    /**
-     * RegistryApi's post()-backed calls have TWO failure shapes and both mean
-     * the same thing: a plain null, or an array carrying an 'error' key
-     * (post() converts a RequestException into ['error' => …, 'status' => …]
-     * rather than throwing). Treating the error-array as a successful empty
-     * response is exactly the null≠tom bug the spec forbids.
-     */
-    protected function isFailure(?array $result): bool
+    /** The companies[] list, or null if the call failed in ANY of its ways. */
+    protected function fetchCompanies(): ?array
     {
-        return $result === null || isset($result['error']);
+        $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCompaniesByCprCached($this->query));
+
+        return $result === null ? null : ($result['companies'] ?? []);
+    }
+
+    /**
+     * Runs a RegistryApi call and normalises its THREE distinct failure modes
+     * into a single null. Verified against the live client, not assumed:
+     *
+     *   1. `['error' => …, 'status' => …]` — post()'s catch-block converts a
+     *      RequestException (4xx/5xx) into this array rather than throwing.
+     *   2. `TypeError` — post() is declared `: array` but returns
+     *      `->json('data')`, which is NULL for a 200 whose body has no 'data'
+     *      key. PHP then throws on the return type. Uncaught, that is a
+     *      white-screen 500 for a merely malformed upstream response.
+     *   3. `ConnectionException` — DNS/refused/timeout never reaches post()'s
+     *      RequestException catch at all and propagates out of the client.
+     *
+     * Catching Throwable covers 2 and 3 together (and anything else the client
+     * grows later); the isset() check covers 1. A null return always means
+     * "this call did not produce trustworthy data" — never "the answer was
+     * empty", which is the distinction the whole null≠tom rule rests on.
+     */
+    protected function attempt(callable $call): ?array
+    {
+        try {
+            $result = $call();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
+
+        return $result === null || isset($result['error']) ? null : $result;
     }
 
     /**
@@ -334,33 +389,91 @@ class PersonStructure extends MetisSection
     }
 
     /**
-     * $companiesData does not survive hydration, so every action that
-     * rebuilds re-fetches it first — cache-first, so this is a cache hit
-     * (fetchCompaniesByCprCached, 5 min) rather than a fresh API round-trip.
-     * A failure here is SWALLOWED rather than flipping the skeleton to
-     * 'failed': the skeleton already loaded once this session, and a
-     * transient re-fetch error must not regress the section into an error the
-     * user never triggered (2a's refreshPropertyData discipline).
+     * Fase 2's work queue: cvr => status for every VISIBLE first-level company
+     * (ownership roots AND role companies — both must be able to reveal
+     * subsidiaries). Task 7 consumes this, taking the 'pending' entries 3 at a
+     * time.
      *
-     * Cross-ownership is re-fetched in the same breath and under the same
-     * gate — without it the demotion would silently un-happen on the next
-     * rebuild and a subsidiary would pop back up as a second root.
+     * Recomputed from the CURRENT graph on every visibility change, because
+     * visibility is not fixed at mount: a chip toggle hides companies (which
+     * must leave the queue rather than linger as stale 'pending' work) and a
+     * person-root expand reveals companies that were behind the first-level
+     * cap (which must join it, or their subsidiaries are never fetched).
+     * Truncated companies are deliberately absent until expanded.
+     *
+     * Statuses already SETTLED by Task 7 are carried over verbatim — a
+     * recompute must never reset 'loaded'/'failed' back to 'pending', or every
+     * toggle would re-fetch structures the component already holds.
      */
-    protected function rehydrateBeforeRebuild(): void
+    protected function refreshStructureQueue(): void
     {
-        if ($this->companiesData !== [] || $this->skeletonStatus !== 'loaded') {
-            return;
+        $this->structureByCompany = collect($this->visibleFirstLevelCvrs())
+            ->mapWithKeys(fn ($cvr) => [$cvr => $this->structureByCompany[$cvr] ?? 'pending'])
+            ->all();
+
+        if ($this->structureByCompany !== [] && $this->structuresStatus === 'pending') {
+            $this->structuresStatus = 'loading';
+        }
+    }
+
+    /**
+     * Recovers the protected builder inputs, which do not survive hydration.
+     * Cache-first, so this is normally a cache hit (5 min) rather than a fresh
+     * API round-trip.
+     *
+     * Returns TRUE only when the caller may safely rebuild. That contract is
+     * the whole point: a rebuild on partially-recovered input does not produce
+     * a smaller graph, it produces a WRONG one. Two ways it can go wrong, both
+     * observed in probes before this guard existed:
+     *
+     *   - companies lost → the graph collapses to a bare person:root while
+     *     skeletonStatus still reads 'loaded', with the chip counts zeroed and
+     *     nothing on screen explaining why everything vanished;
+     *   - cross-ownership lost → the parent/child demotion silently un-happens,
+     *     so a subsidiary is redrawn as a SECOND ROOT and the parent edge
+     *     disappears. The person appears to own two independent companies when
+     *     in fact one owns the other.
+     *
+     * On failure the last-good $graphModel is left exactly as it was and
+     * $staleData is raised so the Blade can say so. This is deliberately NOT
+     * 2a's swallow-and-continue: swallowing is right when the missing piece
+     * only makes the graph less complete, and wrong when it makes it false.
+     */
+    protected function rehydrateBeforeRebuild(): bool
+    {
+        if ($this->skeletonStatus !== 'loaded') {
+            return false;
         }
 
-        $result = app(RegistryApi::class)->fetchCompaniesByCprCached($this->query);
-
-        if ($this->isFailure($result)) {
-            return;
+        if ($this->companiesData !== []) {
+            return true;
         }
 
-        $this->companiesData = $result['companies'] ?? [];
+        $companies = $this->fetchCompanies();
+
+        if ($companies === null) {
+            $this->staleData = true;
+
+            return false;
+        }
+
+        // Classify off the freshly-fetched rows rather than the stale property.
+        $this->companiesData = $companies;
         [$ownership] = $this->classify();
-        $this->fetchCrossOwnership($ownership);
+
+        if (! $this->fetchCrossOwnership($ownership)) {
+            // Drop the half-recovered inputs so no later code path in this same
+            // request mistakes them for a complete set.
+            $this->companiesData = [];
+            $this->crossOwnershipData = [];
+            $this->staleData = true;
+
+            return false;
+        }
+
+        $this->staleData = false;
+
+        return true;
     }
 
     /**
@@ -383,6 +496,13 @@ class PersonStructure extends MetisSection
             ?? __('Personen');
     }
 
+    /**
+     * The single choke point for graph state: every visibility change (mount,
+     * chip toggle, expand) ends here, so the fase-2 queue is refreshed here
+     * too rather than at each call site — one place that cannot be forgotten.
+     *
+     * Counts are PRE-cap by design; see the $ownershipCount docblock.
+     */
     protected function rebuild(): void
     {
         $this->graphModel = $this->buildGraph($this->layers);
@@ -390,6 +510,8 @@ class PersonStructure extends MetisSection
         [$ownership, $roles] = $this->classify();
         $this->ownershipCount = count($ownership);
         $this->roleCount = count($roles);
+
+        $this->refreshStructureQueue();
     }
 
     /**

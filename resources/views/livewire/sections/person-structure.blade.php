@@ -64,6 +64,17 @@
                     </p>
                 @endif
 
+                {{-- The graph on screen is the last-good one: a refetch after
+                     hydration failed, so the action was abandoned rather than
+                     rebuilding from partial input (which would have produced a
+                     WRONG graph, not merely a smaller one). --}}
+                @if($staleData)
+                    <p class="mgraph-note" wire:key="stale-data">
+                        {{ __('Kunne ikke opdatere grafen — viser sidst kendte visning.') }}
+                        <button type="button" wire:click="retrySkeleton" class="underline">{{ __('Prøv igen') }}</button>
+                    </p>
+                @endif
+
                 {{-- Phase status notes. Only FAILURE states are visible: a
                      settled 'loaded'/'empty' phase says nothing (2a's rule —
                      'empty' silently means none, not an error). Phases 2-4

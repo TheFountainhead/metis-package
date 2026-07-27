@@ -86,9 +86,13 @@
              element type itself, not just its style, so no button/click
              semantics reach the DOM). --}}
         <div class="mgraph-node__expand" x-show="node.expand && (node.expand.relations || node.expand.properties)" x-cloak>
+            {{-- `node.cvr ?? node.id`: the person root has cvr=null, so plain
+                 node.cvr would emit 'sub:null' and leave its first-level cap
+                 unreachable. The id yields 'sub:person:root' instead, which
+                 the component maps to lifting BOTH first-level caps. --}}
             <template x-if="node.expand?.relations">
                 <button type="button" x-show="!node.expand?.capped_relations" x-data="{busy:false}"
-                        @mousedown.stop @click.stop="busy = true; $wire.expandNode('sub:' + node.cvr)"
+                        @mousedown.stop @click.stop="busy = true; $wire.expandNode('sub:' + (node.cvr ?? node.id))"
                         :disabled="busy" x-text="busy ? '…' : ('↓ ' + node.expand.relations + ' relationer')"></button>
             </template>
             <span x-show="node.expand?.relations && node.expand?.capped_relations" x-text="'↓ ' + (node.expand?.relations ?? 0) + ' relationer'"></span>
