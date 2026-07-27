@@ -134,7 +134,9 @@
     .mgraph-frame {
         position: relative;
         width: 100%;
-        height: 520px;
+        /* Full-bleed-layout (27/7): mere lodret plads på store skærme nu
+           hvor bredden også er fuld — clamp'et så små skærme er uændrede. */
+        height: clamp(520px, 62vh, 720px);
         overflow: hidden;
         cursor: grab;
         border-radius: 0.5rem;
