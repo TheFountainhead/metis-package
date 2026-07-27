@@ -953,12 +953,13 @@ it('leaves the graph untouched on a properties tick that only burned budget', fu
     $test->call('tick'); // 'building' only
 
     // The graph is byte-identical: nothing was written, so nothing rebuilt.
-    // The 2 requests are the tick's OWN work — the fase-2 recovery refetch
-    // (protected state does not survive a request, see recoverPhaseResults())
-    // plus the one portfolio call — never a rebuild's extra traffic.
+    // Exactly ONE request — the portfolio call. The fase-2 recovery that also
+    // runs on this tick is a CACHE HIT, because fetchCompanyStructuresPooled
+    // warms the very key fetchCompanyStructureCached reads (fix-round);
+    // before that warming it was a second real POST, every tick, per cvr.
     expect($test->get('graphModel'))->toEqual($before)
         ->and($test->get('propertiesAttempts'))->toBe(1)
-        ->and(Http::recorded()->count())->toBe($sentBefore + 2)
+        ->and(Http::recorded()->count())->toBe($sentBefore + 1)
         ->and($test->get('propertiesStatus'))->toBe('building');
 });
 
@@ -1000,4 +1001,195 @@ it('keeps fase-2 results across a hydration boundary by refetching them', functi
     expect(collect($fresh->graphModel['nodes'])->pluck('id'))
         ->toContain('11111111', '90000011', 'bfe:5001')
         ->and($fresh->propertiesStatus)->toBe('loaded');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Recovery-path integrity (fix-round)
+|--------------------------------------------------------------------------
+| recoverPhaseResults() can DOWNGRADE a settled cvr back to 'pending'. Every
+| downgrade must leave the aggregates consistent with the per-cvr maps, or
+| the poll gate — which reads the aggregates — switches off over work that
+| is still queued. Silent and permanent: the queue never drains and no retry
+| button is ever shown.
+*/
+
+it('re-derives the aggregate when recovery downgrades a structure cvr', function () {
+    // A 200 whose data is [] is NON-NULL, so the pooled fetch settles the cvr
+    // 'loaded' — but fetchCompanyStructureCached returns [] for it, so the
+    // next tick's recovery cannot restore anything and must downgrade.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => []]),
+        // Properties settle EMPTY so fase 3 closes: the poll's only remaining
+        // reason to exist is fase 2's aggregate.
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles 'loaded', fase 3 seeded
+    $test->call('tick'); // recovery downgrades 11111111 back to 'pending'
+
+    $queue = collect($test->get('structureByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s]);
+
+    // Probed before the fix: queue='pending' but aggregate='loaded' and the
+    // poll was GONE from the HTML — the cvr could never be fetched again.
+    expect($queue['11111111'])->toBe('pending')
+        ->and($test->get('structuresStatus'))->toBe('loading')
+        ->and($test->html())->toContain('wire:poll');
+});
+
+it('re-derives the aggregate when recovery downgrades a property cvr', function () {
+    // The portfolio loads once, then answers 'building' forever — so recovery
+    // on the next tick cannot restore the rows and must downgrade the cvr.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::sequence()
+            ->push(['data' => ['portfolio' => ['properties' => [personPortfolioRow('11111111', '5001')], 'property_count' => 1]]])
+            ->pushStatus(500),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles
+    $test->call('tick'); // fase 3 loads the portfolio
+
+    expect($test->get('propertiesStatus'))->toBe('loaded');
+
+    \Illuminate\Support\Facades\Cache::flush();
+    $test->call('tick'); // recovery cannot restore the rows
+
+    // Whatever the downgrade decides, the aggregate must AGREE with the map —
+    // never a closed phase sitting on unsettled per-cvr work.
+    $queue = collect($test->get('propertiesByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s]);
+    $unsettled = collect($queue)->contains(fn ($s) => in_array($s, ['pending', 'building'], true));
+
+    expect($unsettled ? in_array($test->get('propertiesStatus'), ['building', 'failed'], true) : true)->toBeTrue()
+        ->and($unsettled ? str_contains($test->html(), 'wire:poll') || $test->get('propertiesStatus') === 'failed' : true)
+        ->toBeTrue();
+});
+
+it('keeps a failed property cvr failed instead of silently retrying it', function () {
+    // MINOR: recovery collapsed failed / 'building' / genuinely-empty into one
+    // 'pending' downgrade. A cvr the phase already gave up on must not be
+    // quietly re-queued by a recovery pass — that is retryProperties()' job.
+    fakePersonPhases(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => null], // portfolio hard-fails
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles
+    $test->call('tick'); // fase 3: the cvr fails
+
+    expect(collect($test->get('propertiesByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s])['11111111'])
+        ->toBe('failed')
+        ->and($test->get('propertiesStatus'))->toBe('failed');
+
+    $test->call('tick'); // a further tick must not resurrect it
+
+    expect(collect($test->get('propertiesByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s])['11111111'])
+        ->toBe('failed');
+
+    // Only an explicit retry re-queues it.
+    $test->call('retryProperties');
+
+    expect(collect($test->get('propertiesByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s])['11111111'])
+        ->toBe('pending');
+});
+
+it('does not let a recovery downgrade bypass the shared attempts budget', function () {
+    // MINOR: a downgrade that re-enters the 'building' path must consume
+    // budget like any other attempt, or a portfolio that loads once and then
+    // answers 'building' forever polls without limit — the exact unbounded
+    // spin MAX_PROPERTIES_ATTEMPTS exists to stop.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 7]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles
+
+    for ($i = 0; $i < 30; $i++) {
+        $test->call('tick');
+    }
+
+    // Bounded, and terminal: never an unbounded spin.
+    expect($test->get('propertiesAttempts'))->toBeLessThanOrEqual(24)
+        ->and($test->get('propertiesStatus'))->toBe('failed');
+});
+
+it('stops issuing portfolio requests once the budget is spent', function () {
+    // The budget must gate the WORK, not just the STATUS. tick() gates on the
+    // queue (as it must), and an exhausted budget leaves cvrs 'pending' there
+    // forever — so without a hard gate in tickProperties() every further tick
+    // keeps fetching behind an aggregate that already reads 'failed'.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 7]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles
+
+    for ($i = 0; $i < 24; $i++) {
+        $test->call('tick');
+    }
+
+    expect($test->get('propertiesStatus'))->toBe('failed');
+
+    $spent = Http::recorded()->count();
+    $test->call('tick');
+    $test->call('tick');
+
+    // Not one more request after the budget is gone.
+    expect(Http::recorded()->count())->toBe($spent);
+});
+
+it('never counts the shared budget past its own ceiling', function () {
+    // Several cvrs burn several units per tick, so the counter advances in
+    // steps rather than one at a time — the hard gate must still land it ON
+    // the ceiling, never past it. (Probed: with CVRS_PER_TICK=3 the steps
+    // divide 24 exactly; this pins that the gate holds for a multi-cvr queue,
+    // which is the shape where an overshoot would appear first.)
+    fakePersonPhases(
+        [
+            cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),
+            cprOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
+            cprOwnershipCompany('33333333', 100.0, 'Holding C ApS'),
+        ],
+        [],
+        [
+            '11111111' => 'building',
+            '22222222' => 'building',
+            '33333333' => 'building',
+        ],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles
+
+    // 3 cvrs burn 3 units per tick — 9 ticks would reach 27 uncapped.
+    for ($i = 0; $i < 12; $i++) {
+        $test->call('tick');
+    }
+
+    expect($test->get('propertiesAttempts'))->toBe(24)
+        ->and($test->get('propertiesStatus'))->toBe('failed');
 });

@@ -365,28 +365,43 @@ class RegistryApi
      */
     public function fetchCompanyStructureCached(string $cvr): array
     {
-        $cacheKey = "metis:company_structure:{$cvr}";
-
-        if (! is_null($cached = Cache::get($cacheKey))) {
+        if (! is_null($cached = Cache::get(self::structureCacheKey($cvr)))) {
             return $cached;
         }
 
         $structure = $this->fetchCompanyStructure($cvr);
-
-        // Cache kun et ikke-tomt svar — se noten ved fetchCompanyPropertyPortfolio.
-        if (! empty($structure)) {
-            Cache::put($cacheKey, $structure, 300);
-        }
+        $this->cacheStructure($cvr, $structure);
 
         return $structure;
     }
 
+    protected static function structureCacheKey(string $cvr): string
+    {
+        return "metis:company_structure:{$cvr}";
+    }
+
     /**
-     * Pooled, UCACHET variant af fetchCompanyStructure() til fase 2's
-     * graf-udvidelse: hvert cvr hentes samtidigt via Http::pool, præcis én
-     * gang pr. kald. Ingen cache her — fetchCompanyStructureCached() dækker
-     * rehydrering, denne metode dækker den engangs-udvidelse hvor et cvr
-     * aldrig skal genbruge et 5-minutters-gammelt svar.
+     * Cache kun et ikke-tomt svar — se noten ved fetchCompanyPropertyPortfolio:
+     * en fejl (eller et tomt svar) må ikke skygge for friske data i 5 minutter.
+     * Delt af den cachede og den pooled'e henter, så key, TTL og tom-reglen kun
+     * findes ét sted.
+     */
+    protected function cacheStructure(string $cvr, ?array $structure): void
+    {
+        if (! empty($structure)) {
+            Cache::put(self::structureCacheKey($cvr), $structure, 300);
+        }
+    }
+
+    /**
+     * Pooled variant af fetchCompanyStructure() til fase 2's graf-udvidelse:
+     * hvert cvr hentes samtidigt via Http::pool, præcis én gang pr. kald.
+     *
+     * Cache-kontrakten er ASYMMETRISK og bevidst: LÆSER aldrig (fase 2 skal
+     * have hvert cvr friskt), men SKRIVER via cacheStructure(), så den
+     * efterfølgende rehydrering bliver et cache-hit. Uden den skrivning ramte
+     * PersonStructures per-tick-gendannelse netværket igen for hvert allerede
+     * hentet cvr — ~20 ekstra POSTs pr. 2-sekunders tick ved first-level-loftet.
      *
      * Samme uafhængigheds-garanti som fetchCompanyInfosPooled(): ét cvr's
      * fejl giver null for det cvr, aldrig en exception ud til kalderen.
@@ -423,6 +438,8 @@ class RegistryApi
             } catch (\Throwable $e) {
                 $results[$cvr] = null;
             }
+
+            $this->cacheStructure((string) $cvr, $results[$cvr]);
         }
 
         return $results;

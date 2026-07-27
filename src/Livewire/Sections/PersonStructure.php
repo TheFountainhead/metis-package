@@ -619,16 +619,23 @@ class PersonStructure extends MetisSection
      * portfolio reuses their warm cache instead of paging in the API's
      * default 25 and making every cap count a lie).
      *
-     * Four per-cvr outcomes; only the third consumes budget:
-     *   failure         → 'failed' for that cvr, the others carry on;
-     *   empty list, 0   → 'empty' — a genuine "owns nothing", not an error;
-     *   empty list, >0  → still 'building' server-side: the cvr stays pending
-     *                     work and burns ONE unit of the shared budget;
-     *   rows            → 'loaded', rows stored as a PLAIN LIST (the builder
-     *                     throws on build()'s ['list','usage'] wrapper).
+     * Per-cvr outcomes are classified in fetchPortfolioFor().
+     *
+     * 🚨 The budget is enforced HERE, as a hard gate on dispatching at all —
+     * not merely as an input to settleProperties(). Deriving the status alone
+     * bounded the STATUS but not the WORK: tick() gates on the queue (as it
+     * must), the queue still held 'pending' cvrs, so every further tick kept
+     * fetching. Probed at 30 ticks against a portfolio answering 'building'
+     * forever: propertiesAttempts reached 30 against a ceiling of 24.
      */
     protected function tickProperties(): void
     {
+        if ($this->propertiesAttempts >= self::MAX_PROPERTIES_ATTEMPTS) {
+            $this->settleProperties();
+
+            return;
+        }
+
         if (! $this->rehydrateBeforeRebuild()) {
             return;
         }
@@ -645,33 +652,7 @@ class PersonStructure extends MetisSection
         $wrote = false;
 
         foreach ($batch as $cvr) {
-            $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($cvr, limit: 500));
-            $portfolio = $result['portfolio'] ?? null;
-
-            if ($portfolio === null) {
-                $this->propertiesByCompany[$cvr] = 'failed';
-
-                continue;
-            }
-
-            $list = $portfolio['properties'] ?? [];
-            $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
-
-            if ($list === [] && $count > 0) {
-                $this->propertiesAttempts++;
-
-                continue; // stays 'pending' — retried next tick, budget permitting
-            }
-
-            if ($list === []) {
-                $this->propertiesByCompany[$cvr] = 'empty';
-
-                continue;
-            }
-
-            $this->propertyData[$cvr] = $list;
-            $this->propertiesByCompany[$cvr] = 'loaded';
-            $wrote = true;
+            $wrote = $this->fetchPortfolioFor($cvr) || $wrote;
         }
 
         $this->settleProperties();
@@ -684,6 +665,60 @@ class PersonStructure extends MetisSection
         if ($wrote) {
             $this->rebuild();
         }
+    }
+
+    /**
+     * Fetches ONE cvr's portfolio and writes its per-cvr outcome. The single
+     * place the four outcomes are classified — both the poll tick and the
+     * recovery pass go through here, so they cannot drift apart (and in
+     * particular cannot disagree about which outcomes consume budget):
+     *
+     *   hard failure   → 'failed'; the other cvrs carry on.
+     *   still building → stays 'pending' AND burns one unit of the shared
+     *                    budget. A portfolio that answers 'building' forever
+     *                    would otherwise spin without limit.
+     *   genuinely empty→ 'empty'. A settled answer, not missing data.
+     *   rows           → 'loaded', stored as a PLAIN LIST (buildForPerson()
+     *                    throws on build()'s ['list','usage'] wrapper rather
+     *                    than silently rendering zero properties).
+     *
+     * limit 500 matches CompanyStructure/CompanyOverview, so the cache key is
+     * identical and a large portfolio reuses their warm cache instead of
+     * paging in the API's default 25.
+     *
+     * @return bool whether rows were actually written (i.e. a rebuild is warranted)
+     */
+    protected function fetchPortfolioFor(string $cvr): bool
+    {
+        $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($cvr, limit: 500));
+        $portfolio = $result['portfolio'] ?? null;
+
+        if ($portfolio === null) {
+            $this->propertiesByCompany[$cvr] = 'failed';
+
+            return false;
+        }
+
+        $list = $portfolio['properties'] ?? [];
+        $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
+
+        if ($list === [] && $count > 0) {
+            $this->propertiesAttempts++;
+            $this->propertiesByCompany[$cvr] = 'pending';
+
+            return false;
+        }
+
+        if ($list === []) {
+            $this->propertiesByCompany[$cvr] = 'empty';
+
+            return false;
+        }
+
+        $this->propertyData[$cvr] = $list;
+        $this->propertiesByCompany[$cvr] = 'loaded';
+
+        return true;
     }
 
     /**
@@ -855,17 +890,44 @@ class PersonStructure extends MetisSection
      *
      * Deliberately partial-tolerant, and deliberately NOT a failure path: this
      * is the "less complete" case, not the "false" one, so a cvr whose refetch
-     * fails is reset to 'pending' and handed back to the poll loop rather than
-     * abandoning the whole rebuild. Structures come from the CACHED endpoint
-     * (5 min), properties from the same cached limit-500 call the first fetch
-     * used — both are normally cache hits, never a re-scrape.
+     * fails is DOWNGRADED and handed back to the poll loop rather than
+     * abandoning the whole rebuild. Both sources are normally cache hits
+     * (structures: warmed by fetchCompanyStructuresPooled itself; properties:
+     * the same cached limit-500 call the first fetch used).
+     *
+     * 🚨 EVERY DOWNGRADE RE-DERIVES THE AGGREGATES. A downgrade puts unsettled
+     * work back into a per-cvr map, and the poll gate reads the AGGREGATES —
+     * so leaving them alone strands that work behind a closed phase. Probed
+     * before this guard existed, with a structure endpoint answering 200 +
+     * `data: []` (non-null ⇒ the pooled fetch settles it 'loaded', but the
+     * cached read returns [] ⇒ the next tick must downgrade):
+     *
+     *     tick 1:  queue={11111111: loaded}   agg=loaded   poll=true
+     *     tick 2:  queue={11111111: pending}  agg=loaded   poll=FALSE
+     *
+     * The cvr sat 'pending' forever with the browser no longer polling and no
+     * retry button on screen — silent and permanent.
      *
      * Task 8 tightens this further (enrichment-completeness per cvr); the
      * contract here is only that a rebuilt graph never silently loses a layer
-     * a settled status claims it has.
+     * a settled status claims it has, and never closes a phase over work it
+     * has just re-opened.
      */
     protected function recoverPhaseResults(): void
     {
+        $downgraded = $this->recoverStructureResults() | $this->recoverPropertyResults();
+
+        if ($downgraded) {
+            $this->settleStructures();
+            $this->settleProperties();
+        }
+    }
+
+    /** @return bool whether any cvr was downgraded out of a settled state */
+    protected function recoverStructureResults(): bool
+    {
+        $downgraded = false;
+
         foreach ($this->structureByCompany as $cvr => $status) {
             if ($status !== 'loaded' || isset($this->structureData[$cvr])) {
                 continue;
@@ -875,6 +937,7 @@ class PersonStructure extends MetisSection
 
             if ($structure === null || $structure === []) {
                 $this->structureByCompany[$cvr] = 'pending';
+                $downgraded = true;
 
                 continue;
             }
@@ -882,25 +945,32 @@ class PersonStructure extends MetisSection
             $this->structureData[(string) $cvr] = $structure;
         }
 
+        return $downgraded;
+    }
+
+    /**
+     * Property recovery. Routes through fetchPortfolioFor(), so the three
+     * unrecoverable outcomes stay APART instead of collapsing into one
+     * 'pending' downgrade — a cvr the phase already gave up on must not be
+     * quietly re-queued by a recovery pass (only retryProperties() re-opens a
+     * failed cvr), and a cvr still building must burn budget like any other
+     * attempt rather than re-entering the building path for free.
+     *
+     * @return bool whether any cvr was downgraded out of a settled state
+     */
+    protected function recoverPropertyResults(): bool
+    {
+        $downgraded = false;
+
         foreach ($this->propertiesByCompany as $cvr => $status) {
             if ($status !== 'loaded' || isset($this->propertyData[$cvr])) {
                 continue;
             }
 
-            $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio((string) $cvr, limit: 500));
-            $list = $result['portfolio']['properties'] ?? [];
-
-            if ($list === []) {
-                $this->propertiesByCompany[$cvr] = 'pending';
-
-                continue;
-            }
-
-            // PLAIN LIST — buildForPerson() throws on build()'s
-            // ['list' => …, 'usage' => …] wrapper rather than silently
-            // rendering a graph with zero properties.
-            $this->propertyData[(string) $cvr] = $list;
+            $downgraded = ! $this->fetchPortfolioFor((string) $cvr) || $downgraded;
         }
+
+        return $downgraded;
     }
 
     /**

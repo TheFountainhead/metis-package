@@ -613,7 +613,7 @@ it('fetchCompanyStructuresPooled: empty input gives empty array without HTTP cal
     Http::assertNothingSent();
 });
 
-it('fetchCompanyStructuresPooled: does not cache — refetches every call', function () {
+it('fetchCompanyStructuresPooled: never READS the cache — refetches every call', function () {
     Http::fake([
         '*/v1/cvr/company-structure' => Http::sequence()
             ->push(['data' => ['owners' => [], 'v' => 1]])
@@ -624,9 +624,38 @@ it('fetchCompanyStructuresPooled: does not cache — refetches every call', func
     $first = $api->fetchCompanyStructuresPooled(['11111111']);
     $second = $api->fetchCompanyStructuresPooled(['11111111']);
 
+    // Fase 2 must fetch each cvr fresh — a 5-minute-old answer is exactly what
+    // this endpoint exists to avoid. Note it WRITES the cache (see below); the
+    // contract is read-free, not write-free.
     Http::assertSentCount(2);
     expect($first['11111111']['v'])->toBe(1)
         ->and($second['11111111']['v'])->toBe(2);
+});
+
+it('fetchCompanyStructuresPooled: WARMS the cache key fetchCompanyStructureCached reads', function () {
+    Http::fake(['*/v1/cvr/company-structure' => Http::response(['data' => ['owners' => [], 'subsidiaries' => []]])]);
+
+    $api = app(RegistryApi::class);
+    $api->fetchCompanyStructuresPooled(['11111111']);
+
+    // Without this, PersonStructure's per-tick recovery (protected state does
+    // not survive a request) re-POSTs every already-loaded cvr on EVERY tick —
+    // ~20 extra POSTs per 2s poll at the first-level cap.
+    expect(Cache::has('metis:company_structure:11111111'))->toBeTrue();
+
+    $api->fetchCompanyStructureCached('11111111');
+
+    Http::assertSentCount(1); // the recovery read is a cache HIT, not a request
+});
+
+it('fetchCompanyStructuresPooled: does not cache a per-cvr failure', function () {
+    Http::fake(['*/v1/cvr/company-structure' => Http::response('Server error', 500)]);
+
+    app(RegistryApi::class)->fetchCompanyStructuresPooled(['11111111']);
+
+    // Same rule as fetchCompanyStructureCached's own write: an error must never
+    // shadow fresh data for 5 minutes.
+    expect(Cache::has('metis:company_structure:11111111'))->toBeFalse();
 });
 
 it('fetchCompanyStructuresPooled: bounds Http::pool() to a concurrency of 3', function () {
