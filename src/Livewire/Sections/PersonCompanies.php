@@ -16,7 +16,20 @@ class PersonCompanies extends MetisSection
     public function mount(string $query): void
     {
         $this->query = $query;
-        $result = rescue(fn () => app(RegistryApi::class)->fetchCompaniesByCpr($query));
+        // rescue() bevares som sidste net (report'er selv), men fejl må ikke
+        // længere ligne "personen ejer ingen selskaber": en timeout gav en tom
+        // sektion med hasError=false (Flare 9097433). null OG ['error'=>...]
+        // (transportfejl fanges nu i RegistryApi::post()) sætter fejltilstanden
+        // — mønstret fra CompanyTinglysning.
+        $result = rescue(fn () => app(RegistryApi::class)->fetchCompaniesByCpr($query), ['error' => 'exception']);
+
+        if ($result === null || isset($result['error'])) {
+            $this->hasError = true;
+            $this->errorMessage = __('Selskabsdata kunne ikke hentes. Genindlæs siden for at prøve igen.');
+
+            return;
+        }
+
         $this->companies = collect($result['companies'] ?? [])
             ->sortBy([
                 // Active first

@@ -7,7 +7,14 @@
         $historical = $all->reject(fn ($c) => $c['is_active'] ?? false);
     @endphp
 
-    @if($all->isEmpty())
+    @if($hasError)
+        <flux:card>
+            <flux:heading size="lg" class="mb-4">Selskaber & ejerskab</flux:heading>
+            @include('metis::livewire.sections.partials.error-state', [
+                'message' => $errorMessage,
+            ])
+        </flux:card>
+    @elseif($all->isEmpty())
         <flux:card>
             <flux:heading size="lg" class="mb-4">Selskaber & ejerskab</flux:heading>
             <p class="text-sm text-zinc-500">Ingen selskaber fundet.</p>
