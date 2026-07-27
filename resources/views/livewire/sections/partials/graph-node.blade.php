@@ -69,8 +69,7 @@
                 <span class="mgraph-signal" :class="'mgraph-signal--' + s" :title="signalTitle(s)" x-text="signalGlyph(s)"></span>
             </template>
         </span>
-        {{-- Expand affordances. @mousedown.stop so the frame's pan never starts;
-             _expanding gives a per-node loading state until the watcher re-renders.
+        {{-- Expand affordances. @mousedown.stop so the frame's pan never starts.
              Same evaluate-regardless-of-x-show reasoning as above: most nodes have
              expand=null, so the x-text expressions need their own ?? fallback.
 
@@ -86,17 +85,28 @@
              element type itself, not just its style, so no button/click
              semantics reach the DOM). --}}
         <div class="mgraph-node__expand" x-show="node.expand && (node.expand.relations || node.expand.properties)" x-cloak>
+            {{-- `node.cvr ?? node.id`: the person root has cvr=null, so plain
+                 node.cvr would emit 'sub:null' and leave its first-level cap
+                 unreachable. The id yields 'sub:person:root' instead, which
+                 the component maps to lifting BOTH first-level caps. --}}
+            {{-- 🚨 Busy is LIVEWIRE's state, never a local x-data flag: the
+                 x-for is keyed, so an x-data scope survives a rebuild and a
+                 node still holding hidden children after its expand showed '…'
+                 forever. wire:target scopes it to expandNode so the 2s poll
+                 does not disable every expand button twice a second. --}}
             <template x-if="node.expand?.relations">
-                <button type="button" x-show="!node.expand?.capped_relations" x-data="{busy:false}"
-                        @mousedown.stop @click.stop="busy = true; $wire.expandNode('sub:' + node.cvr)"
-                        :disabled="busy" x-text="busy ? '…' : ('↓ ' + node.expand.relations + ' relationer')"></button>
+                <button type="button" x-show="!node.expand?.capped_relations"
+                        wire:loading.attr="disabled" wire:target="expandNode"
+                        @mousedown.stop @click.stop="$wire.expandNode('sub:' + (node.cvr ?? node.id))"
+                        x-text="'↓ ' + node.expand.relations + ' relationer'"></button>
             </template>
             <span x-show="node.expand?.relations && node.expand?.capped_relations" x-text="'↓ ' + (node.expand?.relations ?? 0) + ' relationer'"></span>
 
             <template x-if="node.expand?.properties">
-                <button type="button" x-show="!node.expand?.capped_properties" x-data="{busy:false}"
-                        @mousedown.stop @click.stop="busy = true; $wire.expandNode('props:' + node.cvr)"
-                        :disabled="busy" x-text="busy ? '…' : ('+ ' + node.expand.properties + ' ejendomme')"></button>
+                <button type="button" x-show="!node.expand?.capped_properties"
+                        wire:loading.attr="disabled" wire:target="expandNode"
+                        @mousedown.stop @click.stop="$wire.expandNode('props:' + node.cvr)"
+                        x-text="'+ ' + node.expand.properties + ' ejendomme'"></button>
             </template>
             <span x-show="node.expand?.properties && node.expand?.capped_properties" x-text="'+ ' + (node.expand?.properties ?? 0) + ' skjult'"></span>
         </div>

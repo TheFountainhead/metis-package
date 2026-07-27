@@ -17,17 +17,27 @@
     <div class="org-section-label">{{ __('Ownership structure') }}</div>
 
     {{-- The graph lives in a wire:ignore subtree with a STABLE wire:key
-         (query only), so Livewire never re-mounts it — the user's zoom/pan
-         is Alpine state that must survive an enrichment poll. Instead the
-         component watches the Livewire `graphModel` property
-         ($wire.$watch in init()): when a poll deepens the chain, graphModel
-         changes, and refreshModel() re-lays-out in place (deferring while
-         the user is mid-pan). This is the canonical Livewire→Alpine bridge
-         for "react to server state without re-mounting" — no carrier node,
-         no dispatch-before-listener race. --}}
+         (a HASH of the query — see below), so Livewire never re-mounts it —
+         the user's zoom/pan is Alpine state that must survive an enrichment
+         poll. Instead the component watches the Livewire `graphModel`
+         property ($wire.$watch in init()): when a poll deepens the chain,
+         graphModel changes, and refreshModel() re-lays-out in place
+         (deferring while the user is mid-pan). This is the canonical
+         Livewire→Alpine bridge for "react to server state without
+         re-mounting" — no carrier node, no dispatch-before-listener race.
+
+         🚨 sha1($query), NEVER the raw $query. This partial is shared by the
+         CVR page (where $query is a public company number) and the CPR page
+         (where $query IS the person's CPR) — and PersonStructure's docblock
+         forbids CPR in DOM attributes. A wire:key is rendered verbatim into
+         the markup, so interpolating $query leaked the CPR into every
+         person-page response body: readable in view-source, by a browser
+         extension, in any HTML the page is saved or proxied into. The hash is
+         just as stable and just as unique per query, which is all a wire:key
+         ever needed; it is harmless for the CVR page sharing this file. --}}
     <div
         wire:ignore
-        wire:key="ownership-graph-{{ $query }}"
+        wire:key="ownership-graph-{{ sha1($query) }}"
         class="mgraph"
         x-data="ownershipGraph(@js($graph))"
     >
@@ -135,6 +145,13 @@
     /* non-scaling-stroke keeps the hairline visible even when the canvas is scaled
        down to fit a large graph (which can drop the effective scale to ~0.2). */
     .mgraph-edge-line { fill: none; stroke: var(--rule-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    /* Fase 2b role layer: a board/director seat without ownership. The host JS
+       adds this class alongside .mgraph-edge-line whenever the builder marked
+       the edge style='dashed'; until this rule shipped the class was inert and
+       role edges rendered solid — visually identical to ownership, which is the
+       one distinction the whole role layer exists to make. 4 4 stays legible
+       under non-scaling-stroke at the low zoom a large graph fits at. */
+    .mgraph-edge-dashed { stroke-dasharray: 4 4; }
     .mgraph-edge-label {
         font-family: var(--fm); font-size: 10.5px; fill: var(--ink-2);
         text-anchor: middle; dominant-baseline: middle;

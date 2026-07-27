@@ -17,6 +17,14 @@ class RegistryApi
      */
     protected const POOL_CONCURRENCY = 6;
 
+    /**
+     * Bounds fetchCompanyStructuresPooled()'s Http::pool() fan-out. Lower
+     * than POOL_CONCURRENCY: company-structure is a heavier endpoint
+     * (koncerntræ-walk) than the plain company-info lookup, so this trickles
+     * more conservatively against registry-api.
+     */
+    protected const STRUCTURE_POOL_CONCURRENCY = 3;
+
     protected function client()
     {
         // F1 pilot — if user has set personal token in session (via /alerts
@@ -231,6 +239,45 @@ class RegistryApi
         return $this->post('/v1/cvr/cross-ownership', ['cvr_numbers' => $cvrs]);
     }
 
+    /**
+     * Cached variant, mirroring fetchCompaniesByCprCached()'s contract (5 min
+     * TTL, failures NEVER cached).
+     *
+     * PersonStructure calls this from mount AND from rehydrateBeforeRebuild(),
+     * which every poll tick, chip toggle and expand runs through — so the
+     * uncached version refired an identical POST roughly 10-12 times on an
+     * ordinary page view, for a relationship set that cannot change between
+     * them.
+     *
+     * The key is the SET of cvrs, sorted: the caller derives the list from
+     * graph order, which shifts as the graph grows, and an order-sensitive key
+     * would miss on every reordering — cache-missing precisely when the page
+     * is busiest. sha1 keeps the key bounded no matter how many cvrs a person
+     * has (the cap is 20, so the raw list would otherwise run to ~180 chars).
+     *
+     * A failure must not be cached: post() returns ['error' => …] rather than
+     * throwing, and in PersonStructure a cross-ownership failure fails the
+     * WHOLE skeleton — caching it would leave the retry button dead for the
+     * full TTL.
+     */
+    public function fetchCrossOwnershipCached(array $cvrs): array
+    {
+        $sorted = collect($cvrs)->map(fn ($cvr) => (string) $cvr)->unique()->sort()->values()->all();
+        $cacheKey = 'metis:cross_ownership:'.sha1(implode(',', $sorted));
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
+        $result = $this->fetchCrossOwnership($cvrs);
+
+        if (! isset($result['error'])) {
+            Cache::put($cacheKey, $result, 300);
+        }
+
+        return $result;
+    }
+
     public function fetchRolesByCvr(array $cvrs, ?string $excludeCpr = null): array
     {
         $payload = ['cvr_numbers' => $cvrs];
@@ -339,6 +386,57 @@ class RegistryApi
         return $results;
     }
 
+    /**
+     * CACHE-ONLY variant of fetchCompanyInfosPooled(): returns cvr => company
+     * for the cvrs whose 24h company-info cache is still warm, and simply
+     * OMITS the rest. Issues no HTTP request under any circumstance.
+     *
+     * For recovery paths running inside INTERACTIVE requests (PersonStructure's
+     * chip toggle / expand, via recoverEnrichmentResults()). Those must not
+     * turn a click into a pooled network pass whose size grows with the number
+     * of companies in the graph — a cold cache would make an interaction that
+     * is normally instant hang on a fan-out of upstream calls. The caller
+     * treats an incomplete map as "not recoverable cheaply" and hands the phase
+     * back to the poll loop, which fetches it properly a tick later.
+     *
+     * @return array<string, array>
+     */
+    public function fetchCompanyInfosCached(array $cvrs): array
+    {
+        $results = [];
+
+        foreach (array_unique($cvrs) as $cvr) {
+            $cached = Cache::get($this->companyInfoCacheKey((string) $cvr));
+
+            if (! is_null($cached)) {
+                $results[(string) $cvr] = $cached;
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * 🚨 DELIBERATELY TENANT-NEUTRAL — not an oversight, and not to be "fixed"
+     * by adding the token to the key without reading this first.
+     *
+     * The key carries no token/user/session component, so every caller shares
+     * one entry per cvr. That is correct because company-info is CVR REGISTER
+     * data: public, identical for every caller, and not derived from who asked.
+     * The token is a QUOTA IDENTITY (who is billed, who is rate-limited), not
+     * an authorisation scope — two tokens asking about the same cvr are
+     * entitled to byte-identical answers.
+     *
+     * Namespacing per token would multiply the cache by the number of tokens
+     * and turn a warm shared cache into N cold ones, for no privacy gain.
+     *
+     * WHEN TO REVISIT: the moment registry-api returns anything token-SCOPED on
+     * this endpoint — a per-customer note, an entitlement flag, a field one
+     * tenant sees and another does not. At that point the shared entry leaks
+     * one tenant's view to another and the key MUST gain a token component.
+     * There is a test pinning this decision so the change is a conversation
+     * rather than an accident.
+     */
     protected function companyInfoCacheKey(string $cvr): string
     {
         return "metis:company_info:{$cvr}";
@@ -357,20 +455,103 @@ class RegistryApi
      */
     public function fetchCompanyStructureCached(string $cvr): array
     {
-        $cacheKey = "metis:company_structure:{$cvr}";
-
-        if (! is_null($cached = Cache::get($cacheKey))) {
+        if (! is_null($cached = Cache::get(self::structureCacheKey($cvr)))) {
             return $cached;
         }
 
         $structure = $this->fetchCompanyStructure($cvr);
-
-        // Cache kun et ikke-tomt svar — se noten ved fetchCompanyPropertyPortfolio.
-        if (! empty($structure)) {
-            Cache::put($cacheKey, $structure, 300);
-        }
+        $this->cacheStructure($cvr, $structure);
 
         return $structure;
+    }
+
+    /**
+     * CACHE-ONLY variant of fetchCompanyStructureCached() — whose name promises
+     * a cache but which falls through to a real POST on a miss. This one never
+     * does: a miss returns null and the caller decides.
+     *
+     * For recovery paths inside INTERACTIVE requests; see
+     * fetchCompanyInfosCached() for the full rationale.
+     */
+    public function fetchCompanyStructureFromCache(string $cvr): ?array
+    {
+        return Cache::get(self::structureCacheKey($cvr));
+    }
+
+    /**
+     * 🚨 Tenant-neutral by the same deliberate decision as
+     * companyInfoCacheKey() — see that docblock for the full reasoning and for
+     * the condition under which this must change (any token-SCOPED field
+     * appearing on the endpoint).
+     */
+    protected static function structureCacheKey(string $cvr): string
+    {
+        return "metis:company_structure:{$cvr}";
+    }
+
+    /**
+     * Cache kun et ikke-tomt svar — se noten ved fetchCompanyPropertyPortfolio:
+     * en fejl (eller et tomt svar) må ikke skygge for friske data i 5 minutter.
+     * Delt af den cachede og den pooled'e henter, så key, TTL og tom-reglen kun
+     * findes ét sted.
+     */
+    protected function cacheStructure(string $cvr, ?array $structure): void
+    {
+        if (! empty($structure)) {
+            Cache::put(self::structureCacheKey($cvr), $structure, 300);
+        }
+    }
+
+    /**
+     * Pooled variant af fetchCompanyStructure() til fase 2's graf-udvidelse:
+     * hvert cvr hentes samtidigt via Http::pool, præcis én gang pr. kald.
+     *
+     * Cache-kontrakten er ASYMMETRISK og bevidst: LÆSER aldrig (fase 2 skal
+     * have hvert cvr friskt), men SKRIVER via cacheStructure(), så den
+     * efterfølgende rehydrering bliver et cache-hit. Uden den skrivning ramte
+     * PersonStructures per-tick-gendannelse netværket igen for hvert allerede
+     * hentet cvr — ~20 ekstra POSTs pr. 2-sekunders tick ved first-level-loftet.
+     *
+     * Samme uafhængigheds-garanti som fetchCompanyInfosPooled(): ét cvr's
+     * fejl giver null for det cvr, aldrig en exception ud til kalderen.
+     */
+    public function fetchCompanyStructuresPooled(array $cvrs): array
+    {
+        if (empty($cvrs)) {
+            return [];
+        }
+
+        $cvrs = array_values(array_unique($cvrs));
+
+        $token = session('metis_user_token') ?: config('metis.registry_api.key');
+        $baseUrl = config('metis.registry_api.url');
+
+        $responses = Http::pool(fn ($pool) => collect($cvrs)
+            ->map(fn ($cvr) => $pool->as($cvr)
+                ->withToken($token)
+                ->acceptJson()
+                ->timeout(30)
+                ->baseUrl($baseUrl)
+                ->post('/v1/cvr/company-structure', ['cvr' => $cvr]))
+            ->all(), concurrency: self::STRUCTURE_POOL_CONCURRENCY);
+
+        $results = [];
+
+        foreach ($cvrs as $cvr) {
+            $response = $responses[$cvr] ?? null;
+
+            try {
+                $results[$cvr] = $response instanceof \Illuminate\Http\Client\Response && $response->successful()
+                    ? $response->json('data')
+                    : null;
+            } catch (\Throwable $e) {
+                $results[$cvr] = null;
+            }
+
+            $this->cacheStructure((string) $cvr, $results[$cvr]);
+        }
+
+        return $results;
     }
 
     /**
@@ -429,9 +610,33 @@ class RegistryApi
         }
     }
 
+    /**
+     * CACHE-ONLY variant of fetchCompanyPropertyPortfolio(): returns the cached
+     * payload if the 5-min entry is still warm, and null otherwise. Issues no
+     * HTTP request under any circumstance.
+     *
+     * Sibling of fetchCompanyInfosCached(), and there for the same reason: the
+     * recovery paths run inside INTERACTIVE requests (PersonStructure's chip
+     * toggle / expand), where a cache miss must cost nothing. The caller
+     * downgrades the cvr and lets the poll loop fetch it properly a tick later
+     * — see recoverPropertyResults().
+     *
+     * Shares the key with the fetching variant rather than deriving its own, so
+     * the two cannot drift apart over a limit/offset default.
+     */
+    public function fetchCompanyPropertyPortfolioCached(string $cvr, int $limit = 25, int $offset = 0): ?array
+    {
+        return Cache::get(self::propertyPortfolioCacheKey($cvr, $limit, $offset));
+    }
+
+    protected static function propertyPortfolioCacheKey(string $cvr, int $limit, int $offset): string
+    {
+        return "metis:company_property_portfolio:{$cvr}:{$limit}:{$offset}";
+    }
+
     public function fetchCompanyPropertyPortfolio(string $cvr, int $limit = 25, int $offset = 0): ?array
     {
-        $cacheKey = "metis:company_property_portfolio:{$cvr}:{$limit}:{$offset}";
+        $cacheKey = self::propertyPortfolioCacheKey($cvr, $limit, $offset);
 
         if ($cached = Cache::get($cacheKey)) {
             return $cached;
@@ -533,6 +738,34 @@ class RegistryApi
     public function fetchCompaniesByCpr(string $cpr): ?array
     {
         return $this->post('/v1/cvr/search-by-cpr', ['cpr' => $cpr]);
+    }
+
+    /**
+     * Cachet variant af fetchCompaniesByCpr() — nøglen hashes (sha1) så et
+     * rå CPR-nummer aldrig havner i cache-nøglen eller -loggen. 5 min TTL:
+     * lang nok til at dæmpe gentagne opslag under samme graf-udvidelse, kort
+     * nok til at nye selskabsregistreringer dukker op hurtigt. Fejl caches
+     * ALDRIG — se noten ved fetchCompanyInfo().
+     */
+    public function fetchCompaniesByCprCached(string $cpr): ?array
+    {
+        $cacheKey = 'metis:companies_by_cpr:'.sha1($cpr);
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
+        $result = $this->fetchCompaniesByCpr($cpr);
+
+        // post()'s catch-block returnerer aldrig null ved en RequestException
+        // — den giver et ['error' => ..., 'status' => ...]-array. Den fejlform
+        // skal behandles som "fejlede" på samme måde som et rent null-svar,
+        // ellers cacher vi en 500'er i 5 minutter.
+        if (! is_null($result) && ! isset($result['error'])) {
+            Cache::put($cacheKey, $result, 300);
+        }
+
+        return $result;
     }
 
     public function fetchPropertiesByCpr(string $cpr): ?array
@@ -658,6 +891,32 @@ class RegistryApi
         return ['street' => $street, 'number' => $number, 'zip' => $zip];
     }
 
+    /**
+     * 🚨 The error VALUE is a constant, never $e->getMessage(). RequestException
+     * builds its message as "HTTP request returned status code N" plus the
+     * upstream RESPONSE BODY (truncated to 120 chars) — and registry-api echoes
+     * request input into some of its error bodies. On the CPR path that input is
+     * the CPR, so getMessage() quietly turned every failed lookup into a return
+     * value carrying the CPR onward to whatever logged, cached or rendered it.
+     *
+     * Nothing is lost: report() sends the REAL exception down the exception
+     * channel, where the host-side Flare scrubber censors it. And no caller ever
+     * read the string — every consumer in src/ isset()-checks the key and
+     * substitutes its own user-facing message (grepped across the package),
+     * which is exactly what makes a constant safe here.
+     *
+     * Used by EVERY catch site in this class, not just the two the CPR path
+     * happens to run through: the shape is identical at all 13, and a helper
+     * only half the file uses is an invitation to reintroduce the leak in the
+     * next endpoint someone adds.
+     */
+    protected function errorFrom(RequestException $e): array
+    {
+        report($e);
+
+        return ['error' => 'upstream_error', 'status' => $e->getCode()];
+    }
+
     protected function get(string $endpoint, array $query = []): ?array
     {
         try {
@@ -666,7 +925,7 @@ class RegistryApi
                 ->throw()
                 ->json('data');
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -678,7 +937,7 @@ class RegistryApi
                 ->throw()
                 ->json('data');
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -696,7 +955,7 @@ class RegistryApi
         try {
             return $request->get('/v1/debt-search', $filters)->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -708,7 +967,7 @@ class RegistryApi
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -726,7 +985,7 @@ class RegistryApi
         try {
             return $request->post('/v1/property-explore', $filters)->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -738,7 +997,7 @@ class RegistryApi
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -749,7 +1008,7 @@ class RegistryApi
         try {
             return $this->client()->get('/v1/watchlists')->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -767,7 +1026,7 @@ class RegistryApi
                 ->throw()
                 ->json('data');
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -779,7 +1038,7 @@ class RegistryApi
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -793,7 +1052,7 @@ class RegistryApi
                 'alert_types' => $alertTypes,
             ])->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -802,7 +1061,7 @@ class RegistryApi
         try {
             return $this->client()->delete("/v1/watchlists/{$id}")->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -815,7 +1074,7 @@ class RegistryApi
                 'page' => $page,
             ], fn ($v) => $v !== null))->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -824,7 +1083,7 @@ class RegistryApi
         try {
             return $this->client()->patch("/v1/alerts/{$alertId}/read")->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 

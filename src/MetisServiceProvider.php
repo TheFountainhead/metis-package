@@ -115,7 +115,7 @@ class MetisServiceProvider extends ServiceProvider
         // Person sections
         Livewire::component('metis-person-summary', \TheFountainhead\Metis\Livewire\Sections\PersonSummary::class);
         Livewire::component('metis-person-info', \TheFountainhead\Metis\Livewire\Sections\PersonInfo::class);
-        Livewire::component('metis-person-network', \TheFountainhead\Metis\Livewire\Sections\PersonNetwork::class);
+        Livewire::component('metis-person-structure', \TheFountainhead\Metis\Livewire\Sections\PersonStructure::class);
         Livewire::component('metis-person-companies', \TheFountainhead\Metis\Livewire\Sections\PersonCompanies::class);
         Livewire::component('metis-person-roles', \TheFountainhead\Metis\Livewire\Sections\PersonRoles::class);
         Livewire::component('metis-person-properties', \TheFountainhead\Metis\Livewire\Sections\PersonProperties::class);

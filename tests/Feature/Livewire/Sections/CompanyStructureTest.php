@@ -563,8 +563,11 @@ it('exposes the graph model as watchable Livewire state with a stable graph key 
     // graphModel is populated public state (so $wire.$watch has something to see).
     $test->assertSet('graphModel', fn ($m) => is_array($m) && count($m['nodes']) === 2);
 
-    // graph wrapper: STABLE key (query only) — never re-mounted mid-pan
-    expect($test->html())->toContain('wire:key="ownership-graph-20000001"');
+    // graph wrapper: STABLE key — never re-mounted mid-pan. HASHED, because the
+    // partial is shared with the CPR page where $query is the person's CPR and
+    // a wire:key renders verbatim into the markup; the hash is equally stable
+    // and equally unique, so the no-remount guarantee is untouched.
+    expect($test->html())->toContain('wire:key="ownership-graph-'.sha1('20000001').'"');
     // the carrier/dispatch bridge is gone
     expect($test->html())->not->toContain('graph-model-updated');
 });
@@ -1002,12 +1005,19 @@ it('loadEnrichment attaches company card/signals to graph nodes (via the real pr
 });
 
 /**
- * F3 fix: fetchEnrichmentData() must only send ENRICHABLE_KINDS cvrs to
- * fetchCompanyInfosPooled() — an 'other' orphan-parent stub (synthesised
+ * F3 fix: the enrichment cvr collection must only send ENRICHABLE_KINDS cvrs
+ * to fetchCompanyInfosPooled() — an 'other' orphan-parent stub (synthesised
  * when a parent_of_cvr was pruned upstream) has a cvr but is a placeholder,
  * not a company the user asked to see enriched. Before this fix, the pool
  * call would fire a request for the stub's cvr too (wasted request against
  * registry-api for a node that never renders a card either way).
+ *
+ * 🚨 ASSERTED ON THE RESOLVED CVR LIST, not on Http::assertNotSent. Probed
+ * during Task 8's extraction: Http::pool() requests that match NO fake stub
+ * are not recorded at all, so the assertNotSent this test used to rely on
+ * passed just as happily with the kind-gate REMOVED — the stub's cvr went
+ * into the pool and simply left no trace to assert against. Mutation-tested
+ * both ways after the rewrite: dropping the gate now fails here.
  */
 it('excludes an "other" orphan-parent stub cvr from the enrichment pool call (F3)', function () {
     fakeRegistryCompanyInfo('11111111');
@@ -1032,7 +1042,17 @@ it('excludes an "other" orphan-parent stub cvr from the enrichment pool call (F3
     $stub = collect($c->get('graphModel')['nodes'])->firstWhere('id', '99999999');
     expect($stub['kind'])->toBe('other');
 
-    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/99999999'));
+    // The cvrs the component would pool, read off the same component state
+    // fetchEnrichmentData() reads. 'searched' and 'legal' are enrichable;
+    // the 'other' stub is not.
+    $reflected = new ReflectionMethod($c->instance(), 'enrichmentCvrs');
+    $reflected->setAccessible(true);
+    $cvrs = $reflected->invoke($c->instance());
+
+    expect($cvrs)->toContain('11111111')
+        ->and($cvrs)->toContain('38653806')
+        ->and($cvrs)->not->toContain('99999999');
+
     Http::assertSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/11111111'));
 });
 
