@@ -27,6 +27,14 @@ beforeEach(function () {
  * RequestException and returns ['error' => …, 'status' => …] — NOT null — so
  * a 500 here exercises the real production failure contract, which must land
  * the component in 'failed', never 'empty'.
+ *
+ * The fase-2/3 endpoints are faked here too (as trivially-empty successes),
+ * because a component whose per-cvr status says 'loaded' will REFETCH the
+ * corresponding payload after a rebuild — protected state does not survive
+ * hydration, so a settled status with no recoverable data is reset to
+ * 'pending' rather than silently rebuilding a graph missing that layer. Tests
+ * that hand-set a 'loaded' status therefore need the endpoint answering, or
+ * they would be asserting against a state production can never reach.
  */
 function fakeRegistryCpr(?array $companies, ?array $relationships = []): void
 {
@@ -37,6 +45,8 @@ function fakeRegistryCpr(?array $companies, ?array $relationships = []): void
         '*/v1/cvr/cross-ownership*' => $relationships === null
             ? Http::response('Server error', 500)
             : Http::response(['data' => ['relationships' => $relationships]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
     ]);
 }
 
@@ -70,11 +80,21 @@ function fakeRegistryCprFailingThenSucceeding(array $companies): void
  * new instance carrying only the PUBLIC state, with every protected property
  * back at its declared default.
  *
- * This is the only true hydration boundary available in a test. Neither
- * `->call()` nor a second `Livewire::test()` crosses it: `->call()` reuses the
- * very same PHP object (protected state survives, so a rehydration bug hides),
- * and `Livewire::test()` re-runs mount() from scratch (so rehydration is never
- * exercised at all). Verified empirically against both before writing this.
+ * CORRECTED in Task 7 (re-probed, because the original claim here drove test
+ * design): `->call()` does NOT reuse the same PHP object. A subclass dumping
+ * its own protected state from inside a `->call()` handler shows every
+ * protected property back at its declared default, on the FIRST call and
+ * every call after — so `->call()` does cross a hydration boundary, and the
+ * earlier docblock's "protected state survives, so a rehydration bug hides"
+ * was wrong.
+ *
+ * What remains true, and why this helper still exists: `->call()` reconstructs
+ * from the LIVEWIRE SNAPSHOT (a JSON round-trip, so 100.0 arrives as 100),
+ * while this helper assigns $test->getData() onto a bare `new PersonStructure`.
+ * The helper is the sharper instrument — it cannot accidentally carry anything
+ * — and it lets a test act on the instance directly rather than through the
+ * Testable wrapper. `Livewire::test()` genuinely does not cross the boundary:
+ * it re-runs mount() from scratch, so rehydration is never exercised.
  *
  * Returns the fresh instance; act on it directly and assert on its public
  * properties.
@@ -498,7 +518,18 @@ it('recomputes the fase-2 queue when an expand reveals new first-level companies
         ->and(array_keys($test->get('structureByCompany')))->toContain('00000025');
 });
 
-it('drops companies from the fase-2 queue when a layer is switched off', function () {
+it('keeps companies in the fase-2 queue when a layer is switched off', function () {
+    // REVISED in Task 7. This test originally asserted the OPPOSITE — that a
+    // chip-off company leaves the queue — which conflated two different rules
+    // and contradicted the spec (§Chips: "Hentning fortsætter uanset
+    // chip-tilstand — chips filtrerer kun bygningen"). Probed before changing
+    // it: with the old behaviour, switching the roles chip off dropped
+    // 22222222 out of the queue entirely, so its subsidiaries were never
+    // fetched and switching the chip back on showed a company with a silently
+    // missing subtree that no queue would ever repair.
+    //
+    // TRUNCATION (a company past the first-level cap) is the rule that DOES
+    // keep work out of the queue — see the truncation test below.
     fakeRegistryCpr([
         cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
         cprRoleCompany('22222222', 'Direktør', 'Drift A/S'),
@@ -514,10 +545,9 @@ it('drops companies from the fase-2 queue when a layer is switched off', functio
 
     $test->call('toggleLayer', 'roles');
 
-    // The hidden role company is no longer a visible first-level node, so it
-    // must leave the queue rather than linger as a stale 'pending' entry.
-    expect($queued())->toContain('11111111')
-        ->and($queued())->not->toContain('22222222');
+    // Hidden from the DRAWING, still queued for FETCHING.
+    expect($queued())->toContain('11111111', '22222222')
+        ->and(collect($test->get('graphModel')['nodes'])->pluck('id'))->not->toContain('22222222');
 });
 
 it('preserves already-resolved queue entries when the queue is recomputed', function () {
@@ -599,4 +629,375 @@ it('never carries the contradictory staleData + failed skeleton pair', function 
 
     expect($fresh->skeletonStatus)->toBe('failed')
         ->and($fresh->staleData)->toBeFalse();
+});
+
+/*
+|--------------------------------------------------------------------------
+| Fase 2 (strukturer) + fase 3 (ejendomme) — Task 7
+|--------------------------------------------------------------------------
+| One tick() drives both phases. Everything below pins the BUDGETS (3 cvrs
+| per tick per phase, 24 shared property attempts), the per-cvr independence
+| (one failure never blocks the rest or the next phase) and the retry
+| cascade. Note the queue is deliberately layer-INDEPENDENT: chips filter
+| the BUILD, never the fetching (spec §Chips).
+*/
+
+/**
+ * Full fase-1 + fase-2 + fase-3 fake in ONE Http::fake (the map is replaced,
+ * not merged — see fakeRegistryCpr's docblock).
+ *
+ * $structures: cvr => subsidiaries-payload, or null for a per-cvr FAILURE
+ * (fetchCompanyStructuresPooled maps a non-2xx response to null for that cvr).
+ * $portfolios: cvr => list of portfolio rows, or 'building' for the
+ * empty-list-but-nonzero-count response that means "backend still building",
+ * or null for a hard failure.
+ */
+function fakePersonPhases(array $companies, array $structures = [], array $portfolios = [], array $relationships = []): void
+{
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => $companies]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => $relationships]]),
+        '*/v1/cvr/company-structure*' => function ($request) use ($structures) {
+            $cvr = $request->data()['cvr'] ?? null;
+            // array_key_exists, NOT ?? — a null VALUE means "fail this cvr",
+            // and `null ?? $default` would silently hand back the default,
+            // turning every intended per-cvr failure into a success.
+            $payload = array_key_exists($cvr, $structures) ? $structures[$cvr] : ['subsidiaries' => []];
+
+            return $payload === null
+                ? Http::response('Server error', 500)
+                : Http::response(['data' => $payload]);
+        },
+        '*/property-portfolio*' => function ($request) use ($portfolios) {
+            preg_match('#/company/(\d+)/property-portfolio#', $request->url(), $m);
+            $cvr = $m[1] ?? '';
+            $rows = array_key_exists($cvr, $portfolios) ? $portfolios[$cvr] : [];
+
+            if ($rows === null) {
+                return Http::response('Server error', 500);
+            }
+
+            // 'building' = a successful response whose list is empty while the
+            // count is non-zero: the backend is still assembling the portfolio.
+            if ($rows === 'building') {
+                return Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 7]]]);
+            }
+
+            return Http::response(['data' => ['portfolio' => [
+                'properties' => $rows,
+                'property_count' => count($rows),
+                'total_count' => count($rows),
+            ]]]);
+        },
+        '*/properties/batch*' => Http::response(['data' => []]),
+    ]);
+}
+
+/** One subsidiary payload row as company-structure returns it. */
+function personSubsidiary(string $cvr, string $name = 'Datter ApS', float $share = 100.0): array
+{
+    return ['cvr' => $cvr, 'name' => $name, 'ownership_share' => $share, 'children' => []];
+}
+
+/** One portfolio row hanging off $ownerCvr. */
+function personPortfolioRow(string $ownerCvr, string $matrikelId): array
+{
+    return [
+        'owner_cvr' => $ownerCvr,
+        'matrikel_id' => $matrikelId,
+        'is_matriculated' => true,
+        'address' => 'Testvej '.$matrikelId,
+        'city' => 'Testby',
+    ];
+}
+
+it('takes three structure cvrs per tick and leaves the rest pending', function () {
+    $companies = collect(range(1, 5))
+        ->map(fn ($i) => cprOwnershipCompany(str_pad((string) $i, 8, '0', STR_PAD_LEFT), 100.0, "Own {$i}"))->all();
+
+    fakePersonPhases($companies, [
+        '00000001' => ['subsidiaries' => [personSubsidiary('90000001')]],
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    $test->call('tick');
+
+    $queue = collect($test->get('structureByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s]);
+    expect($queue->filter(fn ($s) => $s === 'loaded')->keys()->all())
+        ->toBe(['00000001', '00000002', '00000003'])
+        ->and($queue->filter(fn ($s) => $s === 'pending')->keys()->all())
+        ->toBe(['00000004', '00000005'])
+        ->and($test->get('structuresStatus'))->toBe('loading');
+
+    // The fetched subsidiary is IN the graph after the tick — the tick rebuilds
+    // (structures change the graph, so this tick is not gratuitous).
+    expect(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('90000001');
+
+    // Second tick drains the remaining two and closes the aggregate.
+    $test->call('tick');
+
+    expect(collect($test->get('structureByCompany'))->filter(fn ($s) => $s === 'pending'))->toHaveCount(0)
+        ->and($test->get('structuresStatus'))->toBe('loaded');
+});
+
+it('marks only the failing cvr failed and still finishes the phase', function () {
+    fakePersonPhases([
+        cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),
+        cprOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
+    ], [
+        '11111111' => null, // hard failure for this cvr only
+        '22222222' => ['subsidiaries' => [personSubsidiary('90000002')]],
+    ], relationships: []);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    $queue = collect($test->get('structureByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s]);
+    expect($queue['11111111'])->toBe('failed')
+        ->and($queue['22222222'])->toBe('loaded')
+        // ≥1 failure ⇒ the aggregate is 'failed' (the note + retryStructures()),
+        // but the healthy cvr's subsidiaries are in the graph regardless.
+        ->and($test->get('structuresStatus'))->toBe('failed')
+        ->and(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('90000002');
+
+    $test->assertSee('Prøv igen');
+});
+
+it('starts fase 3 even when some fase-2 cvrs failed', function () {
+    fakePersonPhases([
+        cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),
+        cprOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
+    ], [
+        '11111111' => null,
+    ], [
+        '11111111' => [personPortfolioRow('11111111', '5001')],
+        '22222222' => [personPortfolioRow('22222222', '5002')],
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    $test->call('tick'); // fase 2 settles (one failed) → fase 3 seeded
+    expect($test->get('structuresStatus'))->toBe('failed')
+        ->and($test->get('propertiesStatus'))->toBe('building')
+        // A failed structure cvr is still a first-level company that can own
+        // properties — it must NOT be excluded from the fase-3 queue.
+        ->and(collect($test->get('propertiesByCompany'))->filter(fn ($s) => $s === 'pending'))->toHaveCount(2);
+
+    $test->call('tick'); // fase 3 drains both
+
+    expect($test->get('propertiesStatus'))->toBe('loaded')
+        ->and(collect($test->get('graphModel')['nodes'])->pluck('id'))
+        ->toContain('bfe:5001', 'bfe:5002');
+});
+
+it('fails the properties phase when the shared attempts budget is exhausted', function () {
+    // One company whose portfolio answers 'building' forever. Each attempt
+    // burns one of the 24 shared budget units.
+    fakePersonPhases(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => 'building'],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles, fase 3 seeded
+
+    expect($test->get('propertiesStatus'))->toBe('building');
+
+    // 24 attempts, then the phase gives up rather than spinning forever.
+    for ($i = 0; $i < 24; $i++) {
+        $test->call('tick');
+    }
+
+    expect($test->get('propertiesAttempts'))->toBe(24)
+        ->and($test->get('propertiesStatus'))->toBe('failed');
+
+    $test->assertSee('Ejendomme kunne ikke hentes');
+
+    // retryProperties() resets the budget so the phase can run again.
+    $test->call('retryProperties');
+
+    expect($test->get('propertiesAttempts'))->toBe(0)
+        ->and($test->get('propertiesStatus'))->toBe('building');
+});
+
+it('cascades a structures retry into fase 3 and enrichment', function () {
+    fakePersonPhases([
+        cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),
+        cprOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
+    ], [
+        '11111111' => null,
+    ], [
+        '11111111' => [personPortfolioRow('11111111', '5001')],
+        '22222222' => [personPortfolioRow('22222222', '5002')],
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles with one failure, fase 3 seeded
+    $test->call('tick'); // fase 3 drains
+    $test->set('enrichmentStatus', 'loaded');
+
+    expect($test->get('propertiesStatus'))->toBe('loaded');
+
+    $test->call('retryStructures');
+
+    // The failed cvr goes back to 'pending' — and so does everything
+    // downstream FOR THAT CVR: a retry can reveal a whole new subtree whose
+    // properties and enrichment were never fetched.
+    $queue = collect($test->get('structureByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s]);
+    expect($queue['11111111'])->toBe('pending')
+        // The cvr that already succeeded is NOT re-fetched.
+        ->and($queue['22222222'])->toBe('loaded')
+        ->and($test->get('structuresStatus'))->toBe('loading')
+        ->and(collect($test->get('propertiesByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s])['11111111'])
+        ->toBe('pending')
+        ->and($test->get('propertiesStatus'))->toBe('pending')
+        ->and($test->get('enrichmentStatus'))->toBe('pending');
+});
+
+it('keeps fetching structures for a layer whose chip is switched off', function () {
+    // Spec §Chips: "Hentning fortsætter uanset chip-tilstand — chips filtrerer
+    // kun bygningen". A role company hidden behind a chip must stay in the
+    // fase-2 queue, or re-enabling the chip would show a company whose
+    // subsidiaries were silently never fetched.
+    fakePersonPhases([
+        cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+        cprRoleCompany('22222222', 'Direktør', 'Drift A/S'),
+    ], [
+        '22222222' => ['subsidiaries' => [personSubsidiary('90000022')]],
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    $test->call('toggleLayer', 'roles');
+
+    $queued = fn () => array_map('strval', array_keys($test->get('structureByCompany')));
+    expect($queued())->toContain('11111111', '22222222');
+
+    $test->call('tick');
+
+    // Fetched while hidden. Switching the chip back on shows the subsidiary
+    // immediately — no second fetch.
+    expect(collect($test->get('graphModel')['nodes'])->pluck('id'))->not->toContain('90000022');
+
+    $test->call('toggleLayer', 'roles');
+
+    expect(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('22222222', '90000022');
+});
+
+it('never queues a truncated first-level company until it is expanded', function () {
+    // 25 owned, cap 20 → 5 truncated. Truncated companies are NOT drawn, so
+    // fetching their structures would be work no one asked for.
+    $companies = collect(range(1, 25))
+        ->map(fn ($i) => cprOwnershipCompany(str_pad((string) $i, 8, '0', STR_PAD_LEFT), 100.0, "Own {$i}"))->all();
+
+    fakePersonPhases($companies, [
+        '00000025' => ['subsidiaries' => [personSubsidiary('90000025')]],
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    expect($test->get('structureByCompany'))->toHaveCount(20)
+        ->and(array_map('strval', array_keys($test->get('structureByCompany'))))->not->toContain('00000025');
+
+    $test->call('expandNode', 'sub:person:root');
+
+    expect(array_map('strval', array_keys($test->get('structureByCompany'))))->toContain('00000025');
+});
+
+it('polls only while there is work left', function () {
+    fakePersonPhases(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => []], // successful, but no properties
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    expect($test->html())->toContain('wire:poll');
+
+    $test->call('tick'); // fase 2 done → fase 3 seeded
+    $test->call('tick'); // fase 3 done (empty)
+
+    expect($test->get('structuresStatus'))->toBe('loaded')
+        ->and($test->get('propertiesStatus'))->toBe('empty');
+
+    // Nothing left to do: an ungated wire:poll would keep hitting the server
+    // for the rest of the page's life.
+    expect($test->html())->not->toContain('wire:poll');
+});
+
+it('leaves the graph untouched on a properties tick that only burned budget', function () {
+    // A 'building' response writes nothing the builder reads, so the tick
+    // skips rebuild() — pure churn otherwise, up to 24 times.
+    //
+    // ⚠️ HONEST LIMIT of this test: it pins the OUTCOME (graph unchanged,
+    // budget advanced, phase still building), not the skipped rebuild()
+    // itself. Mutation-tested — removing the `if ($wrote)` guard keeps all
+    // tests green, because a rebuild on unchanged inputs is deterministic and
+    // therefore produces a byte-identical graph. The guard is an efficiency
+    // measure with no observable state signature; do not mistake this test
+    // for a pin on it.
+    fakePersonPhases(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => 'building'],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles
+
+    $before = $test->get('graphModel');
+    $sentBefore = Http::recorded()->count();
+
+    $test->call('tick'); // 'building' only
+
+    // The graph is byte-identical: nothing was written, so nothing rebuilt.
+    // The 2 requests are the tick's OWN work — the fase-2 recovery refetch
+    // (protected state does not survive a request, see recoverPhaseResults())
+    // plus the one portfolio call — never a rebuild's extra traffic.
+    expect($test->get('graphModel'))->toEqual($before)
+        ->and($test->get('propertiesAttempts'))->toBe(1)
+        ->and(Http::recorded()->count())->toBe($sentBefore + 2)
+        ->and($test->get('propertiesStatus'))->toBe('building');
+});
+
+it('is a no-op tick once every phase has settled', function () {
+    fakePersonPhases(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => [personPortfolioRow('11111111', '5001')]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+    $test->call('tick');
+
+    $before = Http::recorded()->count();
+    $test->call('tick');
+
+    expect(Http::recorded()->count())->toBe($before);
+});
+
+it('keeps fase-2 results across a hydration boundary by refetching them', function () {
+    fakePersonPhases(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        ['11111111' => ['subsidiaries' => [personSubsidiary('90000011')]]],
+        ['11111111' => [personPortfolioRow('11111111', '5001')]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 loads 11111111, seeds fase 3
+
+    expect(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('90000011');
+
+    // Next poll tick = a fresh instance. The already-'loaded' structure lives
+    // only in protected state, so it must be recovered — otherwise the fase-3
+    // tick would rebuild a graph that has LOST the subsidiary it just showed.
+    $fresh = rehydratedFrom($test);
+    $fresh->tick();
+
+    expect(collect($fresh->graphModel['nodes'])->pluck('id'))
+        ->toContain('11111111', '90000011', 'bfe:5001')
+        ->and($fresh->propertiesStatus)->toBe('loaded');
 });

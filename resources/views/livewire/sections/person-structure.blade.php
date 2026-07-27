@@ -52,7 +52,16 @@
         @elseif($skeletonStatus === 'empty')
             <p class="text-sm text-zinc-500" wire:key="skeleton-empty">{{ __('Ingen aktive selskabsrelationer') }}</p>
         @elseif($skeletonStatus === 'loaded')
-            <div class="metis-org-chart">
+            {{-- The progressive-phase poll. GATED: it exists only while a
+                 phase actually has work queued, so it stops of its own accord
+                 once every phase settles. An ungated wire:poll would keep
+                 hitting the server every 2s for the whole life of the page —
+                 on a section whose only remaining job is to sit still. --}}
+            <div class="metis-org-chart"
+                @if($structuresStatus === 'loading' || in_array($propertiesStatus, ['pending', 'building'], true))
+                    wire:poll.2s="tick"
+                @endif
+            >
                 @php
                     $graph = $this->graphModel;
                 @endphp
@@ -77,18 +86,19 @@
 
                 {{-- Phase status notes. Only FAILURE states are visible: a
                      settled 'loaded'/'empty' phase says nothing (2a's rule —
-                     'empty' silently means none, not an error). Phases 2-4
-                     have no retry action yet (Tasks 7-8 add them), so their
-                     notes are informational until then. --}}
+                     'empty' silently means none, not an error). Phase 4 has no
+                     retry action yet (Task 8 adds it). --}}
                 @if($structuresStatus === 'failed')
                     <p class="mgraph-note" wire:key="structures-failed">
                         {{ __('Nogle datterselskaber kunne ikke hentes.') }}
+                        <button type="button" wire:click="retryStructures" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
                 @endif
 
                 @if($propertiesStatus === 'failed')
                     <p class="mgraph-note" wire:key="properties-failed">
                         {{ __('Ejendomme kunne ikke hentes.') }}
+                        <button type="button" wire:click="retryProperties" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
                 @endif
 

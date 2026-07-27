@@ -12,10 +12,11 @@ use TheFountainhead\Metis\Services\RegistryApi;
  * PersonNetwork org-chart + separate board table; the roles are now a layer
  * in the graph.
  *
- * This task implements FASE 1 (skeleton) only. Phases 2-4 (structures,
- * properties, enrichment) land in Tasks 7-8 — but every status property they
- * need is DEFINED here, at their 'pending' start value, so the Blade's
- * phase-gating can be written once and never revisited.
+ * Fase 1 (skeleton) runs at mount; fases 2 (structures) and 3 (properties)
+ * are driven by tick(), the single wire:poll entry point. Fase 4 (enrichment)
+ * lands in Task 8 — its status property is DEFINED here, at its 'pending'
+ * start value, so the Blade's phase-gating was written once and never
+ * revisited.
  *
  * 🚨 CPR must NEVER appear in the graph payload — node ids, edges, labels or
  * DOM attributes. $this->query IS the CPR (the URL already carries it, as it
@@ -32,6 +33,24 @@ class PersonStructure extends MetisSection
         'person_roots' => 20,
         'person_roles' => 15,
     ];
+
+    /**
+     * cvrs fetched per tick, per phase. Structures go out as ONE pooled call
+     * (RegistryApi's own concurrency 3), so a tick costs the slowest of three
+     * rather than their sum; properties are sequential per-cvr calls, capped
+     * at the same 3 so a tick stays inside a poll interval either way.
+     */
+    protected const CVRS_PER_TICK = 3;
+
+    /**
+     * Shared 'building'-attempt budget for the WHOLE properties phase — not
+     * per cvr. A portfolio the backend never finishes assembling answers
+     * 'building' forever; without a ceiling the poll spins for the life of the
+     * page. Shared rather than per-cvr because the cost being bounded is the
+     * user's total wait, which N companies each burning their own budget would
+     * multiply by N.
+     */
+    protected const MAX_PROPERTIES_ATTEMPTS = 24;
 
     /**
      * The flat {nodes, edges} graph model — public so the Alpine graph can
@@ -56,6 +75,9 @@ class PersonStructure extends MetisSection
 
     /** cvr => 'pending'|'building'|'loaded'|'empty'|'failed' (Task 7). */
     public array $propertiesByCompany = [];
+
+    /** Consumed units of the SHARED MAX_PROPERTIES_ATTEMPTS budget. */
+    public int $propertiesAttempts = 0;
 
     /** @var 'pending'|'loaded'|'failed' — fase 4 (Task 8). */
     public string $enrichmentStatus = 'pending';
@@ -195,6 +217,7 @@ class PersonStructure extends MetisSection
         $this->structureByCompany = [];
         $this->propertiesStatus = 'pending';
         $this->propertiesByCompany = [];
+        $this->propertiesAttempts = 0;
         $this->enrichmentStatus = 'pending';
         $this->structureData = [];
         $this->propertyData = [];
@@ -381,34 +404,51 @@ class PersonStructure extends MetisSection
     }
 
     /**
-     * The first-level cvrs that are actually DRAWN — i.e. inside the
-     * person_roots / person_roles caps (or revealed by an expand). Read off
-     * the built graph rather than recomputed, so the cap/demotion logic lives
-     * in exactly one place: the builder.
+     * The first-level cvrs the phases must fetch: every ownership root and
+     * role company inside the person_roots / person_roles caps (or revealed by
+     * an expand). Read off a BUILT graph rather than recomputed, so the
+     * cap/demotion logic lives in exactly one place: the builder.
+     *
+     * 🚨 Built against ALL layers, deliberately NOT $this->layers. Two rules
+     * that look alike but are not:
+     *
+     *   - TRUNCATION (a company past the first-level cap) is about work no one
+     *     asked for: the company is not drawn and cannot be revealed without
+     *     an explicit expand, so fetching its subsidiaries is pure waste. It
+     *     stays out of the queues, exactly as before.
+     *   - A CHIP is about what is drawn right now. Spec §Chips: "Hentning
+     *     fortsætter uanset chip-tilstand — chips filtrerer kun bygningen",
+     *     so that re-enabling a chip "viser allerede-hentet data øjeblikkeligt".
+     *
+     * Reading the cvrs off $this->graphModel conflated the two: probed before
+     * this changed, switching the roles chip off dropped the role company out
+     * of structureByCompany entirely, so its subsidiaries were never fetched —
+     * and switching the chip back on would have shown a company that silently
+     * had no subtree, with nothing left in any queue to ever repair it.
      */
     protected function visibleFirstLevelCvrs(): array
     {
-        return collect($this->graphModel['nodes'])
+        return collect($this->buildGraph(['ownership', 'roles'])['nodes'])
             ->filter(fn ($n) => ($n['depth'] ?? null) === 1 && ($n['cvr'] ?? null))
             ->pluck('cvr')->unique()->values()->all();
     }
 
     /**
-     * Fase 2's work queue: cvr => status for every VISIBLE first-level company
-     * (ownership roots AND role companies — both must be able to reveal
-     * subsidiaries). Task 7 consumes this, taking the 'pending' entries 3 at a
-     * time.
+     * Fase 2's work queue: cvr => status for every first-level company inside
+     * the caps (ownership roots AND role companies — both must be able to
+     * reveal subsidiaries). tick() consumes this, taking the 'pending' entries
+     * CVRS_PER_TICK at a time.
      *
-     * Recomputed from the CURRENT graph on every visibility change, because
-     * visibility is not fixed at mount: a chip toggle hides companies (which
-     * must leave the queue rather than linger as stale 'pending' work) and a
-     * person-root expand reveals companies that were behind the first-level
-     * cap (which must join it, or their subsidiaries are never fetched).
-     * Truncated companies are deliberately absent until expanded.
+     * Recomputed on every visibility change, because visibility is not fixed
+     * at mount: a person-root expand reveals companies that were behind the
+     * first-level cap, and those must join the queue or their subsidiaries are
+     * never fetched. Truncated companies are deliberately absent until
+     * expanded; chip state is deliberately IRRELEVANT (see
+     * visibleFirstLevelCvrs()).
      *
-     * Statuses already SETTLED by Task 7 are carried over verbatim — a
-     * recompute must never reset 'loaded'/'failed' back to 'pending', or every
-     * toggle would re-fetch structures the component already holds.
+     * Statuses already SETTLED are carried over verbatim — a recompute must
+     * never reset 'loaded'/'failed' back to 'pending', or every toggle would
+     * re-fetch structures the component already holds.
      */
     protected function refreshStructureQueue(): void
     {
@@ -426,6 +466,322 @@ class PersonStructure extends MetisSection
         if (in_array('pending', $this->structureByCompany, true) && $this->structuresStatus !== 'loading') {
             $this->structuresStatus = 'loading';
         }
+    }
+
+    /**
+     * Fase 3's work queue, the exact mirror of refreshStructureQueue(): same
+     * cvrs, same carry-over-settled-statuses discipline, same reopen rule.
+     *
+     * It only fills once fase 2 has settled (structuresSettled()), so an
+     * expand mid-fase-2 does not start fetching portfolios for a company
+     * whose subsidiaries are still arriving — but once fase 3 IS running, an
+     * expand's newly revealed companies join it here, through rebuild(), the
+     * same single path every queue addition takes.
+     *
+     * One portfolio call per first-level company covers its whole subtree:
+     * the rows carry owner_cvr and the builder hangs each on whichever node
+     * matches, root or subsidiary. Never one call per node.
+     */
+    protected function refreshPropertyQueue(): void
+    {
+        if (! $this->structuresSettled()) {
+            return;
+        }
+
+        $this->propertiesByCompany = collect($this->visibleFirstLevelCvrs())
+            ->mapWithKeys(fn ($cvr) => [$cvr => $this->propertiesByCompany[$cvr] ?? 'pending'])
+            ->all();
+
+        // Same stranded-work reasoning as fase 2's aggregate, with one extra
+        // case: 'failed' here can mean the shared budget ran out, and that is
+        // a decision the user reverses with retryProperties() — not something
+        // a rebuild may quietly undo. So a failed aggregate stays failed.
+        if (in_array('pending', $this->propertiesByCompany, true)
+            && ! in_array($this->propertiesStatus, ['building', 'failed'], true)) {
+            $this->propertiesStatus = 'building';
+        }
+    }
+
+    /**
+     * Fase 2 is done when nothing is left to fetch. 'failed' cvrs count as
+     * settled: a company whose structure could not be fetched can still own
+     * properties, and blocking fase 3 on it would let one bad cvr withhold the
+     * whole property layer (spec regel 4).
+     */
+    protected function structuresSettled(): bool
+    {
+        return ! in_array('pending', $this->structureByCompany, true)
+            && ! in_array('loading', $this->structureByCompany, true);
+    }
+
+    /**
+     * The single wire:poll entry point for BOTH progressive phases. Fase 2
+     * first and exclusively: structures change which companies exist in the
+     * graph, so starting fase 3 in the same tick would key portfolios off a
+     * queue that is about to change.
+     *
+     * 🚨 Every dispatch decision below is gated on the per-cvr QUEUE, never on
+     * the aggregate status. The aggregate is DERIVED from the queue (see
+     * settleStructures()), so gating on it would be gating on a shadow of the
+     * real state — and a queue entry stranded behind a stale aggregate would
+     * never be fetched again, silently and permanently.
+     */
+    public function tick(): void
+    {
+        if ($this->skeletonStatus !== 'loaded') {
+            return;
+        }
+
+        if (in_array('pending', $this->structureByCompany, true)) {
+            $this->tickStructures();
+
+            return;
+        }
+
+        if (in_array('pending', $this->propertiesByCompany, true)) {
+            $this->tickProperties();
+        }
+    }
+
+    /**
+     * One fase-2 batch: the first CVRS_PER_TICK pending cvrs, in queue order
+     * (which is companies order — refreshStructureQueue preserves the graph's
+     * node order, which is the caller's companies order), fetched as ONE
+     * pooled call.
+     *
+     * A null in the pooled result means that cvr failed; it settles as
+     * 'failed' and the phase carries on. Per-cvr independence is the whole
+     * point of the map: one unreachable company must not withhold every other
+     * company's subsidiaries.
+     */
+    protected function tickStructures(): void
+    {
+        // A tick is a fresh request, so the protected builder inputs are gone.
+        // Abandoning here (rather than rebuilding on partial input) keeps the
+        // last-good graph, exactly as toggleLayer/expandNode do — and leaves
+        // the queue untouched, so the next tick retries the same batch.
+        if (! $this->rehydrateBeforeRebuild()) {
+            return;
+        }
+
+        $batch = collect($this->structureByCompany)
+            ->filter(fn ($status) => $status === 'pending')
+            ->take(self::CVRS_PER_TICK)
+            ->keys()->map(fn ($cvr) => (string) $cvr)->all();
+
+        if ($batch === []) {
+            return;
+        }
+
+        $results = $this->attempt(fn () => app(RegistryApi::class)->fetchCompanyStructuresPooled($batch)) ?? [];
+
+        foreach ($batch as $cvr) {
+            $structure = $results[$cvr] ?? null;
+
+            if ($structure === null) {
+                $this->structureByCompany[$cvr] = 'failed';
+
+                continue;
+            }
+
+            $this->structureData[$cvr] = $structure;
+            $this->structureByCompany[$cvr] = 'loaded';
+        }
+
+        // Rebuild unconditionally: a settled batch changes the graph whenever
+        // ANY cvr loaded (new subsidiary nodes), and even an all-failed batch
+        // must rebuild — that is the call that refreshes the queues and lets
+        // fase 3 seed itself off the now-settled fase 2.
+        $this->settleStructures();
+        $this->rebuild();
+    }
+
+    /**
+     * Derives the fase-2 aggregate from the queue. Only ever called once the
+     * queue itself has been written, so the aggregate cannot drift from it:
+     * 'failed' iff at least one cvr failed, otherwise 'loaded'.
+     */
+    protected function settleStructures(): void
+    {
+        if (! $this->structuresSettled()) {
+            $this->structuresStatus = 'loading';
+
+            return;
+        }
+
+        $this->structuresStatus = in_array('failed', $this->structureByCompany, true) ? 'failed' : 'loaded';
+    }
+
+    /**
+     * One fase-3 batch: up to CVRS_PER_TICK pending cvrs, each a separate
+     * fetchCompanyPropertyPortfolio (limit 500 — same value, and therefore the
+     * same cache key, as CompanyStructure/CompanyOverview use, so a large
+     * portfolio reuses their warm cache instead of paging in the API's
+     * default 25 and making every cap count a lie).
+     *
+     * Four per-cvr outcomes; only the third consumes budget:
+     *   failure         → 'failed' for that cvr, the others carry on;
+     *   empty list, 0   → 'empty' — a genuine "owns nothing", not an error;
+     *   empty list, >0  → still 'building' server-side: the cvr stays pending
+     *                     work and burns ONE unit of the shared budget;
+     *   rows            → 'loaded', rows stored as a PLAIN LIST (the builder
+     *                     throws on build()'s ['list','usage'] wrapper).
+     */
+    protected function tickProperties(): void
+    {
+        if (! $this->rehydrateBeforeRebuild()) {
+            return;
+        }
+
+        $batch = collect($this->propertiesByCompany)
+            ->filter(fn ($status) => $status === 'pending')
+            ->take(self::CVRS_PER_TICK)
+            ->keys()->map(fn ($cvr) => (string) $cvr)->all();
+
+        if ($batch === []) {
+            return;
+        }
+
+        $wrote = false;
+
+        foreach ($batch as $cvr) {
+            $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio($cvr, limit: 500));
+            $portfolio = $result['portfolio'] ?? null;
+
+            if ($portfolio === null) {
+                $this->propertiesByCompany[$cvr] = 'failed';
+
+                continue;
+            }
+
+            $list = $portfolio['properties'] ?? [];
+            $count = $portfolio['property_count'] ?? $portfolio['total_count'] ?? 0;
+
+            if ($list === [] && $count > 0) {
+                $this->propertiesAttempts++;
+
+                continue; // stays 'pending' — retried next tick, budget permitting
+            }
+
+            if ($list === []) {
+                $this->propertiesByCompany[$cvr] = 'empty';
+
+                continue;
+            }
+
+            $this->propertyData[$cvr] = $list;
+            $this->propertiesByCompany[$cvr] = 'loaded';
+            $wrote = true;
+        }
+
+        $this->settleProperties();
+
+        // Rebuild only when rows actually landed. A tick that merely burned
+        // budget on 'building' responses changed nothing the builder reads, so
+        // rebuilding would be pure churn — and churn here is not free: it
+        // re-derives both queues and re-serialises the whole graph model to
+        // the browser on every one of up to 24 attempts.
+        if ($wrote) {
+            $this->rebuild();
+        }
+    }
+
+    /**
+     * Derives the fase-3 aggregate from its queue + the shared budget.
+     *
+     * The budget check comes FIRST and is terminal: an exhausted budget means
+     * the remaining cvrs will never settle on their own, so leaving the
+     * aggregate at 'building' would poll forever behind a promise that cannot
+     * be kept. 'failed' gives the Blade a retry button instead of a spinner.
+     */
+    protected function settleProperties(): void
+    {
+        if ($this->propertiesAttempts >= self::MAX_PROPERTIES_ATTEMPTS
+            && in_array('pending', $this->propertiesByCompany, true)) {
+            $this->propertiesStatus = 'failed';
+
+            return;
+        }
+
+        if (in_array('pending', $this->propertiesByCompany, true)) {
+            $this->propertiesStatus = 'building';
+
+            return;
+        }
+
+        if (in_array('failed', $this->propertiesByCompany, true)) {
+            $this->propertiesStatus = 'failed';
+
+            return;
+        }
+
+        // Every cvr settled successfully: 'empty' only when NONE of them had a
+        // single property — one company with rows makes the phase 'loaded'.
+        $this->propertiesStatus = in_array('loaded', $this->propertiesByCompany, true) ? 'loaded' : 'empty';
+    }
+
+    /**
+     * Fase-2 retry: puts the failed cvrs back to 'pending' and lets the poll
+     * pick them up again. The cvrs that already succeeded are NOT re-fetched.
+     *
+     * 🚨 RETRY CASCADE. A structures retry is not a fase-2-local event: a cvr
+     * that failed has NO subtree in the graph, so whatever fase 3 and fase 4
+     * concluded about it was concluded about a company with no subsidiaries.
+     * If the retry now succeeds, that subtree arrives un-propertied and
+     * un-enriched, permanently, because both later phases have already settled
+     * for it. So the retry resets fase 3 for exactly the affected cvrs, and
+     * enrichment wholesale (it is graph-wide, not per-cvr, so there is no
+     * "affected subset" to reset).
+     */
+    public function retryStructures(): void
+    {
+        $retried = collect($this->structureByCompany)
+            ->filter(fn ($status) => $status === 'failed')
+            ->keys()->map(fn ($cvr) => (string) $cvr)->all();
+
+        if ($retried === []) {
+            return;
+        }
+
+        foreach ($retried as $cvr) {
+            $this->structureByCompany[$cvr] = 'pending';
+
+            // Reset rather than unset: the cvr is still a first-level company
+            // and still belongs in fase 3's queue. Unsetting would work too
+            // (refreshPropertyQueue would re-seed it), but only via a path
+            // gated on fase 2 being settled — leaving a window where the cvr
+            // is in NEITHER queue, which is exactly the stranded-work shape
+            // this component has already been bitten by twice.
+            if (array_key_exists($cvr, $this->propertiesByCompany)) {
+                $this->propertiesByCompany[$cvr] = 'pending';
+            }
+
+            unset($this->propertyData[$cvr]);
+        }
+
+        $this->structuresStatus = 'loading';
+        // Back to the phase's own start state: refreshPropertyQueue() is gated
+        // on fase 2 being settled, so it will re-seed itself (including the
+        // reset cvrs) the moment the retried structures land.
+        $this->propertiesStatus = 'pending';
+        $this->propertiesAttempts = 0;
+        $this->enrichmentStatus = 'pending';
+    }
+
+    /**
+     * Fase-3 retry: clears the shared budget and puts every unsettled cvr back
+     * to 'pending'. 'loaded'/'empty' cvrs keep their result — a retry after a
+     * budget exhaustion should resume the phase, not re-fetch portfolios that
+     * already arrived.
+     */
+    public function retryProperties(): void
+    {
+        $this->propertiesAttempts = 0;
+        $this->propertiesByCompany = collect($this->propertiesByCompany)
+            ->map(fn ($status) => in_array($status, ['loaded', 'empty'], true) ? $status : 'pending')
+            ->all();
+        $this->propertiesStatus = 'building';
+        $this->enrichmentStatus = 'pending';
     }
 
     /**
@@ -457,35 +813,94 @@ class PersonStructure extends MetisSection
             return false;
         }
 
-        if ($this->companiesData !== []) {
-            return true;
+        if ($this->companiesData === []) {
+            $companies = $this->fetchCompanies();
+
+            if ($companies === null) {
+                $this->staleData = true;
+
+                return false;
+            }
+
+            // Classify off the freshly-fetched rows rather than the stale property.
+            $this->companiesData = $companies;
+            [$ownership] = $this->classify();
+
+            if (! $this->fetchCrossOwnership($ownership)) {
+                // Drop the half-recovered inputs so no later code path in this
+                // same request mistakes them for a complete set.
+                $this->companiesData = [];
+                $this->crossOwnershipData = [];
+                $this->staleData = true;
+
+                return false;
+            }
+
+            $this->staleData = false;
         }
 
-        $companies = $this->fetchCompanies();
-
-        if ($companies === null) {
-            $this->staleData = true;
-
-            return false;
-        }
-
-        // Classify off the freshly-fetched rows rather than the stale property.
-        $this->companiesData = $companies;
-        [$ownership] = $this->classify();
-
-        if (! $this->fetchCrossOwnership($ownership)) {
-            // Drop the half-recovered inputs so no later code path in this same
-            // request mistakes them for a complete set.
-            $this->companiesData = [];
-            $this->crossOwnershipData = [];
-            $this->staleData = true;
-
-            return false;
-        }
-
-        $this->staleData = false;
+        $this->recoverPhaseResults();
 
         return true;
+    }
+
+    /**
+     * Recovers the fase-2/3 results a previous request already fetched. Both
+     * live in protected state, so a poll tick — a fresh instance — starts with
+     * empty maps while the PUBLIC per-cvr statuses still say 'loaded'.
+     *
+     * Without this, every tick rebuilds a graph that has LOST everything the
+     * earlier ticks added: the subsidiaries appear, then vanish on the next
+     * poll, then reappear, with the queues insisting the work is done.
+     *
+     * Deliberately partial-tolerant, and deliberately NOT a failure path: this
+     * is the "less complete" case, not the "false" one, so a cvr whose refetch
+     * fails is reset to 'pending' and handed back to the poll loop rather than
+     * abandoning the whole rebuild. Structures come from the CACHED endpoint
+     * (5 min), properties from the same cached limit-500 call the first fetch
+     * used — both are normally cache hits, never a re-scrape.
+     *
+     * Task 8 tightens this further (enrichment-completeness per cvr); the
+     * contract here is only that a rebuilt graph never silently loses a layer
+     * a settled status claims it has.
+     */
+    protected function recoverPhaseResults(): void
+    {
+        foreach ($this->structureByCompany as $cvr => $status) {
+            if ($status !== 'loaded' || isset($this->structureData[$cvr])) {
+                continue;
+            }
+
+            $structure = $this->attempt(fn () => app(RegistryApi::class)->fetchCompanyStructureCached((string) $cvr));
+
+            if ($structure === null || $structure === []) {
+                $this->structureByCompany[$cvr] = 'pending';
+
+                continue;
+            }
+
+            $this->structureData[(string) $cvr] = $structure;
+        }
+
+        foreach ($this->propertiesByCompany as $cvr => $status) {
+            if ($status !== 'loaded' || isset($this->propertyData[$cvr])) {
+                continue;
+            }
+
+            $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolio((string) $cvr, limit: 500));
+            $list = $result['portfolio']['properties'] ?? [];
+
+            if ($list === []) {
+                $this->propertiesByCompany[$cvr] = 'pending';
+
+                continue;
+            }
+
+            // PLAIN LIST — buildForPerson() throws on build()'s
+            // ['list' => …, 'usage' => …] wrapper rather than silently
+            // rendering a graph with zero properties.
+            $this->propertyData[(string) $cvr] = $list;
+        }
     }
 
     /**
@@ -510,8 +925,11 @@ class PersonStructure extends MetisSection
 
     /**
      * The single choke point for graph state: every visibility change (mount,
-     * chip toggle, expand) ends here, so the fase-2 queue is refreshed here
-     * too rather than at each call site — one place that cannot be forgotten.
+     * chip toggle, expand) and every completed poll batch ends here, so BOTH
+     * phase queues are refreshed here rather than at each call site — one
+     * place that cannot be forgotten. Nothing anywhere else may add a
+     * 'pending' entry to either map: this is where an aggregate reopens, so an
+     * entry added elsewhere would sit behind a closed phase forever.
      *
      * Counts are PRE-cap by design; see the $ownershipCount docblock.
      */
@@ -524,6 +942,7 @@ class PersonStructure extends MetisSection
         $this->roleCount = count($roles);
 
         $this->refreshStructureQueue();
+        $this->refreshPropertyQueue();
     }
 
     /**
