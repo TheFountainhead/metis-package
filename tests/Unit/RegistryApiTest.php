@@ -827,3 +827,59 @@ it('company caches are deliberately tenant-neutral — revisit if registry-api e
     expect(Cache::has('metis:company_info:11111111'))->toBeTrue()
         ->and(Cache::has('metis:company_structure:11111111'))->toBeTrue();
 });
+
+// Transport-hærdning (Flare 9097433): ConnectionException er en SØSKENDE til
+// RequestException og gik tidligere LIGE IGENNEM get()/post() som uhåndteret
+// exception. Testene her KASTER ConnectionException (aldrig fake-500 — uden
+// ->throw() kaster en fejl-status intet, så det ville teste den forkerte gren).
+it('returns the backward-compatible error shape when the transport times out', function () {
+    Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('cURL error 28: Operation timed out after 30002 milliseconds'));
+
+    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+
+    expect($result)->toBe(['error' => 'upstream_error', 'status' => 0]);
+});
+
+it('retries exactly once on ConnectionException and succeeds on the second attempt', function () {
+    // Http::failedConnection() er den kanoniske måde at simulere en
+    // transport-fejl DER RESPEKTERER retry-laget — en rå throw fra en
+    // fake-closure omgår retry-håndteringen og re-invokeres aldrig.
+    // failedConnection() returnerer en closure($request), så den invokeres
+    // manuelt i en stateful fake for fail-then-succeed.
+    $calls = 0;
+    Http::fake(function ($request) use (&$calls) {
+        $calls++;
+        if ($calls === 1) {
+            return (Http::failedConnection('cURL error 28: transient'))($request);
+        }
+
+        return Http::response(['data' => ['companies' => [['cvr' => '1']]]]);
+    });
+
+    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+
+    expect($calls)->toBe(2)
+        ->and($result['companies'][0]['cvr'])->toBe('1');
+});
+
+it('does not retry on a received 5xx — a response is an answer, not transport noise', function () {
+    $calls = 0;
+    Http::fake(function () use (&$calls) {
+        $calls++;
+
+        return Http::response(['message' => 'boom'], 500);
+    });
+
+    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+
+    expect($calls)->toBe(1)
+        ->and($result['error'])->toBe('upstream_error');
+});
+
+it('never leaks the curl message (varying ms) into the returned error value', function () {
+    Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('cURL error 28: Operation timed out after 30002 milliseconds'));
+
+    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+
+    expect(json_encode($result))->not->toContain('30002')->not->toContain('cURL');
+});

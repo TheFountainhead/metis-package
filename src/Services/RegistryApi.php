@@ -33,9 +33,29 @@ class RegistryApi
         // standalone Metis without full sign-up/login plumbing.
         $token = session('metis_user_token') ?: config('metis.registry_api.key');
 
+        // Transport-hærdning (Flare 9097433, 27/7-26): registry-api's kolde
+        // search-by-cpr-sti har et server-worst-case på ~40s (to kædede
+        // gov-API'er synkront) — 30s klient-timeout timede ud BY CONSTRUCTION.
+        // Mønstret her er propageret fra m2softs RegistryApiService (bevist
+        // mod SAMME backend): 60s budget, 10s connect, én retry KUN på
+        // transport-fejl (ConnectionException) — aldrig på modtaget 4xx/5xx,
+        // som er svar, ikke transportstøj. NB retry($times) er TOTALE forsøg,
+        // ikke antal retries — retry(1) er en no-op (empirisk verificeret;
+        // m2softs retry(1, ...) har samme fælde). retry(throw: true) er
+        // bevidst: throw:false gør IKKE kaldet kaste-frit for
+        // ConnectionException (ingen Response at returnere) — get()/post()
+        // fanger i stedet. throw: false er PÅKRÆVET af to grunde: (1) uden
+        // den ville retry-laget kaste RequestException på ENHVER fejl-status
+        // selv i kald uden ->throw() (fx searchPersonByName's 500→0-fallback,
+        // som ville knække); (2) den gør IKKE ConnectionException kaste-fri
+        // (ingen Response at returnere ved exhaustion) — hvilket her er
+        // præcis den ønskede asymmetri: status-fejl opfører sig som før,
+        // transport-fejl når stadig get()/post()'s catch.
         return Http::withToken($token)
             ->acceptJson()
-            ->timeout(30)
+            ->timeout(60)
+            ->connectTimeout(10)
+            ->retry(2, 2000, fn (\Exception $e) => $e instanceof ConnectionException, throw: false)
             ->baseUrl(config('metis.registry_api.url'));
     }
 
@@ -917,6 +937,15 @@ class RegistryApi
         return ['error' => 'upstream_error', 'status' => $e->getCode()];
     }
 
+    /**
+     * ConnectionException er en SØSKENDE til RequestException (extends
+     * Exception, ikke HttpClientException) — en timeout gik derfor LIGE
+     * IGENNEM de her helpers og ramte 15 kaldsteder som uhåndteret exception
+     * (Flare 9097433; PR #103 lukkede kun de 2 kaldsteder der selv omslutter
+     * HTTP og stillede aldrig dette nabospørgsmål). Fanges nu til samme
+     * bagudkompatible ['error' => ...]-shape som alle 13 forbrugere allerede
+     * isset()-guarder på; status 0 = "intet svar modtaget".
+     */
     protected function get(string $endpoint, array $query = []): ?array
     {
         try {
@@ -926,6 +955,8 @@ class RegistryApi
                 ->json('data');
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -938,7 +969,22 @@ class RegistryApi
                 ->json('data');
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
+    }
+
+    /**
+     * Som errorFrom(): report() bevarer observability (en bar catch gør det
+     * IKKE selv — det var rescue()'s eneste dyd), beskeden propagerer ALDRIG
+     * (cURL-tekstens varierende ms ville splitte Flare-buckets, og den kan
+     * bære upstream-echo af input).
+     */
+    protected function transportErrorFrom(ConnectionException $e): array
+    {
+        report($e);
+
+        return ['error' => 'upstream_error', 'status' => 0];
     }
 
     /**
@@ -956,6 +1002,8 @@ class RegistryApi
             return $request->get('/v1/debt-search', $filters)->throw()->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -968,6 +1016,8 @@ class RegistryApi
                 ->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -986,6 +1036,8 @@ class RegistryApi
             return $request->post('/v1/property-explore', $filters)->throw()->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -998,6 +1050,8 @@ class RegistryApi
                 ->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -1009,6 +1063,8 @@ class RegistryApi
             return $this->client()->get('/v1/watchlists')->throw()->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -1027,6 +1083,8 @@ class RegistryApi
                 ->json('data');
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -1039,6 +1097,8 @@ class RegistryApi
                 ->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -1053,6 +1113,8 @@ class RegistryApi
             ])->throw()->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -1062,6 +1124,8 @@ class RegistryApi
             return $this->client()->delete("/v1/watchlists/{$id}")->throw()->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -1075,6 +1139,8 @@ class RegistryApi
             ], fn ($v) => $v !== null))->throw()->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
@@ -1084,6 +1150,8 @@ class RegistryApi
             return $this->client()->patch("/v1/alerts/{$alertId}/read")->throw()->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
         }
     }
 
