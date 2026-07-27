@@ -2363,3 +2363,13 @@ it('keeps a SCHEME-LESS website, because that is what registry-api mostly return
 
     expect($node['card']['website'] ?? null)->toBe('kirketorvet.dk');
 });
+
+it('gates the card streetview image on the svOk metadata flag in the shared partial', function () {
+    // Host-JS' metadata-gate sætter svOk; uden gaten viste kortet Googles grå
+    // "no imagery"-placeholder (200 OK — :src/onerror kan ikke skelne), og
+    // uden :src-guarden ville placeholder-billedet stadig blive DOWNLOADET.
+    $partial = file_get_contents(__DIR__.'/../../../../resources/views/livewire/sections/partials/ownership-graph.blade.php');
+
+    expect($partial)->toContain('card.node.card?.streetview_url && card.svOk')
+        ->and($partial)->toContain("card.svOk ? (card.node.card?.streetview_url ?? '') : ''");
+});

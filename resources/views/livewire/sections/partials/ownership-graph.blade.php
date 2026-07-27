@@ -87,7 +87,11 @@
                      directive — without the doubled @ Blade parses this as the
                      start of that directive (matching on the opening paren) and
                      the template fails to compile for want of an @enderror. --}}
-                <img x-show="card.node.card?.streetview_url" :src="card.node.card?.streetview_url ?? ''"
+                {{-- svOk sættes af host-JS' metadata-gate: Google svarer 200 med en
+                     grå "no imagery"-placeholder hvor der ingen dækning er, så
+                     :src alene kan ikke skelne foto fra placeholder. Uden svOk
+                     (ældre host-bundle) forbliver billedet skjult — graceful. --}}
+                <img x-show="card.node.card?.streetview_url && card.svOk" :src="card.svOk ? (card.node.card?.streetview_url ?? '') : ''"
                      class="mgraph-card__img" loading="lazy" @@error="$el.style.display='none'" alt="">
                 <dl class="mgraph-card__rows">
                     <template x-for="row in cardRows(card.node)" :key="row.label">
