@@ -17,6 +17,14 @@ class RegistryApi
      */
     protected const POOL_CONCURRENCY = 6;
 
+    /**
+     * Bounds fetchCompanyStructuresPooled()'s Http::pool() fan-out. Lower
+     * than POOL_CONCURRENCY: company-structure is a heavier endpoint
+     * (koncerntræ-walk) than the plain company-info lookup, so this trickles
+     * more conservatively against registry-api.
+     */
+    protected const STRUCTURE_POOL_CONCURRENCY = 3;
+
     protected function client()
     {
         // F1 pilot — if user has set personal token in session (via /alerts
@@ -374,6 +382,53 @@ class RegistryApi
     }
 
     /**
+     * Pooled, UCACHET variant af fetchCompanyStructure() til fase 2's
+     * graf-udvidelse: hvert cvr hentes samtidigt via Http::pool, præcis én
+     * gang pr. kald. Ingen cache her — fetchCompanyStructureCached() dækker
+     * rehydrering, denne metode dækker den engangs-udvidelse hvor et cvr
+     * aldrig skal genbruge et 5-minutters-gammelt svar.
+     *
+     * Samme uafhængigheds-garanti som fetchCompanyInfosPooled(): ét cvr's
+     * fejl giver null for det cvr, aldrig en exception ud til kalderen.
+     */
+    public function fetchCompanyStructuresPooled(array $cvrs): array
+    {
+        if (empty($cvrs)) {
+            return [];
+        }
+
+        $cvrs = array_values(array_unique($cvrs));
+
+        $token = session('metis_user_token') ?: config('metis.registry_api.key');
+        $baseUrl = config('metis.registry_api.url');
+
+        $responses = Http::pool(fn ($pool) => collect($cvrs)
+            ->map(fn ($cvr) => $pool->as($cvr)
+                ->withToken($token)
+                ->acceptJson()
+                ->timeout(30)
+                ->baseUrl($baseUrl)
+                ->post('/v1/cvr/company-structure', ['cvr' => $cvr]))
+            ->all(), concurrency: self::STRUCTURE_POOL_CONCURRENCY);
+
+        $results = [];
+
+        foreach ($cvrs as $cvr) {
+            $response = $responses[$cvr] ?? null;
+
+            try {
+                $results[$cvr] = $response instanceof \Illuminate\Http\Client\Response && $response->successful()
+                    ? $response->json('data')
+                    : null;
+            } catch (\Throwable $e) {
+                $results[$cvr] = null;
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * Batch-opslag af ejendomme via matrikel-id. Chunker i grupper à 200
      * (backend-grænse) og fladgør 'data'-listerne fra hver chunk til én liste.
      *
@@ -533,6 +588,34 @@ class RegistryApi
     public function fetchCompaniesByCpr(string $cpr): ?array
     {
         return $this->post('/v1/cvr/search-by-cpr', ['cpr' => $cpr]);
+    }
+
+    /**
+     * Cachet variant af fetchCompaniesByCpr() — nøglen hashes (sha1) så et
+     * rå CPR-nummer aldrig havner i cache-nøglen eller -loggen. 5 min TTL:
+     * lang nok til at dæmpe gentagne opslag under samme graf-udvidelse, kort
+     * nok til at nye selskabsregistreringer dukker op hurtigt. Fejl caches
+     * ALDRIG — se noten ved fetchCompanyInfo().
+     */
+    public function fetchCompaniesByCprCached(string $cpr): ?array
+    {
+        $cacheKey = 'metis:companies_by_cpr:'.sha1($cpr);
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
+        $result = $this->fetchCompaniesByCpr($cpr);
+
+        // post()'s catch-block returnerer aldrig null ved en RequestException
+        // — den giver et ['error' => ..., 'status' => ...]-array. Den fejlform
+        // skal behandles som "fejlede" på samme måde som et rent null-svar,
+        // ellers cacher vi en 500'er i 5 minutter.
+        if (! is_null($result) && ! isset($result['error'])) {
+            Cache::put($cacheKey, $result, 300);
+        }
+
+        return $result;
     }
 
     public function fetchPropertiesByCpr(string $cpr): ?array

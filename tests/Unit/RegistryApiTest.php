@@ -544,3 +544,97 @@ it('fetchCompanyInfosPooled: bounds Http::pool() to a concurrency of 6, never un
     $spy->shouldHaveReceived('pool')
         ->withArgs(fn ($callback, $concurrency) => is_callable($callback) && $concurrency === 6);
 });
+
+it('caches companies-by-cpr on a hashed key and never caches null', function () {
+    // fetchCompaniesByCpr() bruger post()-hjælperen, som unwrapper via
+    // ->json('data') — fixturen skal derfor wrappes i 'data' for at nå frem.
+    Http::fake(['*/v1/cvr/search-by-cpr' => Http::response(['data' => ['companies' => [['cvr' => '1']]]])]);
+
+    $api = app(RegistryApi::class);
+    $api->fetchCompaniesByCprCached('0101011234');
+    $api->fetchCompaniesByCprCached('0101011234');
+
+    Http::assertSentCount(1);
+    expect(Cache::has('metis:companies_by_cpr:'.sha1('0101011234')))->toBeTrue();
+});
+
+it('cacher IKKE et fejlet svar fra companies-by-cpr', function () {
+    // post()-hjælperen returnerer aldrig null ved en RequestException — den
+    // giver ['error' => ..., 'status' => 500]. Den fejlform må ikke caches.
+    Http::fake(['*/v1/cvr/search-by-cpr' => Http::response('Server error', 500)]);
+
+    $api = app(RegistryApi::class);
+    $first = $api->fetchCompaniesByCprCached('0101011234');
+    $second = $api->fetchCompaniesByCprCached('0101011234');
+
+    expect($first)->toHaveKey('error')->and($second)->toHaveKey('error');
+    Http::assertSentCount(2);
+    expect(Cache::has('metis:companies_by_cpr:'.sha1('0101011234')))->toBeFalse();
+});
+
+it('companies-by-cpr cache key never contains the raw cpr', function () {
+    Http::fake(['*/v1/cvr/search-by-cpr' => Http::response(['data' => ['companies' => []]])]);
+
+    app(RegistryApi::class)->fetchCompaniesByCprCached('0101011234');
+
+    // sha1-nøglen er deterministisk — selve asserten er at ingen key med rå CPR findes.
+    expect(Cache::has('metis:companies_by_cpr:0101011234'))->toBeFalse();
+});
+
+it('pools structure fetches with per-cvr null on failure', function () {
+    Http::fake([
+        '*/v1/cvr/company-structure' => Http::sequence()
+            ->push(['data' => ['owners' => [], 'subsidiaries' => []]])
+            ->push(['error' => 'x'], 500),
+    ]);
+
+    $r = app(RegistryApi::class)->fetchCompanyStructuresPooled(['11111111', '22222222']);
+
+    expect($r['11111111'])->toBeArray()->and($r['22222222'])->toBeNull();
+});
+
+it('fetchCompanyStructuresPooled: dedupes input to one HTTP call per unique cvr', function () {
+    Http::fake([
+        '*/v1/cvr/company-structure' => Http::response(['data' => ['owners' => []]]),
+    ]);
+
+    $r = app(RegistryApi::class)->fetchCompanyStructuresPooled(['11111111', '11111111']);
+
+    Http::assertSentCount(1);
+    expect($r)->toHaveCount(1);
+});
+
+it('fetchCompanyStructuresPooled: empty input gives empty array without HTTP call', function () {
+    Http::fake();
+
+    $r = app(RegistryApi::class)->fetchCompanyStructuresPooled([]);
+
+    expect($r)->toBe([]);
+    Http::assertNothingSent();
+});
+
+it('fetchCompanyStructuresPooled: does not cache — refetches every call', function () {
+    Http::fake([
+        '*/v1/cvr/company-structure' => Http::sequence()
+            ->push(['data' => ['owners' => [], 'v' => 1]])
+            ->push(['data' => ['owners' => [], 'v' => 2]]),
+    ]);
+
+    $api = app(RegistryApi::class);
+    $first = $api->fetchCompanyStructuresPooled(['11111111']);
+    $second = $api->fetchCompanyStructuresPooled(['11111111']);
+
+    Http::assertSentCount(2);
+    expect($first['11111111']['v'])->toBe(1)
+        ->and($second['11111111']['v'])->toBe(2);
+});
+
+it('fetchCompanyStructuresPooled: bounds Http::pool() to a concurrency of 3', function () {
+    $spy = Http::spy();
+
+    $api = app(RegistryApi::class);
+    $api->fetchCompanyStructuresPooled(['77777777']);
+
+    $spy->shouldHaveReceived('pool')
+        ->withArgs(fn ($callback, $concurrency) => is_callable($callback) && $concurrency === 3);
+});
