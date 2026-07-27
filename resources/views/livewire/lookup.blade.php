@@ -25,7 +25,7 @@
             <livewire:metis-company-tinglysning :query="$query" lazy />
         @elseif($type === 'cpr')
             <livewire:metis-person-summary :query="$query" lazy />
-            <livewire:metis-person-network :query="$query" lazy />
+            <livewire:metis-person-structure :query="$query" lazy />
             <livewire:metis-person-companies :query="$query" lazy />
             <livewire:metis-person-info :query="$query" lazy />
             <livewire:metis-person-properties :query="$query" lazy />
