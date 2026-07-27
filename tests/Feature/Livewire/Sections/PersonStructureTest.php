@@ -922,8 +922,18 @@ it('polls only while there is work left', function () {
     expect($test->get('structuresStatus'))->toBe('loaded')
         ->and($test->get('propertiesStatus'))->toBe('empty');
 
-    // Nothing left to do: an ungated wire:poll would keep hitting the server
-    // for the rest of the page's life.
+    // Task 8: fase 3 settling is no longer the end — fase 4 (enrichment) runs
+    // on the SAME poll, so the gate must still be open here or the phase would
+    // be stranded with nothing left to trigger it. It closes one tick later.
+    expect($test->html())->toContain('wire:poll')
+        ->and($test->get('enrichmentStatus'))->toBe('pending');
+
+    $test->call('tick'); // fase 4
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    // NOW there is nothing left to do: an ungated wire:poll would keep hitting
+    // the server for the rest of the page's life.
     expect($test->html())->not->toContain('wire:poll');
 });
 
@@ -971,8 +981,14 @@ it('is a no-op tick once every phase has settled', function () {
     );
 
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
-    $test->call('tick');
-    $test->call('tick');
+    $test->call('tick'); // fase 2
+    $test->call('tick'); // fase 3
+    // Task 8: fase 4 settles on the third tick (the pooled company-info call
+    // plus the in-graph properties/batch call), so the no-op tick this test is
+    // about is the FOURTH — before that there was still work left.
+    $test->call('tick'); // fase 4
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
 
     $before = Http::recorded()->count();
     $test->call('tick');
@@ -1192,4 +1208,534 @@ it('never counts the shared budget past its own ceiling', function () {
 
     expect($test->get('propertiesAttempts'))->toBe(24)
         ->and($test->get('propertiesStatus'))->toBe('failed');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Fase 4 (berigelse) — Task 8
+|--------------------------------------------------------------------------
+| Enrichment is graph-wide, not per-cvr: one pooled company-info call for the
+| ENRICHABLE nodes actually in the graph, one properties/batch call for the
+| property nodes actually in the graph, then streetview URLs layered on top.
+|
+| The whole resolution half of that (companyEnrichmentFromInfo /
+| propertyEnrichmentFromBatch / attachStreetviewUrls) is SHARED with 2a's
+| CompanyStructure through the ResolvesGraphEnrichment trait — 2a's own suite
+| is the proof the extraction was behaviour-preserving, which is why those
+| tests were not touched. The two financials-unit pins below are ported here
+| verbatim in intent, so the shared rule is pinned from BOTH components: a
+| future edit that "fixes" the unit for one caller breaks the other's test.
+*/
+
+/**
+ * Fase-1..4 fake. Extends fakePersonPhases with a per-cvr company-info
+ * endpoint (the pooled enrichment call) and a properties/batch handler that
+ * ECHOES BACK the matrikel_ids it was asked for, so a test can assert on the
+ * payload the component actually sent rather than on a canned response.
+ *
+ * $companyInfo: cvr => company payload (financials/contact/etc).
+ * $batchExtra: matrikel_id => extra fields merged into that property's batch row.
+ */
+function fakePersonEnrichment(
+    array $companies,
+    array $structures = [],
+    array $portfolios = [],
+    array $companyInfo = [],
+    array $batchExtra = [],
+    array $relationships = [],
+): void {
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => $companies]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => $relationships]]),
+        '*/v1/cvr/company-structure*' => function ($request) use ($structures) {
+            $cvr = $request->data()['cvr'] ?? null;
+            $payload = array_key_exists($cvr, $structures) ? $structures[$cvr] : ['subsidiaries' => []];
+
+            return $payload === null
+                ? Http::response('Server error', 500)
+                : Http::response(['data' => $payload]);
+        },
+        '*/property-portfolio*' => function ($request) use ($portfolios) {
+            preg_match('#/company/(\d+)/property-portfolio#', $request->url(), $m);
+            $cvr = $m[1] ?? '';
+            $rows = array_key_exists($cvr, $portfolios) ? $portfolios[$cvr] : [];
+
+            if ($rows === null) {
+                return Http::response('Server error', 500);
+            }
+
+            if ($rows === 'building') {
+                return Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 7]]]);
+            }
+
+            return Http::response(['data' => ['portfolio' => [
+                'properties' => $rows,
+                'property_count' => count($rows),
+                'total_count' => count($rows),
+            ]]]);
+        },
+        '*/properties/batch*' => function ($request) use ($batchExtra) {
+            $ids = $request->data()['matrikel_ids'] ?? [];
+
+            return Http::response(['data' => collect($ids)->map(fn ($mid) => array_merge([
+                'matrikel_id' => $mid,
+                'bbr' => ['buildings' => [['usage' => 130, 'total_area' => 150]]],
+            ], $batchExtra[$mid] ?? []))->all()]);
+        },
+        // Specific-before-generic does not apply — Http::fake matches in
+        // insertion order, so the per-cvr company endpoint must come AFTER the
+        // structure/portfolio patterns (which are more specific paths) but
+        // still match '/v1/cvr/company/<cvr>'.
+        '*/v1/cvr/company/*' => function ($request) use ($companyInfo) {
+            preg_match('#/v1/cvr/company/(\d+)#', $request->url(), $m);
+            $cvr = $m[1] ?? '';
+
+            if (! array_key_exists($cvr, $companyInfo)) {
+                return Http::response('Not found', 404);
+            }
+
+            return Http::response(['data' => ['company' => array_merge(['cvr' => $cvr], $companyInfo[$cvr])]]);
+        },
+    ]);
+}
+
+/**
+ * Runs tick() until every phase has settled (bounded). The stop condition is
+ * deliberately the SAME predicate the Blade's wire:poll gate uses — a browser
+ * stops polling exactly here, so a test that stopped earlier (or later) would
+ * be asserting against a state the real page never sits in.
+ */
+function tickUntilSettled(\Livewire\Features\SupportTesting\Testable $test, int $max = 10): void
+{
+    for ($i = 0; $i < $max; $i++) {
+        $test->call('tick');
+
+        if (! in_array($test->get('structuresStatus'), ['pending', 'loading'], true)
+            && ! in_array($test->get('propertiesStatus'), ['pending', 'building'], true)
+            && $test->get('enrichmentStatus') !== 'pending') {
+            return;
+        }
+    }
+}
+
+it('sends only the matrikel-ids of property nodes actually in the graph to properties/batch', function () {
+    // The person owns ONE company whose portfolio carries three properties,
+    // but properties_per_company caps the graph at 6 — so instead the cap is
+    // exercised from the other side: a SECOND company's portfolio rows are
+    // fetched into $propertyData too, and the batch must still only ask about
+    // the matrikel-ids that became nodes.
+    //
+    // 🚨 The failure this pins: sending the union of every fetched portfolio
+    // list. On a person with several property-heavy companies that is a batch
+    // of hundreds of ids per enrichment pass, of which only the handful the
+    // caps actually drew can ever be shown.
+    $rows = collect(range(1, 9))->map(fn ($n) => personPortfolioRow('11111111', '900'.$n))->all();
+
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => $rows],
+        ['11111111' => ['financials' => []]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+    $test->call('loadEnrichment');
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    // The graph drew 6 of the 9 (properties_per_company cap).
+    $drawn = collect($test->get('graphModel')['nodes'])
+        ->where('kind', 'property')->pluck('id')
+        ->map(fn ($id) => substr($id, 4))->sort()->values()->all();
+
+    expect($drawn)->toHaveCount(6);
+
+    Http::assertSent(function ($request) use ($drawn) {
+        if (! str_contains($request->url(), '/properties/batch')) {
+            return false;
+        }
+
+        $sent = collect($request->data()['matrikel_ids'] ?? [])->sort()->values()->all();
+
+        return $sent === $drawn;
+    });
+
+    // And never the full portfolio list.
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/properties/batch')
+        && count($request->data()['matrikel_ids'] ?? []) > 6);
+});
+
+it('never sends the person root or a person node to the company-info pool', function () {
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        [],
+        ['11111111' => ['financials' => []]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+    $test->call('loadEnrichment');
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/11111111'));
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/person'));
+    // The CPR must never be sent as if it were a cvr.
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/0101011234'));
+});
+
+it('passes API-sourced financials through as hele kroner (no *1000) — shared F-A pin, person side', function () {
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        [],
+        ['11111111' => ['financials' => [
+            ['year' => '2024', 'equity' => 92438600, 'assets' => 92901000, 'profit_loss' => 87545200],
+        ]]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+    $test->call('loadEnrichment');
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    $node = collect($test->get('graphModel')['nodes'])->firstWhere('id', '11111111');
+    expect($node['card']['equity'])->toBe(92_438_600)
+        ->and($node['card']['result'])->toBe(87_545_200);
+});
+
+it('converts pdf-sourced financials from t.DKK to hele kroner (*1000) — shared F-A pin, person side', function () {
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        [],
+        ['11111111' => ['financials' => [
+            ['year' => '2024', 'equity' => 2527, 'assets' => 9000, 'profit_loss' => 316, 'source' => 'pdf'],
+        ]]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+    $test->call('loadEnrichment');
+
+    $node = collect($test->get('graphModel')['nodes'])->firstWhere('id', '11111111');
+    expect($node['card']['equity'])->toBe(2_527_000)
+        ->and($node['card']['result'])->toBe(316_000);
+});
+
+it('gates enrichment on both progressive phases having settled', function () {
+    // Five cvrs = two ticks of fase 2 before it settles, so an enrichment
+    // attempt after ONE tick must be a no-op: the cvr set is still growing,
+    // and pooling now would enrich companies the next tick may add siblings to
+    // (and would settle enrichmentStatus='loaded', permanently blocking the
+    // real pass behind its own idempotency gate).
+    $companies = collect(range(1, 5))
+        ->map(fn ($n) => cprOwnershipCompany(str_repeat((string) $n, 8), 100.0, "Holding {$n}"))
+        ->all();
+
+    fakePersonEnrichment($companies, [], [], collect($companies)
+        ->mapWithKeys(fn ($c) => [$c['cvr'] => ['financials' => []]])->all());
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // 3 of 5 structures
+
+    expect($test->get('structuresStatus'))->toBe('loading');
+
+    $test->call('loadEnrichment');
+    expect($test->get('enrichmentStatus'))->toBe('pending');
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/11111111'));
+
+    tickUntilSettled($test);
+    $test->call('loadEnrichment');
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+});
+
+it('gates enrichment on fase 3 too, not just fase 2', function () {
+    // The fase-3 half of the gate above, pinned SEPARATELY because tick()
+    // early-returns while property work is pending and therefore never
+    // exercises it — mutation-tested: dropping propertiesSettled() from
+    // loadEnrichment()'s gate left the whole suite green until this test
+    // existed. loadEnrichment() is public (the Blade's retry calls it, and so
+    // does any future trigger), so the gate has to hold on its own.
+    //
+    // Enriching mid-fase-3 would batch a property set that is still growing
+    // AND settle 'loaded', permanently blocking the real pass behind the
+    // idempotency gate — the property cards would never arrive.
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => 'building'],
+        ['11111111' => ['financials' => [['year' => '2024', 'equity' => 500_000, 'profit_loss' => 1]]]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick'); // fase 2 settles, fase 3 seeded
+    $test->call('tick'); // fase 3 answers 'building' — still not settled
+
+    expect($test->get('propertiesStatus'))->toBe('building');
+
+    $test->call('loadEnrichment');
+
+    expect($test->get('enrichmentStatus'))->toBe('pending');
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/cvr/company/11111111'));
+});
+
+it('runs enrichment from the tick loop once phases 2 and 3 settle, without a separate trigger', function () {
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => [personPortfolioRow('11111111', '2573669')]],
+        ['11111111' => ['financials' => [['year' => '2024', 'equity' => 500_000, 'profit_loss' => 50_000]]]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    $node = collect($test->get('graphModel')['nodes'])->firstWhere('id', '11111111');
+    expect($node['card']['equity'])->toBe(500_000);
+});
+
+it('does not let a failed phase withhold enrichment', function () {
+    // A structures failure is settled, not pending: the companies that DID
+    // load still deserve their cards (spec regel 4's reasoning, one phase on).
+    fakePersonEnrichment(
+        [
+            cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),
+            cprOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
+        ],
+        ['22222222' => null],
+        [],
+        [
+            '11111111' => ['financials' => [['year' => '2024', 'equity' => 700_000, 'profit_loss' => 1]]],
+            '22222222' => ['financials' => [['year' => '2024', 'equity' => 800_000, 'profit_loss' => 2]]],
+        ],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    expect($test->get('structuresStatus'))->toBe('failed')
+        ->and($test->get('enrichmentStatus'))->toBe('loaded');
+
+    $node = collect($test->get('graphModel')['nodes'])->firstWhere('id', '11111111');
+    expect($node['card']['equity'])->toBe(700_000);
+});
+
+/**
+ * A PER-CVR pool failure is NOT a phase failure. Verified against the live
+ * client rather than assumed: fetchCompanyInfosPooled() maps an unreachable
+ * cvr (a ConnectionException object in the pool result, or any non-2xx) to a
+ * null entry and returns normally — it does not throw. So the company simply
+ * gets no card, and the phase settles 'loaded' like any other.
+ *
+ * That distinction is the reason 'failed' is reachable ONLY via a total
+ * failure (the pooled call itself throwing), which is what the next test
+ * covers. Pinning it here stops a future "make enrichment stricter" change
+ * from turning one unreachable company into a graph-wide error banner.
+ */
+it('treats a single unreachable company as a missing card, not a failed phase', function () {
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),
+            cprOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+        '*/properties/batch*' => Http::response(['data' => []]),
+        '*/v1/cvr/company/22222222*' => Http::response('Server error', 500),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => [
+            'cvr' => '11111111',
+            'financials' => [['year' => '2024', 'equity' => 111_000, 'profit_loss' => 1]],
+        ]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    $nodes = collect($test->get('graphModel')['nodes']);
+    expect($nodes->firstWhere('id', '11111111')['card']['equity'])->toBe(111_000)
+        ->and($nodes->firstWhere('id', '22222222')['card'] ?? null)->toBeNull();
+});
+
+it('flips enrichment to failed on a total pool failure and lets retryEnrichment re-run it', function () {
+    // A TOTAL failure — the pooled call itself throwing, rather than a cvr
+    // coming back null — is the only path to 'failed' (see the test above).
+    // Simulated by swapping in a RegistryApi whose pooled fetch throws once,
+    // because no Http::fake can make Http::pool() itself blow up.
+    $api = new class extends \TheFountainhead\Metis\Services\RegistryApi
+    {
+        public int $calls = 0;
+
+        public function fetchCompanyInfosPooled(array $cvrs): array
+        {
+            $this->calls++;
+
+            if ($this->calls === 1) {
+                throw new \Illuminate\Http\Client\ConnectionException('pool down');
+            }
+
+            return ['11111111' => [
+                'cvr' => '11111111',
+                'financials' => [['year' => '2024', 'equity' => 123_000, 'profit_loss' => 9_000]],
+            ]];
+        }
+    };
+
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        [],
+        ['11111111' => ['financials' => []]],
+    );
+
+    app()->instance(\TheFountainhead\Metis\Services\RegistryApi::class, $api);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    expect($test->get('enrichmentStatus'))->toBe('failed');
+
+    $test->call('retryEnrichment');
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+    $node = collect($test->get('graphModel')['nodes'])->firstWhere('id', '11111111');
+    expect($node['card']['equity'])->toBe(123_000);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Enrichment across a hydration boundary
+|--------------------------------------------------------------------------
+| $enrichmentData is PROTECTED, so it is gone on every subsequent request
+| while enrichmentStatus still says 'loaded'. Recovery must be partial-
+| tolerant and must not turn an interactive request (a chip toggle) into a
+| synchronous fetch storm: every source it reads is a warm cache or a single
+| cheap batch, and a piece it cannot recover is handed BACK to the poll loop
+| rather than force-fetched here.
+*/
+
+it('reproduces the cards after a rehydrate + chip toggle without a fetch storm', function () {
+    fakePersonEnrichment(
+        [
+            cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+            cprRoleCompany('22222222', 'Direktør', 'Drift A/S'),
+        ],
+        [],
+        ['11111111' => [personPortfolioRow('11111111', '2573669')]],
+        [
+            '11111111' => ['financials' => [['year' => '2024', 'equity' => 500_000, 'profit_loss' => 50_000]]],
+            '22222222' => ['financials' => [['year' => '2024', 'equity' => 300_000, 'profit_loss' => 30_000]]],
+        ],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    $before = Http::recorded()->count();
+
+    // A brand new instance carrying only PUBLIC state — every protected
+    // builder input, enrichmentData included, is back at its default.
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    $node = collect($fresh->graphModel['nodes'])->firstWhere('id', '11111111');
+    expect($node['card']['equity'])->toBe(500_000);
+
+    $prop = collect($fresh->graphModel['nodes'])->firstWhere('kind', 'property');
+    expect($prop['card']['usage'] ?? null)->toBe('Bolig');
+
+    // Every source the recovery reads is cached (24h company-info, 5min
+    // portfolio/structure) except the single properties/batch call, which is
+    // one request regardless of how many properties there are. A regression
+    // that re-pools every company or re-fetches every portfolio uncached
+    // would blow straight past this ceiling.
+    $spent = Http::recorded()->count() - $before;
+    expect($spent)->toBeLessThanOrEqual(2);
+});
+
+it('hands an unrecoverable enrichment piece back to the poll loop instead of fetching everything synchronously', function () {
+    // The company-info cache is the recovery source for company cards. When
+    // it has been evicted for ONE cvr, that cvr's enrichment cannot be
+    // recovered cheaply — so the recovery must reset the phase to 'pending'
+    // and let the poll loop re-run it, NOT re-pool every company inline in
+    // what is an interactive (chip-toggle) request.
+    fakePersonEnrichment(
+        [
+            cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),
+            cprOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
+        ],
+        [],
+        [],
+        [
+            '11111111' => ['financials' => [['year' => '2024', 'equity' => 111_000, 'profit_loss' => 1]]],
+            '22222222' => ['financials' => [['year' => '2024', 'equity' => 222_000, 'profit_loss' => 2]]],
+        ],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    // Evict ONE cvr's company-info cache — the other stays warm.
+    \Illuminate\Support\Facades\Cache::forget('metis:company_info:22222222');
+
+    $before = Http::recorded()->count();
+
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    expect($fresh->enrichmentStatus)->toBe('pending');
+
+    // One pooled miss for the evicted cvr is the ceiling — never a full
+    // re-pool of both, and never a synchronous re-fetch of the whole phase.
+    $spent = \Illuminate\Support\Facades\Http::recorded()->count() - $before;
+    expect($spent)->toBeLessThanOrEqual(2);
+});
+
+it('keeps the graph rendered while a reset enrichment phase is re-run by the poll', function () {
+    fakePersonEnrichment(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        [],
+        ['11111111' => ['financials' => [['year' => '2024', 'equity' => 500_000, 'profit_loss' => 1]]]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    \Illuminate\Support\Facades\Cache::forget('metis:company_info:11111111');
+
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    // Reset, not failed — and the company node is still there, just without
+    // its card until the poll re-runs the phase.
+    expect($fresh->enrichmentStatus)->toBe('pending')
+        ->and(collect($fresh->graphModel['nodes'])->pluck('id'))->toContain('11111111');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Dashed role edges — CSS variant (Task 1's host-JS counterpart)
+|--------------------------------------------------------------------------
+*/
+
+it('ships the dashed edge CSS variant the role layer depends on', function () {
+    // The builder emits style='dashed' on role edges (Task 4) and the host JS
+    // maps that to `mgraph-edge-line mgraph-edge-dashed` (Task 1). Without the
+    // rule in THIS package's partial the class is inert and role edges render
+    // as solid — indistinguishable from ownership, which is the one visual
+    // distinction the whole role layer rests on.
+    $partial = file_get_contents(__DIR__.'/../../../../resources/views/livewire/sections/partials/ownership-graph.blade.php');
+
+    expect($partial)->toContain('.mgraph-edge-dashed')
+        ->and($partial)->toMatch('/\.mgraph-edge-dashed\s*\{[^}]*stroke-dasharray:\s*4 4/');
 });

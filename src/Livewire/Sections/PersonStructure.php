@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Livewire\Sections;
 
+use TheFountainhead\Metis\Livewire\Concerns\ResolvesGraphEnrichment;
 use TheFountainhead\Metis\Services\OwnershipGraphBuilder;
 use TheFountainhead\Metis\Services\RegistryApi;
 
@@ -25,6 +26,14 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class PersonStructure extends MetisSection
 {
+    /**
+     * Fase 4's resolution half, shared verbatim with 2a's CompanyStructure:
+     * the pooled company-info fetch, the source-dependent t.DKK/kroner rule,
+     * the properties/batch map and the streetview URLs. Only the GATING is
+     * written here, against this component's own phase model.
+     */
+    use ResolvesGraphEnrichment;
+
     /** 2a's caps + fase 2b's two first-level caps (spec §First-level caps). */
     protected const CAPS = [
         'subsidiary_depth' => 2,
@@ -540,7 +549,19 @@ class PersonStructure extends MetisSection
 
         if (in_array('pending', $this->propertiesByCompany, true)) {
             $this->tickProperties();
+
+            return;
         }
+
+        // Fase 4 rides the SAME poll rather than a separate x-init/Blade
+        // trigger: it is the only phase with no work of its own to queue, so
+        // the tick that settles fase 3 is exactly the moment it becomes
+        // runnable. loadEnrichment() carries its own gates (skeleton loaded,
+        // both phases settled, not already loaded), so this unconditional
+        // call is a no-op whenever it is not yet its turn — including on
+        // every tick after it has finished, which is what lets the Blade's
+        // poll-gate switch the polling off without stranding the phase.
+        $this->loadEnrichment();
     }
 
     /**
@@ -820,6 +841,100 @@ class PersonStructure extends MetisSection
     }
 
     /**
+     * Fase 4. Pools company-info for the enrichable cvrs in the graph and
+     * batches the property nodes, then rebuilds so buildForPerson can attach
+     * cards/signals. Resolution is entirely in ResolvesGraphEnrichment; the
+     * three gates below are this component's own.
+     *
+     * 1. The skeleton must be loaded — without it there is no graph to enrich,
+     *    and enrichmentCvrs() would resolve against an empty node list and
+     *    settle 'loaded' over nothing.
+     * 2. Fases 2 AND 3 must both be SETTLED. Mirrors 2a's properties-gate
+     *    reasoning, one phase wider because this component has two
+     *    progressive phases rather than one: enriching mid-fase-2 pools cvrs
+     *    the next tick may add siblings to, and enriching mid-fase-3 batches a
+     *    property set that is still growing. 'failed' counts as settled for
+     *    both (spec regel 4's reasoning applied one phase on): a company whose
+     *    subsidiaries or portfolio will never arrive is not a reason to
+     *    withhold every OTHER company's key figures forever.
+     * 3. Already 'loaded' → no-op, so the tick loop calling this on every
+     *    settled tick does not re-pool and re-batch each time. retryEnrichment()
+     *    is the way back in after a 'failed'.
+     *
+     * Per-cvr pool failures are nulls in the map and simply produce no card
+     * (the builder's isset() check). Only a TOTAL failure — the pooled call
+     * itself throwing — flips this to 'failed', matching 2a exactly.
+     */
+    public function loadEnrichment(): void
+    {
+        if ($this->skeletonStatus !== 'loaded') {
+            return;
+        }
+
+        if (! $this->structuresSettled() || ! $this->propertiesSettled()) {
+            return;
+        }
+
+        if ($this->enrichmentStatus === 'loaded') {
+            return;
+        }
+
+        // Same degradation contract as every other rebuilding action: never
+        // enrich (and therefore never rebuild) on partially recovered input.
+        if (! $this->rehydrateBeforeRebuild()) {
+            return;
+        }
+
+        // rehydrateBeforeRebuild() can RE-OPEN a phase (a cvr whose result
+        // could not be recovered is handed back to the poll loop). Enriching
+        // anyway would pool against a graph that is about to change and then
+        // lock itself 'loaded' against the pass that matters.
+        if (! $this->structuresSettled() || ! $this->propertiesSettled()) {
+            return;
+        }
+
+        try {
+            $this->fetchEnrichmentData();
+        } catch (\Throwable $e) {
+            report($e);
+            $this->enrichmentStatus = 'failed';
+
+            return;
+        }
+
+        $this->enrichmentStatus = 'loaded';
+        $this->rebuild();
+    }
+
+    /**
+     * Explicit retry after enrichmentStatus === 'failed' (mirrors
+     * retryStructures/retryProperties) — resets to 'pending' so
+     * loadEnrichment()'s own idempotency gate does not no-op the retry.
+     */
+    public function retryEnrichment(): void
+    {
+        $this->enrichmentStatus = 'pending';
+        $this->loadEnrichment();
+    }
+
+    /**
+     * Fase 3's settled test, the mirror of structuresSettled(). 'failed' and
+     * 'empty' both count: neither is work still in flight.
+     */
+    protected function propertiesSettled(): bool
+    {
+        return ! in_array('pending', $this->propertiesByCompany, true)
+            && ! in_array('building', $this->propertiesByCompany, true)
+            && ! in_array($this->propertiesStatus, ['pending', 'building'], true);
+    }
+
+    /** Trait hook: this component holds one portfolio list PER cvr; flatten them. */
+    protected function enrichmentPropertyRows(): array
+    {
+        return array_merge(...array_values(array_filter($this->propertyData) ?: [[]]));
+    }
+
+    /**
      * Recovers the protected builder inputs, which do not survive hydration.
      * Cache-first, so this is normally a cache hit (5 min) rather than a fresh
      * API round-trip.
@@ -921,6 +1036,68 @@ class PersonStructure extends MetisSection
             $this->settleStructures();
             $this->settleProperties();
         }
+
+        $this->recoverEnrichmentResults();
+    }
+
+    /**
+     * Fase-4's slice of the recovery pass. $enrichmentData is protected, so it
+     * is gone on every subsequent request while enrichmentStatus still says
+     * 'loaded' — and unlike fases 2/3 there is no per-cvr map to downgrade,
+     * so the whole phase is either recovered or handed back.
+     *
+     * Runs AFTER the fase-2/3 recovery above, deliberately: the enrichment
+     * scope is GRAPH-derived (the trait's enrichmentCvrs/enrichmentMatrikelIds
+     * read $graphModel), and the graph is only worth reading once the
+     * structures and portfolios it is built from have been recovered. Hence
+     * the rebuild() before the fetch, exactly as 2a's refreshEnrichmentData()
+     * does and for the same reason.
+     *
+     * 🚨 PARTIAL-TOLERANT, AND NEVER A SYNCHRONOUS FETCH STORM. The sources it
+     * reads are all warm caches (24h company-info, plus one properties/batch
+     * call whose size is bounded by the caps, not by the portfolio) — but a
+     * cache that has been EVICTED turns the pooled read into a real network
+     * pass, and this runs inside interactive requests (a chip toggle, an
+     * expand). So an incomplete recovery does NOT force-fetch the rest here:
+     * the phase is reset to 'pending' and the poll loop re-runs it, which is
+     * the same discipline fases 2/3 already follow, and which keeps the cost
+     * of a chip click bounded no matter how cold the cache is.
+     *
+     * Not a failure path either (the graph stays on screen, just without
+     * cards until the poll catches up) — a missing key figure makes the graph
+     * LESS COMPLETE, never FALSE, which is the line rehydrateBeforeRebuild()
+     * draws between degrading and abandoning.
+     */
+    protected function recoverEnrichmentResults(): void
+    {
+        if ($this->enrichmentStatus !== 'loaded') {
+            return;
+        }
+
+        if ($this->enrichmentData['companies'] !== [] && $this->enrichmentData['properties'] !== []) {
+            return;
+        }
+
+        // Build against the just-recovered inputs so the graph-derived scope
+        // describes the graph the cards are about to be attached to.
+        $this->rebuild();
+
+        // CACHE-ONLY: never a pooled fan-out from inside a click. A cvr whose
+        // 24h entry has been evicted is simply absent from the result, which
+        // is what makes this return false.
+        $complete = rescue(fn () => $this->fetchEnrichmentDataFromCache(), false);
+
+        if ($complete) {
+            return;
+        }
+
+        // Hand the phase back rather than half-applying it: a graph showing
+        // cards on some companies and not others reads as "these ones have no
+        // key figures", which is a claim about the companies rather than about
+        // the fetch. Cleared and reset, the poll re-runs the whole pass a tick
+        // later and the cards arrive together.
+        $this->enrichmentData = ['companies' => [], 'properties' => []];
+        $this->enrichmentStatus = 'pending';
     }
 
     /** @return bool whether any cvr was downgraded out of a settled state */

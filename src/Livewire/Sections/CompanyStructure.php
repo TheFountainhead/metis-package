@@ -2,12 +2,23 @@
 
 namespace TheFountainhead\Metis\Livewire\Sections;
 
-use TheFountainhead\Metis\Services\BbrUsageCategory;
+use TheFountainhead\Metis\Livewire\Concerns\ResolvesGraphEnrichment;
 use TheFountainhead\Metis\Services\OwnershipGraphBuilder;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 class CompanyStructure extends MetisSection
 {
+    /**
+     * Task 8: the enrichment-resolution half of this component now lives in a
+     * trait shared with PersonStructure — companyEnrichmentFromInfo() (with
+     * its source-dependent t.DKK/kroner rule), propertyEnrichmentFromBatch(),
+     * attachStreetviewUrls() and fetchEnrichmentData(). The GATING
+     * (loadEnrichment's three gates, retryEnrichment, the rehydration guard)
+     * stays here, because it is written against this component's own status
+     * model, which is not the person component's.
+     */
+    use ResolvesGraphEnrichment;
+
     /**
      * Loft for antal 'building'-forsøg (Task 8's blade re-poller loadProperties
      * med stigende delay via $propertiesAttempts). Uden loft ville en portefølje
@@ -350,46 +361,6 @@ class CompanyStructure extends MetisSection
     }
 
     /**
-     * Reduces a company-info payload to the builder's flat enrichment shape.
-     * financials arrives newest-first from the API (CompanyOverview.php's
-     * assumption) but is NOT trusted blindly here — sorted explicitly by
-     * `year` so an unsorted/out-of-order payload still resolves to the
-     * actual latest fiscal year, not just array index 0.
-     *
-     * KONTRAKT: ALLE beløb i enrichment/card-shapen (dette array, og alt der
-     * flyder derfra ind i graphModel/node.card) er HELE KRONER — aldrig
-     * t.DKK/tusinder, aldrig mio. registry-api's financials-rækker er
-     * kilde-afhængige i enhed (company-info.blade.php's $toTdkk er den
-     * autoritative regel, prod-verificeret 26/7 mod Lars Horsbøl Holding
-     * 40072772): rækker med source=pdf er i t.DKK, alle andre (API) er
-     * allerede HELE KRONER. Konverteringen sker HER, ved kilden — én gang,
-     * aldrig længere nede i kæden (builder, Blade, JS). En ubetinget *1000
-     * gjorde API-rækker 1000× for høje (92.438.600 kr. vist som "92.438,6
-     * mio. kr."); ingen konvertering gjorde pdf-rækker 1000× for lave
-     * (2.527 t.DKK vist som "3 tkr."). Ejendoms-beløb
-     * (valuation/latest_sale_price, se propertyEnrichmentFromBatch()
-     * nedenfor) er altid hele kroner fra kilden — ingen konvertering der.
-     */
-    protected function companyEnrichmentFromInfo(array $company): array
-    {
-        $latest = collect($company['financials'] ?? [])->sortByDesc('year')->first();
-
-        $toKroner = fn ($value) => $value === null ? null : (
-            ($latest['source'] ?? '') === 'pdf' ? (int) round($value * 1000) : (int) $value
-        );
-
-        return [
-            'equity' => $toKroner($latest['equity'] ?? null),
-            'result' => $toKroner($latest['profit_loss'] ?? null),
-            'fiscal_year' => $latest['year'] ?? null,
-            'employees' => $company['employees'] ?? null,
-            'website' => data_get($company, 'contact.website'),
-            'founded_date' => $company['founded_date'] ?? null,
-            'industry' => $company['industry'] ?? null,
-        ];
-    }
-
-    /**
      * matrikel_id => primær anvendelses-label via properties/batch + BbrUsageCategory.
      * En NULL fra fetchPropertiesBatch (ét chunk fejlede, alt-eller-intet) er
      * en batch-fejl — IKKE en portfolio-fejl: ejendommene vises stadig, blot
@@ -403,82 +374,10 @@ class CompanyStructure extends MetisSection
         return collect($this->propertyEnrichmentFromBatch($batch))->map(fn ($entry) => $entry['usage'] ?? null)->all();
     }
 
-    /**
-     * Full per-property enrichment map from a properties/batch response:
-     * usage (via BbrUsageCategory, same primary-building selection as the
-     * former usageMapFor()) + latest_transaction date/price + valuation.
-     * Streetview URLs are NOT built here — they need portfolio lat/lng,
-     * which this batch response does not carry; loadEnrichment() layers
-     * those in afterwards, keyed by the same matrikel_id.
-     *
-     * Unlike companyEnrichmentFromInfo()'s equity/result (t.DKK → kroner,
-     * see that method's docblock), latest_sale_price/valuation are ALREADY
-     * hele kroner straight from properties/batch — verified against the
-     * existing prod-verbatim fixture (260000/534000-scale values, matching
-     * the KONTRAKT that this whole enrichment/card shape is hele kroner
-     * throughout). No *1000 conversion here.
-     */
-    protected function propertyEnrichmentFromBatch(array $batch): array
+    /** Trait hook: this component holds one flat portfolio list for the searched company. */
+    protected function enrichmentPropertyRows(): array
     {
-        return collect($batch)->mapWithKeys(function ($p) {
-            $buildings = collect($p['bbr']['buildings'] ?? []);
-            // Primær bygning: største areal blandt ikke-småbygninger (9xx-koder =
-            // garager/udhuse); fallback = største uanset kode.
-            $primary = $buildings->filter(fn ($b) => (int) ($b['usage'] ?? 0) < 900)->sortByDesc('total_area')->first()
-                ?? $buildings->sortByDesc('total_area')->first();
-
-            return [(string) ($p['matrikel_id'] ?? '') => [
-                'usage' => $primary ? BbrUsageCategory::label($primary['usage'] ?? null) : null,
-                // Verified verbatim against a real prod registry-api payload
-                // (read-only curl, 2026-07-26): latest_transaction is
-                // {"transaction_type","transaction_date","registration_date","price"}
-                // — the date field is `transaction_date`, NOT `date`.
-                'latest_sale_date' => $p['latest_transaction']['transaction_date'] ?? null,
-                'latest_sale_price' => $p['latest_transaction']['price'] ?? null,
-                'valuation' => $p['valuation']['estimated_value'] ?? null,
-            ]];
-        })->all();
-    }
-
-    /**
-     * Streetview URLs per property: built only when BOTH the portfolio row
-     * carries lat/lng AND the google_maps_api_key config is set — otherwise
-     * omitted entirely (the builder's array_filter drops null card fields).
-     * Keyed onto the SAME enrichment['properties'][matrikel_id] map
-     * propertyEnrichmentFromBatch() produced, so a property with no batch
-     * entry at all still gets a streetview_url if it has coordinates.
-     *
-     * is_numeric() guard (multi-agent review, F-B): the portfolio row's
-     * latitude/longitude come straight from the external registry-api
-     * payload — a malformed row (empty string, non-numeric junk) must not
-     * reach raw string interpolation into the URL. Non-numeric lat/lng is
-     * skipped entirely (same as the missing-coordinate case) rather than
-     * building a garbage URL. sprintf('%F', …) formats the numeric value
-     * deterministically (fixed-point, locale-independent — never scientific
-     * notation) and rawurlencode() escapes the resulting query value, so no
-     * unescaped external data is ever concatenated into the URL string.
-     */
-    protected function attachStreetviewUrls(): void
-    {
-        $apiKey = config('metis.google_maps_api_key');
-        if (! $apiKey) {
-            return;
-        }
-
-        foreach ($this->propertyData['list'] ?? [] as $p) {
-            $mid = (string) ($p['matrikel_id'] ?? '');
-            $lat = $p['latitude'] ?? null;
-            $lng = $p['longitude'] ?? null;
-
-            if ($mid === '' || ! is_numeric($lat) || ! is_numeric($lng)) {
-                continue;
-            }
-
-            $location = rawurlencode(sprintf('%F,%F', $lat, $lng));
-            $this->enrichmentData['properties'][$mid] ??= [];
-            $this->enrichmentData['properties'][$mid]['streetview_url'] =
-                "https://maps.googleapis.com/maps/api/streetview?size=640x400&location={$location}&key=".rawurlencode($apiKey);
-        }
+        return array_values($this->propertyData['list'] ?? []);
     }
 
     /**
@@ -520,41 +419,25 @@ class CompanyStructure extends MetisSection
      * error the user never triggered (mirrors refreshPropertyData's swallow).
      * Unlike loadEnrichment(), a total failure here is swallowed rather than
      * flipping to 'failed' — same reasoning as refreshPropertyData().
+     *
+     * 🚨 REBUILDS FIRST. Task 8 made the enrichment scope GRAPH-derived (only
+     * the cvrs and matrikel-ids actually drawn are fetched — see the trait's
+     * enrichmentMatrikelIds()), and on a recovery pass the graph in
+     * $graphModel is the one that arrived over the wire, built before the
+     * structure/property data above was recovered. Resolving against it asked
+     * about whichever nodes that stale model happened to hold — which on a
+     * fresh request whose graphModel had not been hydrated at all was NONE,
+     * so the property half of the map came back empty and the cards silently
+     * vanished (caught by the F4 regression test, which is exactly the
+     * failure it was written for). Rebuilding on the recovered inputs first
+     * makes the id set describe the graph enrichment is about to be applied
+     * to; loadEnrichment()/the caller rebuild again afterwards to attach it.
      */
     protected function refreshEnrichmentData(): void
     {
+        $this->rebuild();
+
         rescue(fn () => $this->fetchEnrichmentData());
-    }
-
-    /**
-     * Shared fetch body for loadEnrichment()/refreshEnrichmentData(): pools
-     * company-info for every cvr in the graph, batches property enrichment
-     * for the currently-loaded portfolio, and layers streetview URLs on top.
-     * Callers decide what a total failure means (loadEnrichment flips to
-     * 'failed'; refreshEnrichmentData swallows it) — this method itself lets
-     * exceptions propagate.
-     *
-     * Only ENRICHABLE_KINDS nodes get their cvr sent to the pool — mirrors
-     * the kind-gate in OwnershipGraphBuilder::applyEnrichment() so person/
-     * foreign nodes and 'other' orphan-parent stubs never trigger a pool
-     * request whose card/signals would be discarded anyway.
-     */
-    protected function fetchEnrichmentData(): void
-    {
-        $cvrs = collect($this->graphModel['nodes'] ?? [])
-            ->filter(fn ($node) => in_array($node['kind'] ?? null, OwnershipGraphBuilder::ENRICHABLE_KINDS, true))
-            ->pluck('cvr')->filter()->unique()->values()->all();
-        $companies = $cvrs === [] ? [] : app(RegistryApi::class)->fetchCompanyInfosPooled($cvrs);
-
-        $this->enrichmentData['companies'] = collect($companies)
-            ->filter()
-            ->map(fn ($company) => $this->companyEnrichmentFromInfo($company))
-            ->all();
-
-        $matrikelIds = collect($this->propertyData['list'] ?? [])->pluck('matrikel_id')->filter()->map(fn ($m) => (string) $m)->unique()->values()->all();
-        $batch = $matrikelIds === [] ? [] : (rescue(fn () => app(RegistryApi::class)->fetchPropertiesBatch($matrikelIds), null) ?? []);
-        $this->enrichmentData['properties'] = $this->propertyEnrichmentFromBatch($batch);
-        $this->attachStreetviewUrls();
     }
 
     /**

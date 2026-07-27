@@ -58,7 +58,9 @@
                  hitting the server every 2s for the whole life of the page —
                  on a section whose only remaining job is to sit still. --}}
             <div class="metis-org-chart"
-                @if($structuresStatus === 'loading' || in_array($propertiesStatus, ['pending', 'building'], true))
+                @if($structuresStatus === 'loading'
+                    || in_array($propertiesStatus, ['pending', 'building'], true)
+                    || $enrichmentStatus === 'pending')
                     wire:poll.2s="tick"
                 @endif
             >
@@ -86,8 +88,7 @@
 
                 {{-- Phase status notes. Only FAILURE states are visible: a
                      settled 'loaded'/'empty' phase says nothing (2a's rule —
-                     'empty' silently means none, not an error). Phase 4 has no
-                     retry action yet (Task 8 adds it). --}}
+                     'empty' silently means none, not an error). --}}
                 @if($structuresStatus === 'failed')
                     <p class="mgraph-note" wire:key="structures-failed">
                         {{ __('Nogle datterselskaber kunne ikke hentes.') }}
@@ -105,6 +106,7 @@
                 @if($enrichmentStatus === 'failed')
                     <p class="mgraph-note" wire:key="enrichment-failed">
                         {{ __('Nøgletal kunne ikke hentes.') }}
+                        <button type="button" wire:click="retryEnrichment" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
                 @endif
             </div>

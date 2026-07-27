@@ -135,6 +135,13 @@
     /* non-scaling-stroke keeps the hairline visible even when the canvas is scaled
        down to fit a large graph (which can drop the effective scale to ~0.2). */
     .mgraph-edge-line { fill: none; stroke: var(--rule-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    /* Fase 2b role layer: a board/director seat without ownership. The host JS
+       adds this class alongside .mgraph-edge-line whenever the builder marked
+       the edge style='dashed'; until this rule shipped the class was inert and
+       role edges rendered solid — visually identical to ownership, which is the
+       one distinction the whole role layer exists to make. 4 4 stays legible
+       under non-scaling-stroke at the low zoom a large graph fits at. */
+    .mgraph-edge-dashed { stroke-dasharray: 4 4; }
     .mgraph-edge-label {
         font-family: var(--fm); font-size: 10.5px; fill: var(--ink-2);
         text-anchor: middle; dominant-baseline: middle;

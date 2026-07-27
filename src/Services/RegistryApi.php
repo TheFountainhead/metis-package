@@ -347,6 +347,36 @@ class RegistryApi
         return $results;
     }
 
+    /**
+     * CACHE-ONLY variant of fetchCompanyInfosPooled(): returns cvr => company
+     * for the cvrs whose 24h company-info cache is still warm, and simply
+     * OMITS the rest. Issues no HTTP request under any circumstance.
+     *
+     * For recovery paths running inside INTERACTIVE requests (PersonStructure's
+     * chip toggle / expand, via recoverEnrichmentResults()). Those must not
+     * turn a click into a pooled network pass whose size grows with the number
+     * of companies in the graph — a cold cache would make an interaction that
+     * is normally instant hang on a fan-out of upstream calls. The caller
+     * treats an incomplete map as "not recoverable cheaply" and hands the phase
+     * back to the poll loop, which fetches it properly a tick later.
+     *
+     * @return array<string, array>
+     */
+    public function fetchCompanyInfosCached(array $cvrs): array
+    {
+        $results = [];
+
+        foreach (array_unique($cvrs) as $cvr) {
+            $cached = Cache::get($this->companyInfoCacheKey((string) $cvr));
+
+            if (! is_null($cached)) {
+                $results[(string) $cvr] = $cached;
+            }
+        }
+
+        return $results;
+    }
+
     protected function companyInfoCacheKey(string $cvr): string
     {
         return "metis:company_info:{$cvr}";
