@@ -257,13 +257,19 @@ it('locks the only chip that carries nodes even while the empty chip is still ac
         ->and($test->get('layers'))->toBe(['ownership', 'roles']);
 
     // The chip that carries every node is locked…
+    //
+    // Matched as the STANDALONE `disabled` attribute rather than the substring:
+    // every chip now also carries wire:loading.attr="disabled" (the round-trip
+    // affordance), which contains the word but is not the lock. A substring
+    // match would call every chip locked and the assertion would stop meaning
+    // anything.
     $ownershipChip = chipMarkupFor($test->html(), 'ownership');
-    expect($ownershipChip)->toContain('disabled')
+    expect($ownershipChip)->toMatch('/\sdisabled(?=[\s>])/')
         ->and($ownershipChip)->toContain('mgraph-chip--locked');
 
     // …while the empty one stays clickable: switching it off removes nothing.
     $rolesChip = chipMarkupFor($test->html(), 'roles');
-    expect($rolesChip)->not->toContain('disabled')
+    expect($rolesChip)->not->toMatch('/\sdisabled(?=[\s>])/')
         ->and($rolesChip)->not->toContain('mgraph-chip--locked');
 
     // And the server agrees — the affordance is describing a real refusal.
@@ -1960,4 +1966,386 @@ it('ships the dashed edge CSS variant the role layer depends on', function () {
 
     expect($partial)->toContain('.mgraph-edge-dashed')
         ->and($partial)->toMatch('/\.mgraph-edge-dashed\s*\{[^}]*stroke-dasharray:\s*4 4/');
+});
+
+/*
+|--------------------------------------------------------------------------
+| CPR DOM hygiene — the RENDERED HTML, not just the graph payload
+|--------------------------------------------------------------------------
+*/
+
+it('never renders the CPR into the section markup, in any DOM attribute', function () {
+    // The pre-existing pin only checked graphModel — which is exactly how the
+    // wire:key leak slipped through: `wire:key="ownership-graph-{{ $query }}"`
+    // put the raw CPR straight into the markup while the payload stayed clean.
+    // This asserts on the SHAPE of a CPR (any bare 10-digit run) rather than on
+    // one attribute name, so the NEXT attribute that interpolates $query fails
+    // here whatever it is called.
+    //
+    // 🚨 SCOPE, and it is a real limit, not an oversight: the wire:snapshot
+    // attribute legitimately carries the CPR, because `public string $query`
+    // lives on the base MetisSection and every section on the page has it. That
+    // is a page-level fact (the URL carries the CPR too) and cannot be fixed
+    // here — PHP cannot reduce an inherited property's visibility. So the
+    // snapshot is excised before the assertion and what remains under test is
+    // exactly what this PR owns: the graph surface's OWN attributes.
+    fakeRegistryCpr([
+        cprOwnershipCompany('11111111', 60.0, 'Lars Holding ApS'),
+        cprRoleCompany('22222222', 'Bestyrelsesformand', 'Drift A/S'),
+    ]);
+
+    $html = Livewire::test(PersonStructure::class, ['query' => '0101011234'])->html();
+
+    $markup = preg_replace('/wire:snapshot="[^"]*"/', '', $html);
+
+    // Guard the guard: if Livewire ever renames the snapshot attribute, the
+    // excision silently stops matching and the assertion below turns into a
+    // tautology that passes over a real leak.
+    expect($markup)->not->toBe($html)
+        ->and($markup)->not->toContain('0101011234');
+
+    // The cvrs in this fixture are 8 digits and sha1 is hex, so a bare 10-digit
+    // run means real digits leaked. (?<!\d)…(?!\d) so an 11-digit id cannot
+    // sneak past a naive \d{10}.
+    expect($markup)->not->toMatch('/(?<!\d)\d{10}(?!\d)/');
+});
+
+it('keys the graph island and the poll host by a HASH of the query', function () {
+    fakeRegistryCpr([cprOwnershipCompany('11111111')]);
+
+    $html = Livewire::test(PersonStructure::class, ['query' => '0101011234'])->html();
+
+    // Both keys present, both hashed. The poll host needs its own key at all
+    // (julik P2): .metis-org-chart sits among keyed siblings, so morph
+    // index-matching can swap it out and permanently kill wire:poll's interval.
+    expect($html)->toContain('ownership-graph-'.sha1('0101011234'))
+        ->and($html)->toContain('org-chart-'.sha1('0101011234'));
+});
+
+/*
+|--------------------------------------------------------------------------
+| Chip + expand affordances (julik P1/P3)
+|--------------------------------------------------------------------------
+*/
+
+it('disables the layer chips only while a toggleLayer round-trip is in flight', function () {
+    // wire:target is ESSENTIAL, not decoration: the section polls every 2s, so
+    // an untargeted wire:loading would grey the chips out twice a second for
+    // the whole life of the page — the control would look permanently broken.
+    $blade = file_get_contents(__DIR__.'/../../../../resources/views/livewire/sections/person-structure.blade.php');
+
+    expect($blade)->toContain('wire:loading.attr="disabled"')
+        ->and($blade)->toContain('wire:target="toggleLayer"');
+});
+
+it('drives the expand button busy state from Livewire, never from surviving Alpine state', function () {
+    // The x-for is keyed, so an x-data={busy} scope SURVIVES a rebuild: a node
+    // that still has hidden children after an expand kept busy=true and showed
+    // '…' forever. wire:loading is cleared by Livewire on every response, so it
+    // cannot get stuck.
+    $partial = file_get_contents(__DIR__.'/../../../../resources/views/livewire/sections/partials/graph-node.blade.php');
+
+    expect($partial)->toContain('wire:loading.attr="disabled"')
+        ->and($partial)->toContain('wire:target="expandNode"')
+        // The x-data busy flag itself must be gone — matched as the DECLARATION
+        // rather than the bare word, so the docblock explaining why it was
+        // removed does not keep this test red forever.
+        ->and($partial)->not->toMatch('/x-data\s*=\s*"\{\s*busy/');
+});
+
+it('does not refire cross-ownership on every poll tick', function () {
+    // The call is made on mount and again from rehydrateBeforeRebuild(), which
+    // every tick runs through. Before the cache each of those was a live POST.
+    fakeRegistryCpr([
+        cprOwnershipCompany('11111111', 60.0, 'Lars Holding ApS'),
+        cprOwnershipCompany('22222222', 40.0, 'Anden Holding ApS'),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    $afterMount = collect(Http::recorded())
+        ->filter(fn ($pair) => str_contains($pair[0]->url(), 'cross-ownership'))->count();
+
+    expect($afterMount)->toBe(1);
+
+    $test->call('tick')->call('tick')->call('toggleLayer', 'roles');
+
+    $afterTicks = collect(Http::recorded())
+        ->filter(fn ($pair) => str_contains($pair[0]->url(), 'cross-ownership'))->count();
+
+    expect($afterTicks)->toBe(1);
+});
+
+it('keeps enrichment loaded across a cold-cache toggle for a person with no properties', function () {
+    // The old completeness guard was `companies !== [] && properties !== []`,
+    // which cannot be satisfied by a person who HAS no properties: the
+    // properties half is legitimately empty, so the guard read "never
+    // recovered" and reset the phase to 'pending' on EVERY cold-cache
+    // interactive request. The cards vanished and reappeared on each chip
+    // click, forever, with nothing on screen explaining it.
+    //
+    // The fix compares against the EXPECTED counts (enrichmentCvrs /
+    // enrichmentMatrikelIds), so an empty expectation passes trivially.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Lars Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        // No properties at all — the whole point of this fixture.
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => [
+            'financials' => [['year' => 2024, 'equity' => 500_000, 'profit_loss' => 50_000, 'source' => 'api']],
+        ]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick')->call('tick')->call('tick');
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded')
+        ->and($test->get('propertiesStatus'))->toBe('empty');
+
+    // 🚨 What the count-based guard actually fixes, probed rather than assumed:
+    // NOT the early return (enrichmentData is protected, so a fresh instance
+    // always starts empty and the guard falls through for anyone with
+    // companies — under BOTH the old and the new test). What it fixes is the
+    // OUTCOME once the recovery pass has run.
+    //
+    // fetchEnrichmentDataFromCache() recovers the one company and returns
+    // complete=true, so the phase survives here. The bug the old guard caused
+    // is one layer down and is pinned in the sibling test below: with the
+    // properties half legitimately empty, "recovered" and "not recovered" were
+    // indistinguishable to `properties !== []`, so a person with no properties
+    // could never be judged complete on the strength of their own data.
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    expect($fresh->enrichmentStatus)->toBe('loaded');
+});
+
+it('judges a no-properties person complete on companies alone, not on an empty properties half', function () {
+    // The behavioural core of the guard fix, isolated from the recovery pass:
+    // an enrichmentData whose companies half is fully populated and whose
+    // properties half is empty BECAUSE THE GRAPH HAS NO PROPERTY NODES is
+    // complete. `properties !== []` called that incomplete and re-ran the whole
+    // pass — on every interactive request, forever, since no amount of
+    // recovering can make an empty expectation non-empty.
+    fakeRegistryCpr([cprOwnershipCompany('11111111', 100.0, 'Lars Holding ApS')]);
+
+    $probe = new class extends PersonStructure
+    {
+        public int $recoveryAttempts = 0;
+
+        public function seed(array $companies): void
+        {
+            $this->enrichmentData = ['companies' => $companies, 'properties' => []];
+        }
+
+        public function runRecovery(): void
+        {
+            $this->recoverEnrichmentResults();
+        }
+
+        protected function fetchEnrichmentDataFromCache(): bool
+        {
+            $this->recoveryAttempts++;
+
+            return parent::fetchEnrichmentDataFromCache();
+        }
+    };
+
+    $probe->query = '0101011234';
+    $probe->skeletonStatus = 'loaded';
+    $probe->enrichmentStatus = 'loaded';
+    $probe->graphModel = ['nodes' => [
+        ['id' => 'person:root', 'kind' => 'person', 'cvr' => null],
+        ['id' => '11111111', 'kind' => 'legal', 'cvr' => '11111111'],
+    ], 'edges' => []];
+    $probe->seed(['11111111' => ['equity' => 500_000]]);
+
+    $probe->runRecovery();
+
+    // Complete ⇒ early return: no recovery pass, phase untouched.
+    expect($probe->recoveryAttempts)->toBe(0)
+        ->and($probe->enrichmentStatus)->toBe('loaded');
+});
+
+it('hands enrichment back when the company-info cache is genuinely cold', function () {
+    // The counterpart to the no-properties pin above: the completeness guard
+    // must still FIRE when something real is missing. Without this the fix
+    // could be "always return early", which would strand a person whose cards
+    // never arrive.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Lars Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => [
+            'financials' => [['year' => 2024, 'equity' => 500_000, 'profit_loss' => 50_000, 'source' => 'api']],
+        ]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick')->call('tick')->call('tick');
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    // Evict the 24h company-info entry — now the ONE expected cvr cannot be
+    // recovered, so the phase must go back to the poll loop rather than render
+    // a graph whose cards silently never appear.
+    \Illuminate\Support\Facades\Cache::flush();
+
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    expect($fresh->enrichmentStatus)->toBe('pending');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Poll failures are not interactive failures (julik P2)
+|--------------------------------------------------------------------------
+*/
+
+it('retries silently when a BACKGROUND poll hits a transient rehydration failure', function () {
+    // A tick is not a user action. Surfacing the staleData note for one failed
+    // poll offers a "Prøv igen" that calls retrySkeleton() — which resets every
+    // downstream phase and throws away minutes of accumulated structure and
+    // property loading. The next tick is 2s away and normally succeeds, so the
+    // honest response to a transient poll failure is to say nothing and retry.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::sequence()
+            ->push(['data' => ['companies' => [
+                cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+                cprRoleCompany('22222222', 'Direktør', 'Drift A/S'),
+            ]]])
+            ->push('Server error', 500),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $before = $test->get('graphModel');
+
+    // Flush, or the recovery is served by fetchCompaniesByCprCached's 5-min
+    // entry and the sequence's 500 is never reached — the test would assert
+    // against a SUCCESSFUL rehydration and prove nothing. (Probed: without
+    // this the refetch returns the cached companies list.)
+    \Illuminate\Support\Facades\Cache::flush();
+
+    $fresh = rehydratedFrom($test);
+    $fresh->tick();
+
+    // Last-good graph kept (identical to the interactive path) but NO note:
+    // the work already loaded stays reachable and the poll simply comes round
+    // again. toEqual, not toBe — getData()'s JSON round-trip coerces 100.0.
+    expect($fresh->graphModel)->toEqual($before)
+        ->and($fresh->staleData)->toBeFalse();
+});
+
+it('still surfaces the stale note when an INTERACTIVE action hits the same failure', function () {
+    // Same failure, same recovery, different contract: the user asked for
+    // something and did not get it, so silence would read as a broken control.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::sequence()
+            ->push(['data' => ['companies' => [
+                cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+                cprRoleCompany('22222222', 'Direktør', 'Drift A/S'),
+            ]]])
+            ->push('Server error', 500),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    // Same reason as the background test above: without the flush the cached
+    // companies list satisfies the refetch and no failure occurs at all.
+    \Illuminate\Support\Facades\Cache::flush();
+
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    expect($fresh->staleData)->toBeTrue();
+});
+
+it('drops a card website whose scheme is not http(s)', function () {
+    // card.website flows straight into `:href` on the hover card. registry-api's
+    // contact.website is external, unvalidated data — a `javascript:` value
+    // there becomes a script-execution sink the moment a user clicks the link.
+    // Anything that is not http/https is dropped entirely rather than rendered.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Lars Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => [
+            'contact' => ['website' => 'javascript:alert(document.cookie)'],
+            'financials' => [['year' => 2024, 'equity' => 1, 'profit_loss' => 1, 'source' => 'api']],
+        ]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick')->call('tick')->call('tick');
+
+    expect($test->get('enrichmentStatus'))->toBe('loaded');
+
+    $node = collect($test->get('graphModel')['nodes'])->firstWhere('cvr', '11111111');
+
+    expect($node['card']['website'] ?? null)->toBeNull()
+        ->and(json_encode($test->get('graphModel')))->not->toContain('javascript:');
+});
+
+it('keeps an ordinary https website on the card', function () {
+    // The counterpart: the guard must not throw away legitimate links.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Lars Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => [
+            'contact' => ['website' => 'https://example.dk'],
+            'financials' => [['year' => 2024, 'equity' => 1, 'profit_loss' => 1, 'source' => 'api']],
+        ]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick')->call('tick')->call('tick');
+
+    $node = collect($test->get('graphModel')['nodes'])->firstWhere('cvr', '11111111');
+
+    expect($node['card']['website'] ?? null)->toBe('https://example.dk');
+});
+
+it('keeps a SCHEME-LESS website, because that is what registry-api mostly returns', function () {
+    // Bare domains ("kirketorvet.dk") are the common shape in CVR data, so
+    // rejecting a missing scheme would silently delete most real websites —
+    // a functional regression dressed up as hardening. It is safe exactly
+    // because it has no scheme: with no ':' before the first '/' the value
+    // cannot express javascript:, and the browser resolves it as relative.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
+            cprOwnershipCompany('11111111', 100.0, 'Lars Holding ApS'),
+        ]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => [
+            'contact' => ['website' => 'kirketorvet.dk'],
+            'financials' => [['year' => 2024, 'equity' => 1, 'profit_loss' => 1, 'source' => 'api']],
+        ]]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick')->call('tick')->call('tick');
+
+    $node = collect($test->get('graphModel')['nodes'])->firstWhere('cvr', '11111111');
+
+    expect($node['card']['website'] ?? null)->toBe('kirketorvet.dk');
 });

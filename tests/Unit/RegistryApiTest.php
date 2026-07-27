@@ -667,3 +667,163 @@ it('fetchCompanyStructuresPooled: bounds Http::pool() to a concurrency of 3', fu
     $spy->shouldHaveReceived('pool')
         ->withArgs(fn ($callback, $concurrency) => is_callable($callback) && $concurrency === 3);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Fejlbesked-sanering (security P1) — upstream body må aldrig videreføres
+|--------------------------------------------------------------------------
+*/
+
+it('never puts the upstream response body in the error value', function () {
+    // RequestException::getMessage() APPENDS the response body (truncated at
+    // 120 chars) to "HTTP request returned status code N". registry-api echoes
+    // the request payload into some of its own error bodies — on the CPR path
+    // that payload IS the CPR — so returning getMessage() handed the CPR to
+    // every caller of this array, and onward into whatever logged or rendered
+    // it. Callers only ever isset()-check this key (verified by grep across
+    // src/ and tests/), so a constant loses nothing.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr' => Http::response('validation failed for cpr 0101011234', 422),
+    ]);
+
+    $result = (new RegistryApi)->fetchCompaniesByCpr('0101011234');
+
+    expect($result['error'])->toBe('upstream_error')
+        ->and($result['status'])->toBe(422)
+        ->and(json_encode($result))->not->toContain('0101011234');
+});
+
+it('reports the original exception so Flare still gets the detail', function () {
+    // The detail is not thrown away, it is REROUTED: report() sends the real
+    // exception down the exception channel, where the host-side Flare scrubber
+    // censors it — instead of riding along in a return value that gets handed
+    // around, logged and rendered with no scrubbing anywhere.
+    Http::fake(['*/v1/cvr/cross-ownership' => Http::response('boom', 500)]);
+
+    $reported = [];
+    app()->bind(\Illuminate\Contracts\Debug\ExceptionHandler::class, function () use (&$reported) {
+        return new class($reported) implements \Illuminate\Contracts\Debug\ExceptionHandler
+        {
+            public function __construct(public &$reported) {}
+
+            public function report(\Throwable $e): void
+            {
+                $this->reported[] = $e;
+            }
+
+            public function shouldReport(\Throwable $e): bool
+            {
+                return true;
+            }
+
+            public function render($request, \Throwable $e)
+            {
+                return null;
+            }
+
+            public function renderForConsole($output, \Throwable $e): void {}
+        };
+    });
+
+    (new RegistryApi)->fetchCrossOwnership(['11111111', '22222222']);
+
+    expect($reported)->toHaveCount(1)
+        ->and($reported[0])->toBeInstanceOf(\Illuminate\Http\Client\RequestException::class);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Cross-ownership cache (perf P1)
+|--------------------------------------------------------------------------
+*/
+
+it('caches cross-ownership so a poll tick does not refire it', function () {
+    // PersonStructure calls this on mount AND on every rehydrate — which means
+    // every poll tick (2s) plus every chip toggle and expand. Uncached, a page
+    // open for half a minute fired ~10-12 identical POSTs at registry-api for a
+    // relationship set that cannot change between them.
+    Http::fake(['*/v1/cvr/cross-ownership' => Http::response(['data' => ['relationships' => [['parent' => '11111111', 'child' => '22222222']]]])]);
+
+    $api = new RegistryApi;
+
+    $first = $api->fetchCrossOwnershipCached(['11111111', '22222222']);
+    $second = $api->fetchCrossOwnershipCached(['11111111', '22222222']);
+
+    expect($second)->toBe($first);
+    Http::assertSentCount(1);
+});
+
+it('keys the cross-ownership cache on the SET of cvrs, not their order', function () {
+    // The caller derives the list from graph order, which changes as the graph
+    // grows — an order-sensitive key would miss on every reordering and make
+    // the cache useless exactly when the page is busiest.
+    Http::fake(['*/v1/cvr/cross-ownership' => Http::response(['data' => ['relationships' => []]])]);
+
+    $api = new RegistryApi;
+    $api->fetchCrossOwnershipCached(['22222222', '11111111']);
+    $api->fetchCrossOwnershipCached(['11111111', '22222222']);
+
+    Http::assertSentCount(1);
+});
+
+it('never caches a failed cross-ownership call', function () {
+    // post() turns a 500 into ['error' => …] rather than throwing. Caching that
+    // would freeze the failure for 5 minutes — and in this component a
+    // cross-ownership failure fails the WHOLE skeleton, so the retry button
+    // would be dead for the entire TTL.
+    Http::fake(['*/v1/cvr/cross-ownership' => Http::sequence()
+        ->push('Server error', 500)
+        ->push(['data' => ['relationships' => []]]),
+    ]);
+
+    $api = new RegistryApi;
+
+    expect($api->fetchCrossOwnershipCached(['11111111', '22222222']))->toHaveKey('error');
+
+    // The retry genuinely re-requests rather than replaying the cached failure.
+    expect($api->fetchCrossOwnershipCached(['11111111', '22222222']))->not->toHaveKey('error');
+    Http::assertSentCount(2);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Cache tenancy — a DECISION, pinned so changing it is a conversation
+|--------------------------------------------------------------------------
+*/
+
+it('company caches are deliberately tenant-neutral — revisit if registry-api ever returns token-scoped fields', function () {
+    // NOT a bug being locked in. Company-info and company-structure are CVR
+    // REGISTER data: public, identical for every caller, independent of who
+    // asked. The token is a quota identity (billing, rate limits), not an
+    // authorisation scope, so two tokens are entitled to the same bytes and a
+    // shared entry leaks nothing. Namespacing per token would multiply the
+    // cache by the tenant count and turn one warm cache into N cold ones.
+    //
+    // This test exists so the day that stops being true is NOTICED. If
+    // registry-api starts returning anything token-scoped on these endpoints —
+    // a per-customer note, an entitlement flag, a field one tenant sees and
+    // another does not — the shared entry becomes a cross-tenant leak and the
+    // key MUST gain a token component. Then this test fails, and its name
+    // tells the next person that the fix is a decision, not a rename.
+    Http::fake([
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'Delt ApS']]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+    ]);
+
+    $api = new RegistryApi;
+
+    session(['metis_user_token' => 'token-tenant-a']);
+    $api->fetchCompanyInfo('11111111');
+    $api->fetchCompanyStructureCached('11111111');
+
+    // A DIFFERENT tenant hits the SAME entries — no second round-trip.
+    session(['metis_user_token' => 'token-tenant-b']);
+    $api->fetchCompanyInfo('11111111');
+    $api->fetchCompanyStructureCached('11111111');
+
+    Http::assertSentCount(2);
+
+    // And the keys themselves carry no tenant component.
+    expect(Cache::has('metis:company_info:11111111'))->toBeTrue()
+        ->and(Cache::has('metis:company_structure:11111111'))->toBeTrue();
+});

@@ -33,10 +33,16 @@
                                 ->sum(fn ($pair) => $pair[1]);
                             $locked = $active && $count > 0 && (count($layers) === 1 || $otherCount === 0);
                         @endphp
+                        {{-- 🚨 wire:target is load-bearing: this section polls
+                             every 2s, and an UNTARGETED wire:loading would grey
+                             the chips out on every poll tick rather than only
+                             during the toggle's own round-trip. --}}
                         <button
                             type="button"
                             wire:click="toggleLayer('{{ $layer }}')"
                             wire:key="chip-{{ $layer }}"
+                            wire:loading.attr="disabled"
+                            wire:target="toggleLayer"
                             @disabled($locked)
                             @class([
                                 'mgraph-chip',
@@ -66,7 +72,13 @@
                  once every phase settles. An ungated wire:poll would keep
                  hitting the server every 2s for the whole life of the page —
                  on a section whose only remaining job is to sit still. --}}
+            {{-- 🚨 wire:key on the POLL HOST. It has keyed siblings, so without
+                 its own key Livewire's morph falls back to index-matching and
+                 can swap this element for one of them — which silently clears
+                 the browser's wire:poll interval for good. Hashed, never the
+                 raw $query: it is the CPR (see the graph partial). --}}
             <div class="metis-org-chart"
+                wire:key="org-chart-{{ sha1($query) }}"
                 @if($structuresStatus === 'loading'
                     || in_array($propertiesStatus, ['pending', 'building'], true)
                     || $enrichmentStatus === 'pending')

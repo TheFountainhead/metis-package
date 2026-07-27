@@ -239,6 +239,45 @@ class RegistryApi
         return $this->post('/v1/cvr/cross-ownership', ['cvr_numbers' => $cvrs]);
     }
 
+    /**
+     * Cached variant, mirroring fetchCompaniesByCprCached()'s contract (5 min
+     * TTL, failures NEVER cached).
+     *
+     * PersonStructure calls this from mount AND from rehydrateBeforeRebuild(),
+     * which every poll tick, chip toggle and expand runs through — so the
+     * uncached version refired an identical POST roughly 10-12 times on an
+     * ordinary page view, for a relationship set that cannot change between
+     * them.
+     *
+     * The key is the SET of cvrs, sorted: the caller derives the list from
+     * graph order, which shifts as the graph grows, and an order-sensitive key
+     * would miss on every reordering — cache-missing precisely when the page
+     * is busiest. sha1 keeps the key bounded no matter how many cvrs a person
+     * has (the cap is 20, so the raw list would otherwise run to ~180 chars).
+     *
+     * A failure must not be cached: post() returns ['error' => …] rather than
+     * throwing, and in PersonStructure a cross-ownership failure fails the
+     * WHOLE skeleton — caching it would leave the retry button dead for the
+     * full TTL.
+     */
+    public function fetchCrossOwnershipCached(array $cvrs): array
+    {
+        $sorted = collect($cvrs)->map(fn ($cvr) => (string) $cvr)->unique()->sort()->values()->all();
+        $cacheKey = 'metis:cross_ownership:'.sha1(implode(',', $sorted));
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
+        $result = $this->fetchCrossOwnership($cvrs);
+
+        if (! isset($result['error'])) {
+            Cache::put($cacheKey, $result, 300);
+        }
+
+        return $result;
+    }
+
     public function fetchRolesByCvr(array $cvrs, ?string $excludeCpr = null): array
     {
         $payload = ['cvr_numbers' => $cvrs];
@@ -377,6 +416,27 @@ class RegistryApi
         return $results;
     }
 
+    /**
+     * 🚨 DELIBERATELY TENANT-NEUTRAL — not an oversight, and not to be "fixed"
+     * by adding the token to the key without reading this first.
+     *
+     * The key carries no token/user/session component, so every caller shares
+     * one entry per cvr. That is correct because company-info is CVR REGISTER
+     * data: public, identical for every caller, and not derived from who asked.
+     * The token is a QUOTA IDENTITY (who is billed, who is rate-limited), not
+     * an authorisation scope — two tokens asking about the same cvr are
+     * entitled to byte-identical answers.
+     *
+     * Namespacing per token would multiply the cache by the number of tokens
+     * and turn a warm shared cache into N cold ones, for no privacy gain.
+     *
+     * WHEN TO REVISIT: the moment registry-api returns anything token-SCOPED on
+     * this endpoint — a per-customer note, an entitlement flag, a field one
+     * tenant sees and another does not. At that point the shared entry leaks
+     * one tenant's view to another and the key MUST gain a token component.
+     * There is a test pinning this decision so the change is a conversation
+     * rather than an accident.
+     */
     protected function companyInfoCacheKey(string $cvr): string
     {
         return "metis:company_info:{$cvr}";
@@ -418,6 +478,12 @@ class RegistryApi
         return Cache::get(self::structureCacheKey($cvr));
     }
 
+    /**
+     * 🚨 Tenant-neutral by the same deliberate decision as
+     * companyInfoCacheKey() — see that docblock for the full reasoning and for
+     * the condition under which this must change (any token-SCOPED field
+     * appearing on the endpoint).
+     */
     protected static function structureCacheKey(string $cvr): string
     {
         return "metis:company_structure:{$cvr}";
@@ -825,6 +891,32 @@ class RegistryApi
         return ['street' => $street, 'number' => $number, 'zip' => $zip];
     }
 
+    /**
+     * 🚨 The error VALUE is a constant, never $e->getMessage(). RequestException
+     * builds its message as "HTTP request returned status code N" plus the
+     * upstream RESPONSE BODY (truncated to 120 chars) — and registry-api echoes
+     * request input into some of its error bodies. On the CPR path that input is
+     * the CPR, so getMessage() quietly turned every failed lookup into a return
+     * value carrying the CPR onward to whatever logged, cached or rendered it.
+     *
+     * Nothing is lost: report() sends the REAL exception down the exception
+     * channel, where the host-side Flare scrubber censors it. And no caller ever
+     * read the string — every consumer in src/ isset()-checks the key and
+     * substitutes its own user-facing message (grepped across the package),
+     * which is exactly what makes a constant safe here.
+     *
+     * Used by EVERY catch site in this class, not just the two the CPR path
+     * happens to run through: the shape is identical at all 13, and a helper
+     * only half the file uses is an invitation to reintroduce the leak in the
+     * next endpoint someone adds.
+     */
+    protected function errorFrom(RequestException $e): array
+    {
+        report($e);
+
+        return ['error' => 'upstream_error', 'status' => $e->getCode()];
+    }
+
     protected function get(string $endpoint, array $query = []): ?array
     {
         try {
@@ -833,7 +925,7 @@ class RegistryApi
                 ->throw()
                 ->json('data');
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -845,7 +937,7 @@ class RegistryApi
                 ->throw()
                 ->json('data');
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -863,7 +955,7 @@ class RegistryApi
         try {
             return $request->get('/v1/debt-search', $filters)->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -875,7 +967,7 @@ class RegistryApi
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -893,7 +985,7 @@ class RegistryApi
         try {
             return $request->post('/v1/property-explore', $filters)->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -905,7 +997,7 @@ class RegistryApi
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -916,7 +1008,7 @@ class RegistryApi
         try {
             return $this->client()->get('/v1/watchlists')->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -934,7 +1026,7 @@ class RegistryApi
                 ->throw()
                 ->json('data');
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -946,7 +1038,7 @@ class RegistryApi
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -960,7 +1052,7 @@ class RegistryApi
                 'alert_types' => $alertTypes,
             ])->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -969,7 +1061,7 @@ class RegistryApi
         try {
             return $this->client()->delete("/v1/watchlists/{$id}")->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -982,7 +1074,7 @@ class RegistryApi
                 'page' => $page,
             ], fn ($v) => $v !== null))->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 
@@ -991,7 +1083,7 @@ class RegistryApi
         try {
             return $this->client()->patch("/v1/alerts/{$alertId}/read")->throw()->json();
         } catch (RequestException $e) {
-            return ['error' => $e->getMessage(), 'status' => $e->getCode()];
+            return $this->errorFrom($e);
         }
     }
 

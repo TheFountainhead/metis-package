@@ -404,13 +404,7 @@ class OwnershipGraphBuilder
             return;
         }
 
-        // --- Pass 1: drop property nodes, back-to-front in addition order. ---
-        for ($i = count($nodes) - 1; $i >= 0 && count($nodes) > $cap; $i--) {
-            if ($nodes[$i]['kind'] !== 'property') {
-                continue;
-            }
-            $this->removeNode($nodes, $edges, $i, 'properties');
-        }
+        $this->cutPropertyNodes($cap, $nodes, $edges);
 
         if (count($nodes) <= $cap) {
             return;
@@ -470,12 +464,7 @@ class OwnershipGraphBuilder
         }
 
         // --- Pass 1: property nodes, back-to-front in addition order. -------
-        for ($i = count($nodes) - 1; $i >= 0 && count($nodes) > $cap; $i--) {
-            if ($nodes[$i]['kind'] !== 'property') {
-                continue;
-            }
-            $this->removeNode($nodes, $edges, $i, 'properties');
-        }
+        $this->cutPropertyNodes($cap, $nodes, $edges);
 
         // --- Pass 2: inherited subsidiaries (depth ≥2, not directly owned).
         $this->cutDeepestLayers($cap, $nodes, $edges, fn ($n) => ($n['depth'] ?? 1) >= 2 && ($n['direct'] ?? false) !== true);
@@ -490,6 +479,23 @@ class OwnershipGraphBuilder
 
         // --- Pass 4: the person's own ownership relations, whatever depth. --
         $this->cutDeepestLayers($cap, $nodes, $edges, fn ($n) => true);
+    }
+
+    /**
+     * Pass 1 of BOTH truncation orderings: drop property nodes back-to-front in
+     * addition order until the cap is met. Identical in the company and person
+     * variants — properties are the cheapest thing to lose in either graph —
+     * and it was duplicated verbatim between them until this extraction.
+     */
+    protected function cutPropertyNodes(int $cap, array &$nodes, array &$edges): void
+    {
+        for ($i = count($nodes) - 1; $i >= 0 && count($nodes) > $cap; $i--) {
+            if ($nodes[$i]['kind'] !== 'property') {
+                continue;
+            }
+
+            $this->removeNode($nodes, $edges, $i, 'properties');
+        }
     }
 
     /**

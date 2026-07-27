@@ -563,8 +563,11 @@ it('exposes the graph model as watchable Livewire state with a stable graph key 
     // graphModel is populated public state (so $wire.$watch has something to see).
     $test->assertSet('graphModel', fn ($m) => is_array($m) && count($m['nodes']) === 2);
 
-    // graph wrapper: STABLE key (query only) — never re-mounted mid-pan
-    expect($test->html())->toContain('wire:key="ownership-graph-20000001"');
+    // graph wrapper: STABLE key — never re-mounted mid-pan. HASHED, because the
+    // partial is shared with the CPR page where $query is the person's CPR and
+    // a wire:key renders verbatim into the markup; the hash is equally stable
+    // and equally unique, so the no-remount guarantee is untouched.
+    expect($test->html())->toContain('wire:key="ownership-graph-'.sha1('20000001').'"');
     // the carrier/dispatch bridge is gone
     expect($test->html())->not->toContain('graph-model-updated');
 });

@@ -191,10 +191,58 @@ trait ResolvesGraphEnrichment
             'result' => $toKroner($latest['profit_loss'] ?? null),
             'fiscal_year' => $latest['year'] ?? null,
             'employees' => $company['employees'] ?? null,
-            'website' => data_get($company, 'contact.website'),
+            'website' => $this->safeWebsite(data_get($company, 'contact.website')),
             'founded_date' => $company['founded_date'] ?? null,
             'industry' => $company['industry'] ?? null,
         ];
+    }
+
+    /**
+     * Scheme guard for card.website, which the hover card binds straight into
+     * `:href` (ownership-graph.blade.php). The value is external, unvalidated
+     * registry-api data, so a `javascript:` URL there is a script-execution
+     * sink one click away — Alpine's x-text escaping does not help, because
+     * this is an ATTRIBUTE, and href is exactly where a javascript: scheme is
+     * live rather than inert.
+     *
+     * Allow-list, not a block-list: a block-list of "javascript:, data:,
+     * vbscript:" loses to the first encoding trick; an allow-list has no such
+     * edge. Anything rejected is dropped entirely (the builder's array_filter
+     * omits the field, so the link simply does not render).
+     *
+     * The SCHEME-LESS case is passed through unchanged rather than rejected:
+     * registry-api returns bare domains ("kirketorvet.dk") for most companies,
+     * so treating a missing scheme as hostile would silently delete the
+     * majority of real websites — a functional regression dressed as a
+     * hardening. It is safe precisely because it has no scheme: a value with
+     * no ':' before the first '/' cannot express javascript:, and the browser
+     * resolves it as a relative URL. Anything carrying a scheme must therefore
+     * carry http(s) explicitly, which is the actual attack surface being
+     * closed.
+     */
+    protected function safeWebsite(mixed $website): ?string
+    {
+        if (! is_string($website)) {
+            return null;
+        }
+
+        $website = trim($website);
+
+        if ($website === '') {
+            return null;
+        }
+
+        // A scheme is everything before the first ':' when that colon precedes
+        // any '/' — "javascript:alert(1)" has one, "kirketorvet.dk/x" does not.
+        $colon = strpos($website, ':');
+        $slash = strpos($website, '/');
+        $hasScheme = $colon !== false && ($slash === false || $colon < $slash);
+
+        if (! $hasScheme) {
+            return $website;
+        }
+
+        return preg_match('#^https?://#i', $website) === 1 ? $website : null;
     }
 
     /**

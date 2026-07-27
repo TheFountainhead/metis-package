@@ -76,7 +76,11 @@ class PersonStructure extends MetisSection
     /** @var 'pending'|'loading'|'loaded'|'failed' — fase 2 aggregate (Task 7). */
     public string $structuresStatus = 'pending';
 
-    /** cvr => 'pending'|'loading'|'loaded'|'failed' (Task 7). */
+    /**
+     * cvr => 'pending'|'loaded'|'failed' (Task 7). No 'loading': a batch is
+     * fetched and settled inside a single tick, so no cvr is ever observably
+     * mid-flight.
+     */
     public array $structureByCompany = [];
 
     /** @var 'pending'|'building'|'loaded'|'empty'|'failed' — fase 3 aggregate (Task 7). */
@@ -362,7 +366,11 @@ class PersonStructure extends MetisSection
             return true;
         }
 
-        $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCrossOwnership($cvrs));
+        // CACHED (5 min, failures never cached). This runs on mount AND inside
+        // rehydrateBeforeRebuild(), so every poll tick, chip toggle and expand
+        // reaches it — uncached that was ~10-12 identical POSTs per page view
+        // for a relationship set that cannot change between them.
+        $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCrossOwnershipCached($cvrs));
 
         if ($result === null) {
             return false;
@@ -519,8 +527,7 @@ class PersonStructure extends MetisSection
      */
     protected function structuresSettled(): bool
     {
-        return ! in_array('pending', $this->structureByCompany, true)
-            && ! in_array('loading', $this->structureByCompany, true);
+        return ! in_array('pending', $this->structureByCompany, true);
     }
 
     /**
@@ -581,7 +588,10 @@ class PersonStructure extends MetisSection
         // Abandoning here (rather than rebuilding on partial input) keeps the
         // last-good graph, exactly as toggleLayer/expandNode do — and leaves
         // the queue untouched, so the next tick retries the same batch.
-        if (! $this->rehydrateBeforeRebuild()) {
+        //
+        // surfaceFailure: false — a POLL failure retries silently in 2s rather
+        // than rendering a note whose retry would reset every phase.
+        if (! $this->rehydrateBeforeRebuild(surfaceFailure: false)) {
             return;
         }
 
@@ -657,7 +667,8 @@ class PersonStructure extends MetisSection
             return;
         }
 
-        if (! $this->rehydrateBeforeRebuild()) {
+        // Poll path — silent on failure, same as tickStructures().
+        if (! $this->rehydrateBeforeRebuild(surfaceFailure: false)) {
             return;
         }
 
@@ -881,7 +892,8 @@ class PersonStructure extends MetisSection
 
         // Same degradation contract as every other rebuilding action: never
         // enrich (and therefore never rebuild) on partially recovered input.
-        if (! $this->rehydrateBeforeRebuild()) {
+        // Poll-driven (tick() is its only caller), so silent on failure.
+        if (! $this->rehydrateBeforeRebuild(surfaceFailure: false)) {
             return;
         }
 
@@ -952,12 +964,28 @@ class PersonStructure extends MetisSection
      *     disappears. The person appears to own two independent companies when
      *     in fact one owns the other.
      *
-     * On failure the last-good $graphModel is left exactly as it was and
-     * $staleData is raised so the Blade can say so. This is deliberately NOT
-     * 2a's swallow-and-continue: swallowing is right when the missing piece
-     * only makes the graph less complete, and wrong when it makes it false.
+     * On failure the last-good $graphModel is left exactly as it was. Whether
+     * the user is TOLD depends on who asked, which is what $surfaceFailure
+     * selects — the recovery itself is identical either way:
+     *
+     *   - INTERACTIVE (toggleLayer/expandNode): true. The user asked for
+     *     something and did not get it, so silence reads as a broken control.
+     *   - BACKGROUND (tickStructures/tickProperties/loadEnrichment): false. A
+     *     poll is not a user action, and the note it would render carries a
+     *     "Prøv igen" wired to retrySkeleton() — which resets every downstream
+     *     phase and discards minutes of accumulated structure/property loading.
+     *     Paying that for one transient blip, when the next tick is 2s away and
+     *     normally succeeds, is far worse than saying nothing.
+     *
+     * A boolean argument rather than two methods precisely because the recovery
+     * is one behaviour with one reporting decision layered on top; splitting it
+     * would duplicate the part that must never drift.
+     *
+     * This is deliberately NOT 2a's swallow-and-continue: swallowing is right
+     * when the missing piece only makes the graph less complete, and wrong when
+     * it makes it false.
      */
-    protected function rehydrateBeforeRebuild(): bool
+    protected function rehydrateBeforeRebuild(bool $surfaceFailure = true): bool
     {
         if ($this->skeletonStatus !== 'loaded') {
             return false;
@@ -967,7 +995,7 @@ class PersonStructure extends MetisSection
             $companies = $this->fetchCompanies();
 
             if ($companies === null) {
-                $this->staleData = true;
+                $this->staleData = $surfaceFailure;
 
                 return false;
             }
@@ -981,7 +1009,7 @@ class PersonStructure extends MetisSection
                 // same request mistakes them for a complete set.
                 $this->companiesData = [];
                 $this->crossOwnershipData = [];
-                $this->staleData = true;
+                $this->staleData = $surfaceFailure;
 
                 return false;
             }
@@ -1074,7 +1102,17 @@ class PersonStructure extends MetisSection
             return;
         }
 
-        if ($this->enrichmentData['companies'] !== [] && $this->enrichmentData['properties'] !== []) {
+        // Complete = every EXPECTED piece is present, compared against the
+        // graph-derived scope. The earlier test was `companies !== [] &&
+        // properties !== []`, which a person with no properties can never
+        // satisfy: their properties half is legitimately empty, so the guard
+        // read "never recovered" and fell through on EVERY interactive request
+        // — re-running rebuild() and a properties/batch call on each chip
+        // toggle, and handing the phase back to 'pending' whenever the cache
+        // behind that pass had gone cold. Against counts, an empty expectation
+        // passes trivially, which is the honest reading of "nothing to recover".
+        if (count($this->enrichmentData['companies']) >= count($this->enrichmentCvrs())
+            && count($this->enrichmentData['properties']) >= count($this->enrichmentMatrikelIds())) {
             return;
         }
 
