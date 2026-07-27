@@ -75,6 +75,176 @@ class OwnershipGraphBuilder
     }
 
     /**
+     * Person entry point (fase 2b): the searched PERSON is the root and the
+     * companies they own / hold a role in hang directly below. Same purity
+     * contract as build() — every path (chip toggle, poll tick, expand click)
+     * REBUILDS through this method; nothing ever appends to the model.
+     *
+     * CPR NEVER enters the model: the root id is the constant 'person:root'
+     * and the only other ids are cvr's, so the graph payload (and the DOM
+     * attributes derived from it) can never leak the CPR the page was looked
+     * up by.
+     *
+     * $layers is a subset of ['ownership', 'roles'] — the two filter chips.
+     * Filtering happens HERE, not in the view, because the dedup between the
+     * two layers is layer-aware (see dedup rule below).
+     *
+     * $structures / $properties (cvr => …, only the fetched ones) are the
+     * progressive-loading inputs; they are accepted but not walked yet —
+     * Task 5 adds the subsidiary/property layers. Passing them today is
+     * harmless (an empty property list is handed to finalize()), so the
+     * Livewire section can be written against the final signature.
+     *
+     * finalize() is called with $searchedAlias = null: a person graph has no
+     * single searched-COMPANY alias to normalise owner_cvr against (see the
+     * finalize() docblock's null contract).
+     */
+    public function buildForPerson(
+        string $personName,
+        array $ownershipCompanies,
+        array $roleCompanies,
+        array $crossOwnership,
+        array $structures,
+        array $properties,
+        array $enrichment,
+        array $expandedNodeIds,
+        array $layers,
+        array $caps,
+        ?CarbonImmutable $now = null,
+    ): array {
+        $nodes = [[
+            'id' => 'person:root',
+            'label' => $personName,
+            'cvr' => null, 'kind' => 'person', 'share' => null, 'expand' => null,
+        ]];
+        $seen = ['person:root' => true];
+        $edges = [];
+        $edgeSeen = [];
+
+        $ownershipOn = in_array('ownership', $layers, true);
+        $rolesOn = in_array('roles', $layers, true);
+
+        $ownershipCompanies = $ownershipOn ? array_values(array_filter($ownershipCompanies, fn ($c) => ($c['cvr'] ?? null) !== null)) : [];
+        // Layer-aware double-relation dedup: a company the person BOTH owns and
+        // holds a role in is drawn in the ownership layer only — but if the
+        // ownership chip is off, the role edge must still be drawn, otherwise a
+        // board seat would vanish from the roles view merely because the person
+        // also owns the company.
+        $ownedCvrs = array_flip(array_column($ownershipCompanies, 'cvr'));
+        $roleCompanies = $rolesOn
+            ? array_values(array_filter($roleCompanies, fn ($c) => ($c['cvr'] ?? null) !== null && ! isset($ownedCvrs[$c['cvr']])))
+            : [];
+
+        // Cross-ownership demotion: a company in the ownership set that is
+        // owned by ANOTHER company in that same set is a CHILD, not a root.
+        // Its parent edge is drawn here, in the skeleton, so the child is never
+        // orphaned while phase 2 fetches the parent's structure.
+        $childRelations = array_values(array_filter(
+            $crossOwnership,
+            fn ($r) => isset($ownedCvrs[$r['parent_cvr'] ?? null]) && ($r['child_cvr'] ?? null) !== null,
+        ));
+        $demoted = array_flip(array_column($childRelations, 'child_cvr'));
+
+        $roots = array_values(array_filter($ownershipCompanies, fn ($c) => ! isset($demoted[$c['cvr']])));
+
+        // First-level caps, in input order (deterministic: the caller passes
+        // fetchCompaniesByCpr's order). The two expand-ids lift their own cap
+        // independently.
+        $rootCap = in_array('sub:person:root', $expandedNodeIds, true) ? count($roots) : $caps['person_roots'];
+        $roleCap = in_array('roles:person:root', $expandedNodeIds, true) ? count($roleCompanies) : $caps['person_roles'];
+        $hidden = max(0, count($roots) - $rootCap) + max(0, count($roleCompanies) - $roleCap);
+
+        foreach (array_slice($roots, 0, $rootCap) as $c) {
+            $this->addPersonChild($c['cvr'], $c['name'] ?? null, $c['ownership_share'] ?? null, false, $nodes, $seen);
+            $this->addPersonEdge('person:root', $c['cvr'], $this->shareLabel($c['ownership_share'] ?? null), null, $edges, $edgeSeen);
+        }
+
+        // Demoted children: node at depth 2 + the parent→child edge. A child
+        // the person ALSO owns directly keeps its person edge too (both facts
+        // are true) — the node is deduped by $seen, the edges are not.
+        foreach ($childRelations as $r) {
+            $cvr = $r['child_cvr'];
+            if (! isset($seen[$r['parent_cvr']])) {
+                continue; // Parent fell outside the roots cap — no dangling child.
+            }
+            $direct = collect($ownershipCompanies)->firstWhere('cvr', $cvr);
+            $this->addPersonChild($cvr, $direct['name'] ?? null, $direct['ownership_share'] ?? null, false, $nodes, $seen, 2);
+            $this->addPersonEdge($r['parent_cvr'], $cvr, $this->shareLabel($r['ownership_share'] ?? null), null, $edges, $edgeSeen);
+            if ($direct !== null) {
+                $this->addPersonEdge('person:root', $cvr, $this->shareLabel($direct['ownership_share'] ?? null), null, $edges, $edgeSeen);
+            }
+        }
+
+        foreach (array_slice($roleCompanies, 0, $roleCap) as $c) {
+            $this->addPersonChild($c['cvr'], $c['name'] ?? null, null, true, $nodes, $seen);
+            $this->addPersonEdge('person:root', $c['cvr'], ($c['role_label'] ?? null) ?: 'rolle', 'dashed', $edges, $edgeSeen);
+        }
+
+        if ($hidden > 0) {
+            $nodes[0]['expand'] = ['relations' => $hidden, 'properties' => 0];
+        }
+
+        // Task 5 walks $structures/$properties here; today the person graph is
+        // the skeleton alone, so finalize() gets an empty property list.
+        $this->finalize($nodes, $edges, [], $enrichment, $caps, null, $now);
+
+        return ['nodes' => $nodes, 'edges' => $edges];
+    }
+
+    /**
+     * Adds one company node under the person root, reusing the exact node
+     * shape addSubsidiaries() produces (kind 'subsidiary' + 'depth') so the
+     * ENRICHABLE_KINDS gate, truncateToCap's deepest-layer ordering and the
+     * host-JS COMPANY_KINDS click-navigation all work unchanged — fase 2b
+     * introduces no new node kind.
+     *
+     * Role-layer nodes additionally carry 'role_layer' => true: Task 5's
+     * person-specific truncation priority cuts role nodes BEFORE ownership
+     * roots, and both sit at depth 1, so the layer must be readable off the
+     * node itself.
+     *
+     * $seen dedup means a cvr reachable two ways (owned AND cross-owned, or
+     * role AND subsidiary) collapses to one node — first write wins, exactly
+     * as in addSubsidiaries/addSubtreeFully.
+     */
+    protected function addPersonChild(string $cvr, ?string $name, ?float $share, bool $roleLayer, array &$nodes, array &$seen, int $depth = 1): void
+    {
+        if (isset($seen[$cvr])) {
+            return;
+        }
+        $seen[$cvr] = true;
+
+        $node = ['id' => $cvr, 'label' => $name ?: ('CVR '.$cvr), 'cvr' => $cvr, 'kind' => 'subsidiary', 'share' => $share, 'expand' => null, 'depth' => $depth];
+        if ($roleLayer) {
+            $node['role_layer'] = true;
+        }
+
+        $nodes[] = $node;
+    }
+
+    /**
+     * Adds one edge with the same from/to/label shape build() emits, plus the
+     * fase 2b 'style' key — set ONLY for role edges ('dashed'). Ownership and
+     * subsidiary edges carry no style key at all, because absence-of-style is
+     * the backwards-compatible "solid" contract every existing build() edge
+     * already relies on (host-JS treats a missing style as solid).
+     */
+    protected function addPersonEdge(string $from, string $to, string $label, ?string $style, array &$edges, array &$edgeSeen): void
+    {
+        if (isset($edgeSeen[$from.'|'.$to])) {
+            return;
+        }
+        $edgeSeen[$from.'|'.$to] = true;
+
+        $edge = ['from' => $from, 'to' => $to, 'label' => $label];
+        if ($style !== null) {
+            $edge['style'] = $style;
+        }
+
+        $edges[] = $edge;
+    }
+
+    /**
      * Shared tail of build(): enforce the total node cap, then attach
      * enrichment — in that order, so aggregates/cards are never computed for
      * a node the cap already removed. Runs identically regardless of which
