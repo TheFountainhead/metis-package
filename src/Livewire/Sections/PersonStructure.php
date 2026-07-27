@@ -1100,7 +1100,22 @@ class PersonStructure extends MetisSection
         $this->enrichmentStatus = 'pending';
     }
 
-    /** @return bool whether any cvr was downgraded out of a settled state */
+    /**
+     * 🚨 CACHE-ONLY, like recoverEnrichmentResults() and for the same reason:
+     * this runs inside INTERACTIVE requests (a chip toggle, an expand), and the
+     * spec (§Rehydrering) allows no request to fetch more than one tick's
+     * batch. The earlier version called fetchCompanyStructureCached(), whose
+     * name promises a cache but which FALLS THROUGH TO A REAL POST on a miss —
+     * so a chip click on a person at the first-level cap cost up to 20
+     * sequential POSTs, bounded by nothing (CVRS_PER_TICK gates tick(), not
+     * this). A 5-minute cache and an open tab means the miss is ordinary, not
+     * exotic.
+     *
+     * A miss therefore downgrades to 'pending' WITHOUT fetching. The poll loop
+     * owns fetching; recovery only reclaims what is already at hand.
+     *
+     * @return bool whether any cvr was downgraded out of a settled state
+     */
     protected function recoverStructureResults(): bool
     {
         $downgraded = false;
@@ -1110,7 +1125,7 @@ class PersonStructure extends MetisSection
                 continue;
             }
 
-            $structure = $this->attempt(fn () => app(RegistryApi::class)->fetchCompanyStructureCached((string) $cvr));
+            $structure = rescue(fn () => app(RegistryApi::class)->fetchCompanyStructureFromCache((string) $cvr), null);
 
             if ($structure === null || $structure === []) {
                 $this->structureByCompany[$cvr] = 'pending';
@@ -1126,12 +1141,27 @@ class PersonStructure extends MetisSection
     }
 
     /**
-     * Property recovery. Routes through fetchPortfolioFor(), so the three
-     * unrecoverable outcomes stay APART instead of collapsing into one
-     * 'pending' downgrade — a cvr the phase already gave up on must not be
-     * quietly re-queued by a recovery pass (only retryProperties() re-opens a
-     * failed cvr), and a cvr still building must burn budget like any other
-     * attempt rather than re-entering the building path for free.
+     * Property recovery — cache-only for the same reason as the structure half
+     * above (a chip toggle must never fan out into one portfolio GET per
+     * company), and therefore deliberately NOT routed through
+     * fetchPortfolioFor(): that method's job is to classify the outcome of an
+     * ATTEMPT, and a cache read is not an attempt.
+     *
+     * The two consequences that follow, both of which fetchPortfolioFor() would
+     * get wrong here:
+     *
+     *   - A miss does NOT consume the shared MAX_PROPERTIES_ATTEMPTS budget.
+     *     Nothing was fetched, so nothing may be billed; otherwise a page that
+     *     merely sat open through a few chip toggles could exhaust the budget
+     *     and settle 'failed' over portfolios that never once answered
+     *     'building'.
+     *   - A miss cannot mean 'failed' or 'empty' either. The cache says nothing
+     *     about the upstream state, so the only honest downgrade is 'pending'
+     *     — the cvr goes back to the poll loop, which classifies it properly.
+     *
+     * The loop only ever visits cvrs whose status is already 'loaded', so a cvr
+     * the phase gave up on is untouched by this pass regardless (re-opening a
+     * failed cvr stays retryProperties()' job alone).
      *
      * @return bool whether any cvr was downgraded out of a settled state
      */
@@ -1144,7 +1174,21 @@ class PersonStructure extends MetisSection
                 continue;
             }
 
-            $downgraded = ! $this->fetchPortfolioFor((string) $cvr) || $downgraded;
+            $result = rescue(
+                fn () => app(RegistryApi::class)->fetchCompanyPropertyPortfolioCached((string) $cvr, limit: 500),
+                null
+            );
+
+            $list = $result['portfolio']['properties'] ?? [];
+
+            if ($list === []) {
+                $this->propertiesByCompany[$cvr] = 'pending';
+                $downgraded = true;
+
+                continue;
+            }
+
+            $this->propertyData[(string) $cvr] = $list;
         }
 
         return $downgraded;

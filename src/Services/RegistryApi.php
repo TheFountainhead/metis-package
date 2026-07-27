@@ -405,6 +405,19 @@ class RegistryApi
         return $structure;
     }
 
+    /**
+     * CACHE-ONLY variant of fetchCompanyStructureCached() — whose name promises
+     * a cache but which falls through to a real POST on a miss. This one never
+     * does: a miss returns null and the caller decides.
+     *
+     * For recovery paths inside INTERACTIVE requests; see
+     * fetchCompanyInfosCached() for the full rationale.
+     */
+    public function fetchCompanyStructureFromCache(string $cvr): ?array
+    {
+        return Cache::get(self::structureCacheKey($cvr));
+    }
+
     protected static function structureCacheKey(string $cvr): string
     {
         return "metis:company_structure:{$cvr}";
@@ -531,9 +544,33 @@ class RegistryApi
         }
     }
 
+    /**
+     * CACHE-ONLY variant of fetchCompanyPropertyPortfolio(): returns the cached
+     * payload if the 5-min entry is still warm, and null otherwise. Issues no
+     * HTTP request under any circumstance.
+     *
+     * Sibling of fetchCompanyInfosCached(), and there for the same reason: the
+     * recovery paths run inside INTERACTIVE requests (PersonStructure's chip
+     * toggle / expand), where a cache miss must cost nothing. The caller
+     * downgrades the cvr and lets the poll loop fetch it properly a tick later
+     * — see recoverPropertyResults().
+     *
+     * Shares the key with the fetching variant rather than deriving its own, so
+     * the two cannot drift apart over a limit/offset default.
+     */
+    public function fetchCompanyPropertyPortfolioCached(string $cvr, int $limit = 25, int $offset = 0): ?array
+    {
+        return Cache::get(self::propertyPortfolioCacheKey($cvr, $limit, $offset));
+    }
+
+    protected static function propertyPortfolioCacheKey(string $cvr, int $limit, int $offset): string
+    {
+        return "metis:company_property_portfolio:{$cvr}:{$limit}:{$offset}";
+    }
+
     public function fetchCompanyPropertyPortfolio(string $cvr, int $limit = 25, int $offset = 0): ?array
     {
-        $cacheKey = "metis:company_property_portfolio:{$cvr}:{$limit}:{$offset}";
+        $cacheKey = self::propertyPortfolioCacheKey($cvr, $limit, $offset);
 
         if ($cached = Cache::get($cacheKey)) {
             return $cached;

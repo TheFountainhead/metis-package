@@ -21,8 +21,17 @@
                         @php
                             $active = in_array($layer, $layers);
                             // Switching this chip off would empty the graph iff it is
-                            // the only ACTIVE chip that contributes any node at all.
-                            $locked = $active && $count > 0 && count($layers) === 1;
+                            // the only ACTIVE chip that contributes any node at all —
+                            // which is NOT the same as being the only active chip.
+                            // An ownership-only person has roleCount 0 with BOTH chips
+                            // on, so counting chips left the Ejerskab chip enabled over
+                            // a click toggleLayer() refuses: a live-looking button that
+                            // silently does nothing, which reads as a broken graph.
+                            $otherCount = collect([['ownership', $ownershipCount], ['roles', $roleCount]])
+                                ->reject(fn ($pair) => $pair[0] === $layer)
+                                ->filter(fn ($pair) => in_array($pair[0], $layers))
+                                ->sum(fn ($pair) => $pair[1]);
+                            $locked = $active && $count > 0 && (count($layers) === 1 || $otherCount === 0);
                         @endphp
                         <button
                             type="button"

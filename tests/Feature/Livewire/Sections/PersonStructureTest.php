@@ -240,6 +240,50 @@ it('refuses a layer toggle that would leave nothing but the person', function ()
         ->and(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('22222222');
 });
 
+it('locks the only chip that carries nodes even while the empty chip is still active', function () {
+    // The affordance must agree with the SERVER rule. An ownership-only person
+    // has roleCount 0 and both chips active, so count($layers) === 1 is false
+    // and the Ejerskab chip rendered ENABLED — while toggleLayer() refuses the
+    // click outright. A button that looks live and silently does nothing is
+    // worse than a disabled one: the user reads it as a broken graph.
+    fakeRegistryCpr([
+        cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    expect($test->get('ownershipCount'))->toBe(1)
+        ->and($test->get('roleCount'))->toBe(0)
+        ->and($test->get('layers'))->toBe(['ownership', 'roles']);
+
+    // The chip that carries every node is locked…
+    $ownershipChip = chipMarkupFor($test->html(), 'ownership');
+    expect($ownershipChip)->toContain('disabled')
+        ->and($ownershipChip)->toContain('mgraph-chip--locked');
+
+    // …while the empty one stays clickable: switching it off removes nothing.
+    $rolesChip = chipMarkupFor($test->html(), 'roles');
+    expect($rolesChip)->not->toContain('disabled')
+        ->and($rolesChip)->not->toContain('mgraph-chip--locked');
+
+    // And the server agrees — the affordance is describing a real refusal.
+    $test->call('toggleLayer', 'ownership');
+    expect($test->get('layers'))->toBe(['ownership', 'roles']);
+});
+
+/** The single <button> element for one chip, sliced out of the rendered HTML. */
+function chipMarkupFor(string $html, string $layer): string
+{
+    $start = strpos($html, "toggleLayer('{$layer}')");
+
+    expect($start)->not->toBeFalse("chip for layer [{$layer}] not rendered");
+
+    $open = strrpos(substr($html, 0, $start), '<button');
+    $close = strpos($html, '</button>', $start);
+
+    return substr($html, $open, $close - $open);
+}
+
 it('toggles a layer off and back on, rebuilding the graph each time', function () {
     fakeRegistryCpr([
         cprOwnershipCompany('11111111', 100.0, 'Lars Holding ApS'),
@@ -559,6 +603,10 @@ it('preserves already-resolved queue entries when the queue is recomputed', func
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
 
     // Simulate Task 7 having already resolved one cvr, then force a recompute.
+    // The cache warms with it: a 'loaded' cvr whose structure is no longer
+    // recoverable is downgraded by the (cache-only) recovery pass, which would
+    // hide the bookkeeping rule this test is about behind a different one.
+    warmStructureCache(['11111111']);
     $test->set('structureByCompany', ['11111111' => 'loaded', '22222222' => 'pending']);
     $test->call('toggleLayer', 'roles');
     $test->call('toggleLayer', 'roles');
@@ -577,7 +625,9 @@ it('reopens a settled fase-2 aggregate when an expand strands new pending entrie
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
 
     // Simulate Task 7 finishing the phase: every visible cvr settled, aggregate
-    // closed.
+    // closed — with the cache warm, as a real completed phase leaves it, so the
+    // cache-only recovery has something to reclaim.
+    warmStructureCache(array_map('strval', array_keys($test->get('structureByCompany'))));
     $test->set('structureByCompany', collect($test->get('structureByCompany'))->map(fn () => 'loaded')->all())
         ->set('structuresStatus', 'loaded');
 
@@ -597,6 +647,7 @@ it('leaves a settled fase-2 aggregate closed when nothing is pending', function 
 
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
 
+    warmStructureCache(['11111111']);
     $test->set('structureByCompany', ['11111111' => 'loaded'])
         ->set('structuresStatus', 'loaded');
 
@@ -691,6 +742,23 @@ function fakePersonPhases(array $companies, array $structures = [], array $portf
         },
         '*/properties/batch*' => Http::response(['data' => []]),
     ]);
+}
+
+/**
+ * Warms the 5-min structure cache for $cvrs, the way a completed fase-2 tick
+ * would have (fetchCompanyStructuresPooled writes it).
+ *
+ * Needed by any test that HAND-SETS a structure status to 'loaded' without
+ * having run the phase: recovery is CACHE-ONLY, so a 'loaded' cvr with a cold
+ * cache is downgraded straight back to 'pending' — correctly. Before the
+ * cache-only fix those tests passed on a silent real POST inside the
+ * interactive request, which is the very fetch storm the fix removes.
+ */
+function warmStructureCache(array $cvrs, array $structure = ['subsidiaries' => []]): void
+{
+    foreach ($cvrs as $cvr) {
+        \Illuminate\Support\Facades\Cache::put("metis:company_structure:{$cvr}", $structure, 300);
+    }
 }
 
 /** One subsidiary payload row as company-structure returns it. */
@@ -1059,18 +1127,19 @@ it('re-derives the aggregate when recovery downgrades a structure cvr', function
 });
 
 it('re-derives the aggregate when recovery downgrades a property cvr', function () {
-    // The portfolio loads once, then answers 'building' forever — so recovery
-    // on the next tick cannot restore the rows and must downgrade the cvr.
-    Http::fake([
-        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [
-            cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
-        ]]]),
-        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
-        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
-        '*/property-portfolio*' => Http::sequence()
-            ->push(['data' => ['portfolio' => ['properties' => [personPortfolioRow('11111111', '5001')], 'property_count' => 1]]])
-            ->pushStatus(500),
-    ]);
+    // The portfolio loads once; the cache is then evicted, so the next tick's
+    // CACHE-ONLY recovery cannot restore the rows and must downgrade the cvr.
+    //
+    // REWRITTEN in the fix round. The old fixture answered 500 on the second
+    // call, which settled the cvr 'failed' — leaving every assertion behind a
+    // `$unsettled ? … : true` conditional that passed VACUOUSLY, so the test
+    // pinned nothing. The scenario now genuinely downgrades, and the expected
+    // state is asserted outright.
+    fakePersonPhases(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => [personPortfolioRow('11111111', '5001')]],
+    );
 
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
     $test->call('tick'); // fase 2 settles
@@ -1081,14 +1150,16 @@ it('re-derives the aggregate when recovery downgrades a property cvr', function 
     \Illuminate\Support\Facades\Cache::flush();
     $test->call('tick'); // recovery cannot restore the rows
 
-    // Whatever the downgrade decides, the aggregate must AGREE with the map —
-    // never a closed phase sitting on unsettled per-cvr work.
+    // The cvr is back in the queue — and the AGGREGATE re-derived with it, so
+    // the poll gate is still on screen to drain it. A closed phase over an
+    // unsettled map is the failure this pins: silent and permanent.
     $queue = collect($test->get('propertiesByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s]);
-    $unsettled = collect($queue)->contains(fn ($s) => in_array($s, ['pending', 'building'], true));
 
-    expect($unsettled ? in_array($test->get('propertiesStatus'), ['building', 'failed'], true) : true)->toBeTrue()
-        ->and($unsettled ? str_contains($test->html(), 'wire:poll') || $test->get('propertiesStatus') === 'failed' : true)
-        ->toBeTrue();
+    expect($queue['11111111'])->toBe('pending')
+        ->and($test->get('propertiesStatus'))->toBe('building')
+        ->and($test->html())->toContain('wire:poll')
+        // The miss cost nothing: a cache read is not an attempt.
+        ->and($test->get('propertiesAttempts'))->toBe(0);
 });
 
 it('keeps a failed property cvr failed instead of silently retrying it', function () {
@@ -1210,6 +1281,94 @@ it('never counts the shared budget past its own ceiling', function () {
         ->and($test->get('propertiesStatus'))->toBe('failed');
 });
 
+it('never fetches fase-2/3 payloads from inside an interactive request, however cold the cache', function () {
+    // 🚨 Spec §Rehydrering: an interactive request may not fetch more than one
+    // tick's batch. The fase-2/3 recovery used to issue a REAL sequential POST
+    // per settled cvr on a cache miss — so a chip toggle on a person with N
+    // companies cost N structure POSTs plus N portfolio GETs, unbounded by
+    // CVRS_PER_TICK, inside a click. Cold cache is the ordinary case: the
+    // structure/portfolio caches live 5 minutes, the page does not.
+    fakePersonPhases(
+        [
+            cprOwnershipCompany('11111111', 100.0, 'Holding A ApS'),
+            cprOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
+            cprOwnershipCompany('33333333', 100.0, 'Holding C ApS'),
+        ],
+        [
+            '11111111' => ['subsidiaries' => [personSubsidiary('90000011')]],
+            '22222222' => ['subsidiaries' => [personSubsidiary('90000022')]],
+            '33333333' => ['subsidiaries' => [personSubsidiary('90000033')]],
+        ],
+        [
+            '11111111' => [personPortfolioRow('11111111', '5001')],
+            '22222222' => [personPortfolioRow('22222222', '5002')],
+            '33333333' => [personPortfolioRow('33333333', '5003')],
+        ],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    expect($test->get('structuresStatus'))->toBe('loaded')
+        ->and($test->get('propertiesStatus'))->toBe('loaded');
+
+    // Every cache the recovery reads is gone — the state of the world after
+    // five idle minutes on an open tab.
+    \Illuminate\Support\Facades\Cache::flush();
+
+    $before = Http::recorded()->count();
+
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    $sent = Http::recorded()->skip($before)->map(fn ($pair) => $pair[0]->url());
+
+    expect($sent->filter(fn ($url) => str_contains($url, 'company-structure')))->toBeEmpty()
+        ->and($sent->filter(fn ($url) => str_contains($url, 'property-portfolio')))->toBeEmpty();
+
+    // The work is not lost — it is handed back to the poll loop.
+    expect(collect($fresh->structureByCompany)->every(fn ($s) => $s === 'pending'))->toBeTrue()
+        ->and(collect($fresh->propertiesByCompany)->every(fn ($s) => $s === 'pending'))->toBeTrue()
+        ->and($fresh->structuresStatus)->toBe('loading')
+        ->and(in_array($fresh->propertiesStatus, ['pending', 'building'], true))->toBeTrue();
+
+    // …and the poll gate is on screen to run it. Asserted on a Testable
+    // carrying the recovered state, because the Blade reads $this->graphModel
+    // and so cannot be rendered off a bare instance.
+    $rendered = Livewire::test(PersonStructure::class, ['query' => '0101011234'])
+        ->set('structureByCompany', $fresh->structureByCompany)
+        ->set('structuresStatus', $fresh->structuresStatus)
+        ->set('propertiesByCompany', $fresh->propertiesByCompany)
+        ->set('propertiesStatus', $fresh->propertiesStatus);
+
+    expect($rendered->html())->toContain('wire:poll');
+});
+
+it('does not charge the shared properties budget for a recovery miss', function () {
+    // A recovery read is not an ATTEMPT: nothing was fetched, so nothing may be
+    // billed. Charging it let a page that merely sat open through a few chip
+    // toggles exhaust MAX_PROPERTIES_ATTEMPTS and settle 'failed' over
+    // portfolios that had never once answered 'building'.
+    fakePersonPhases(
+        [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')],
+        [],
+        ['11111111' => [personPortfolioRow('11111111', '5001')]],
+    );
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    expect($test->get('propertiesStatus'))->toBe('loaded')
+        ->and($test->get('propertiesAttempts'))->toBe(0);
+
+    \Illuminate\Support\Facades\Cache::flush();
+
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    expect($fresh->propertiesAttempts)->toBe(0);
+});
+
 /*
 |--------------------------------------------------------------------------
 | Fase 4 (berigelse) — Task 8
@@ -1319,11 +1478,10 @@ function tickUntilSettled(\Livewire\Features\SupportTesting\Testable $test, int 
 }
 
 it('sends only the matrikel-ids of property nodes actually in the graph to properties/batch', function () {
-    // The person owns ONE company whose portfolio carries three properties,
-    // but properties_per_company caps the graph at 6 — so instead the cap is
-    // exercised from the other side: a SECOND company's portfolio rows are
-    // fetched into $propertyData too, and the batch must still only ask about
-    // the matrikel-ids that became nodes.
+    // ONE company whose portfolio carries NINE properties, against a
+    // properties_per_company cap of 6: three of the fetched rows live in
+    // $propertyData without ever becoming nodes, and the batch must ask only
+    // about the six that did.
     //
     // 🚨 The failure this pins: sending the union of every fetched portfolio
     // list. On a person with several property-heavy companies that is a batch
