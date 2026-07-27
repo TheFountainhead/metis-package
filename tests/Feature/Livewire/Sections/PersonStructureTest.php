@@ -537,3 +537,66 @@ it('preserves already-resolved queue entries when the queue is recomputed', func
     // make Task 7 re-fetch a structure it already has on every toggle.
     expect($test->get('structureByCompany')['11111111'])->toBe('loaded');
 });
+
+it('reopens a settled fase-2 aggregate when an expand strands new pending entries', function () {
+    $owned = collect(range(1, 25))
+        ->map(fn ($i) => cprOwnershipCompany(str_pad((string) $i, 8, '0', STR_PAD_LEFT), 100.0, "Own {$i}"))->all();
+
+    fakeRegistryCpr($owned);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    // Simulate Task 7 finishing the phase: every visible cvr settled, aggregate
+    // closed.
+    $test->set('structureByCompany', collect($test->get('structureByCompany'))->map(fn () => 'loaded')->all())
+        ->set('structuresStatus', 'loaded');
+
+    $test->call('expandNode', 'sub:person:root');
+
+    // The 5 newly revealed roots are 'pending', so the aggregate MUST reopen —
+    // a Task 7 poll gated on 'loading' would otherwise never fetch them, with
+    // no signal that work is stranded.
+    $queue = $test->get('structureByCompany');
+    expect($queue)->toHaveCount(25)
+        ->and(collect($queue)->filter(fn ($s) => $s === 'pending'))->toHaveCount(5)
+        ->and($test->get('structuresStatus'))->toBe('loading');
+});
+
+it('leaves a settled fase-2 aggregate closed when nothing is pending', function () {
+    fakeRegistryCpr([cprOwnershipCompany('11111111', 100.0, 'Holding ApS')]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    $test->set('structureByCompany', ['11111111' => 'loaded'])
+        ->set('structuresStatus', 'loaded');
+
+    // A rebuild that reveals nothing new must not reopen a finished phase.
+    $test->call('toggleLayer', 'roles');
+
+    expect($test->get('structuresStatus'))->toBe('loaded');
+});
+
+it('never carries the contradictory staleData + failed skeleton pair', function () {
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::sequence()
+            ->push(['data' => ['companies' => [cprOwnershipCompany('11111111', 100.0, 'Holding ApS')]]])
+            ->push('Server error', 500)
+            ->push('Server error', 500),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    \Illuminate\Support\Facades\Cache::flush();
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+    expect($fresh->staleData)->toBeTrue();
+
+    // The retry also fails. 'failed' means there is no graph at all, so a
+    // "showing the last known view" note alongside it is a contradiction —
+    // the invariant must hold in STATE, not merely by Blade nesting.
+    $fresh->retrySkeleton();
+
+    expect($fresh->skeletonStatus)->toBe('failed')
+        ->and($fresh->staleData)->toBeFalse();
+});

@@ -135,6 +135,12 @@ class PersonStructure extends MetisSection
     {
         $this->skeletonStatus = 'loading';
 
+        // Cleared HERE rather than on the success path only: 'failed' means
+        // there is no graph at all, so "showing the last known view" alongside
+        // it is a contradiction. Clearing up front makes the invariant hold in
+        // STATE for every outcome, instead of resting on Blade nesting.
+        $this->staleData = false;
+
         $result = $this->fetchCompanies();
 
         if ($result === null) {
@@ -163,7 +169,6 @@ class PersonStructure extends MetisSection
         }
 
         $this->skeletonStatus = 'loaded';
-        $this->staleData = false;
         $this->rebuild();
     }
 
@@ -411,7 +416,14 @@ class PersonStructure extends MetisSection
             ->mapWithKeys(fn ($cvr) => [$cvr => $this->structureByCompany[$cvr] ?? 'pending'])
             ->all();
 
-        if ($this->structureByCompany !== [] && $this->structuresStatus === 'pending') {
+        // Reopen the aggregate whenever ANY entry is pending — not just when it
+        // is still at its initial 'pending'. An expand can strand new work
+        // behind an already-settled phase: Task 7 finishes, the aggregate goes
+        // 'loaded', then the user lifts the first-level cap and the revealed
+        // companies enter the queue as 'pending'. Gated on the initial state
+        // alone, the aggregate would stay 'loaded' and a poll watching for
+        // 'loading' would never fetch them — permanently, with no signal.
+        if (in_array('pending', $this->structureByCompany, true) && $this->structuresStatus !== 'loading') {
             $this->structuresStatus = 'loading';
         }
     }
