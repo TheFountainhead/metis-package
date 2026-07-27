@@ -13,23 +13,36 @@
         </a>
     </div>
 
-    <div class="max-w-7xl space-y-6">
+    {{-- Graf-sektionerne (company-/person-structure) renderes UDEN FOR
+         max-w-7xl-kolonnen som full-bleed: ejerskabsgrafen er det eneste
+         element der reelt er begrænset af kolonnebredden (Frederiks ønske
+         27/7 — "vandret format så man kan se mere af en virksomhedsstruktur").
+         Tekstsektioner beholder kolonnen af læsbarhedshensyn. --}}
+    <div class="space-y-6">
         @if($type === 'cvr')
-            <livewire:metis-company-overview :query="$query" lazy />
-            <livewire:metis-company-info :query="$query" lazy />
-            <livewire:metis-company-funding :query="$query" lazy />
-            <livewire:metis-company-roles :query="$query" lazy />
+            <div class="max-w-7xl space-y-6">
+                <livewire:metis-company-overview :query="$query" lazy />
+                <livewire:metis-company-info :query="$query" lazy />
+                <livewire:metis-company-funding :query="$query" lazy />
+                <livewire:metis-company-roles :query="$query" lazy />
+            </div>
             <livewire:metis-company-structure :query="$query" lazy />
-            <livewire:metis-company-relations :query="$query" lazy />
-            <livewire:metis-company-properties :query="$query" lazy />
-            <livewire:metis-company-tinglysning :query="$query" lazy />
+            <div class="max-w-7xl space-y-6">
+                <livewire:metis-company-relations :query="$query" lazy />
+                <livewire:metis-company-properties :query="$query" lazy />
+                <livewire:metis-company-tinglysning :query="$query" lazy />
+            </div>
         @elseif($type === 'cpr')
-            <livewire:metis-person-summary :query="$query" lazy />
+            <div class="max-w-7xl space-y-6">
+                <livewire:metis-person-summary :query="$query" lazy />
+            </div>
             <livewire:metis-person-structure :query="$query" lazy />
-            <livewire:metis-person-companies :query="$query" lazy />
-            <livewire:metis-person-info :query="$query" lazy />
-            <livewire:metis-person-properties :query="$query" lazy />
-            <livewire:metis-person-relations :query="$query" lazy />
+            <div class="max-w-7xl space-y-6">
+                <livewire:metis-person-companies :query="$query" lazy />
+                <livewire:metis-person-info :query="$query" lazy />
+                <livewire:metis-person-properties :query="$query" lazy />
+                <livewire:metis-person-relations :query="$query" lazy />
+            </div>
         @elseif($type === 'person')
             <livewire:metis-person-roles :query="$query" lazy />
         @elseif($type === 'address')
