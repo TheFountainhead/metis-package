@@ -21,6 +21,11 @@
                 this.initMap();
 
                 Livewire.on('map-update', () => {
+                    // Livewire.on-listeners er globale og overlever Alpine-instansen:
+                    // efter dobbelt-init må den forældede instans ikke kalde setView
+                    // på sit removede map.
+                    if (this.$refs.map._metisLeafletMap !== this.map) return;
+
                     this.lat = $wire.lat;
                     this.lng = $wire.lng;
                     this.searchType = $wire.searchType;
@@ -35,6 +40,14 @@
             },
 
             initMap() {
+                // lazy-komponent + wire:ignore kan køre init() to gange på SAMME
+                // DOM-element; Leaflet kaster "Map container is already initialized"
+                // på anden L.map(). Fjern den tidligere instans (rydder _leaflet_id
+                // og event-handlers) i stedet for at crashe.
+                if (this.$refs.map._metisLeafletMap) {
+                    this.$refs.map._metisLeafletMap.remove();
+                }
+
                 const lat = this.lat || 55.6761;
                 const lng = this.lng || 12.5683;
                 const zoom = (this.lat && this.lng) ? 16 : 7;
@@ -53,6 +66,7 @@
                     scrollWheelZoom: false,
                     layers: [osm],
                 }).setView([lat, lng], zoom);
+                this.$refs.map._metisLeafletMap = this.map;
 
                 const baseLayers = {
                     'OpenStreetMap': osm,
