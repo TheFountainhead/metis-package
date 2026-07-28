@@ -37,6 +37,27 @@ it('surfaces a transport failure as an error shape, not as null', function () {
         ->and($result['status'])->toBe(0);
 });
 
+it('does not swallow a success payload whose top-level data happens to carry status 404', function () {
+    // 'status' er allerede et forretningsfelt andre steder i RegistryApi (fx
+    // company['status'] === 'NORMAL' i searchPersonByName():116,:130 og
+    // fetchCompany():89) — samme nøgle som fejl-konvolutten bruger. Guarden i
+    // fetchCompaniesByName() må derfor kun trigge på et ÆGTE fejl-konvolut
+    // (isset($result['error'])) — aldrig blot fordi et 200-succes-payload
+    // tilfældigvis bærer en 'status'-nøgle med værdien 404.
+    Http::fake(['*person-companies-by-name*' => Http::response([
+        'data' => [
+            'person_name' => 'Test Person',
+            'companies' => [['cvr' => '12345678']],
+            'status' => 404,
+        ],
+    ])]);
+
+    $result = app(RegistryApi::class)->fetchCompaniesByName('Test Person');
+
+    expect($result)->not->toBeNull()
+        ->and($result['companies'])->toHaveCount(1);
+});
+
 it('sends the name in the request body', function () {
     Http::fake(['*person-companies-by-name*' => Http::response([
         'data' => ['person_name' => 'Test Person', 'companies' => []],

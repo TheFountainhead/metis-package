@@ -781,7 +781,12 @@ class RegistryApi
     {
         $result = $this->post('/v1/cvr/person-companies-by-name', ['name' => $name]);
 
-        if (($result['status'] ?? null) === 404) {
+        // 'status' alone is not a safe discriminator: it's already a business
+        // field elsewhere in this class (company['status'] === 'NORMAL' in
+        // searchPersonByName()/fetchCompany()), and nothing stops a success
+        // payload from carrying a 'status' key of its own. Only errorFrom()
+        // and transportErrorFrom() set 'error' — gate on that first.
+        if (isset($result['error']) && ($result['status'] ?? null) === 404) {
             return null;
         }
 
