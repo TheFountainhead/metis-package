@@ -71,3 +71,60 @@ it('keeps private properties settled across a skeleton retry in name mode', func
         ->call('retrySkeleton')
         ->assertSet('privatePropertiesStatus', 'empty');
 });
+
+it('shows the cpr note in name mode', function () {
+    Http::fake(['*person-companies-by-name*' => Http::response(nameModeCompaniesPayload())]);
+
+    Livewire::test(PersonStructure::class, ['query' => 'Test Person', 'source' => 'name'])
+        ->assertSee('Søg med CPR-nummer');
+});
+
+it('shows the cpr note even when there are no companies', function () {
+    // Særligt vigtigt her: personen KAN have private ejendomme vi ikke kan se.
+    Http::fake(['*person-companies-by-name*' => Http::response([
+        'data' => ['person_name' => 'Test Person', 'companies' => []],
+    ])]);
+
+    Livewire::test(PersonStructure::class, ['query' => 'Test Person', 'source' => 'name'])
+        ->assertSee('Søg med CPR-nummer');
+});
+
+it('does not show the cpr note in cpr mode', function () {
+    Http::fake(['*search-by-cpr*' => Http::response(['data' => ['companies' => []]])]);
+
+    Livewire::test(PersonStructure::class, ['query' => '0101011234'])
+        ->assertDontSee('Søg med CPR-nummer');
+});
+
+it('does not render the private properties chip in name mode', function () {
+    Http::fake(['*person-companies-by-name*' => Http::response(nameModeCompaniesPayload())]);
+
+    Livewire::test(PersonStructure::class, ['query' => 'Test Person', 'source' => 'name'])
+        ->assertDontSee('Private ejendomme');
+});
+
+it('still renders the private properties chip in cpr mode', function () {
+    $company = [
+        'cvr' => '12345678',
+        'name' => 'Test Holding ApS',
+        'company_type' => 'APS',
+        'is_active' => true,
+        'has_direct_ownership' => true,
+        'roles' => [[
+            'role' => 'legal_owner', 'title' => 'EJERREGISTER', 'ownership_share' => 50.0,
+            'is_current' => true, 'start_date' => '2021-03-01', 'end_date' => null,
+        ]],
+    ];
+
+    // Ordering matters: the specific person-patterns must be listed BEFORE
+    // the generic */property-portfolio* wildcard, or the wildcard can win.
+    Http::fake([
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [$company]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+    ]);
+
+    Livewire::test(PersonStructure::class, ['query' => '0101011234'])
+        ->assertSet('skeletonStatus', 'loaded')
+        ->assertSee('Private ejendomme');
+});

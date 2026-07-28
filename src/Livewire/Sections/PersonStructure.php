@@ -328,6 +328,15 @@ class PersonStructure extends MetisSection
             return;
         }
 
+        // The chip does not render in name mode (mount()'s $layers never
+        // contains it), but the method itself is public and a Livewire call
+        // can be constructed regardless of what is on screen. Without this,
+        // $layers would silently gain a layer whose data can never arrive —
+        // breaking the invariant mount()'s comment states as fact.
+        if ($layer === 'private_properties' && $this->source === 'name') {
+            return;
+        }
+
         // Abandon the whole toggle if the inputs could not be recovered — the
         // layers stay put too, so the chips never describe a graph that was
         // never rebuilt.
