@@ -2782,3 +2782,25 @@ it('normalises a string-keyed cached portfolio into a list before it reaches the
         ->and(collect($fresh->graphModel['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
         ->toHaveCount(2);
 });
+
+it('survives a string-keyed cached portfolio on the FETCH path — planted BEFORE the first tick', function () {
+    // Re-review C5: fetchPersonPropertyPortfolioByCprCached returnerer cache-
+    // værdien verbatim ved hit; en map her nåede privatePropertyId()'s int-
+    // typede rækkeindeks som string → TypeError/500. De eksisterende map-tests
+    // plantede cachen EFTER tick() og ramte kun recovery-stien.
+    Cache::put('metis:person_property_portfolio:'.sha1('0101011234'), [
+        'personal_properties' => ['1234a' => [
+            'matrikelnummer' => '1234a', 'address' => 'Testvej 1', 'city' => 'X', 'zip' => '1000',
+            'public_valuation' => 1000000, 'area_building' => 100, 'year_built' => 1980,
+            'ownership_share' => 50, 'co_owners' => [], 'mortgages' => [],
+        ]],
+        'summary' => ['personal_property_count' => 1],
+    ], 300);
+    fakeRegistryCpr([cprOwnershipCompany('11111111', 100.0, 'Holding')]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    expect($test->get('privatePropertiesStatus'))->toBe('loaded')
+        ->and(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:'))->count())->toBe(1);
+});

@@ -971,12 +971,13 @@ class PersonStructure extends MetisSection
             return;
         }
 
-        // No array_values() here, unlike the recovery path: this value comes
-        // straight off a JSON decode, which cannot produce anything but a list.
-        // Mutation-tested — removing it killed no test, because it can never
-        // fire. The recovery path reads the CACHE, which can hold a map, and
-        // that is where the normalisation actually earns its place.
-        $rows = $result['personal_properties'] ?? [];
+        // array_values() er PÅKRÆVET også her: fetchPersonPropertyPortfolioByCprCached
+        // returnerer cache-værdien VERBATIM ved hit — samme cache som recovery-stien
+        // læser, og den kan bære en map (re-review C5 beviste TypeError→500 fra
+        // privatePropertyId()'s int-typede rækkeindeks når en map når hertil).
+        // Den tidligere "JSON-decode kan kun give en liste"-begrundelse overså
+        // cache-hit-stien.
+        $rows = array_values($result['personal_properties'] ?? []);
 
         if ($rows === []) {
             $this->privatePropertiesStatus = 'empty';
