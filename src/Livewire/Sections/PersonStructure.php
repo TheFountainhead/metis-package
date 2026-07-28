@@ -617,6 +617,23 @@ class PersonStructure extends MetisSection
      */
     public function tick(): void
     {
+        // 'empty' is PROVISIONAL until the private-properties layer has been
+        // consulted: fase 1's verdict counts companies alone, but the private
+        // fetch lives on THIS poll — so an early return here would mean a
+        // person with zero active companies never has the phase run at all,
+        // and a private property stays invisible behind the empty-state
+        // (found live 28/7 on the admin-CPR page). The blade keeps the poll
+        // alive through 'empty' while the phase is pending; promotion to
+        // 'loaded' happens inside loadPrivateProperties() so the retry path
+        // shares it.
+        if ($this->skeletonStatus === 'empty') {
+            if ($this->privatePropertiesStatus === 'pending') {
+                $this->loadPrivateProperties();
+            }
+
+            return;
+        }
+
         if ($this->skeletonStatus !== 'loaded') {
             return;
         }
@@ -990,6 +1007,35 @@ class PersonStructure extends MetisSection
         $this->privatePropertiesData = $rows;
         $this->privatePropertiesCount = count($rows);
         $this->privatePropertiesStatus = 'loaded';
+
+        // Promotion: an 'empty' skeleton was settled on the companies alone —
+        // rows landing here mean the graph has content after all (person root
+        // + private properties), so that verdict is superseded. Lives HERE,
+        // not in tick(), so retryPrivateProperties() — which calls this method
+        // directly — promotes too.
+        //
+        // Set BEFORE the rehydrate: rehydrateBeforeRebuild() refuses to run
+        // under a non-'loaded' skeleton. DEMOTED again if recovery fails: a
+        // 'loaded' skeleton with no graph renders a blank canvas the poll then
+        // settles over (enrichment closes on an empty node list) — silently
+        // and permanently. Reopening the phase instead hands the whole
+        // promotion back to the next tick.
+        if ($this->skeletonStatus === 'empty') {
+            $this->skeletonStatus = 'loaded';
+
+            if (! $this->rehydrateBeforeRebuild(surfaceFailure: false)) {
+                $this->skeletonStatus = 'empty';
+                $this->privatePropertiesStatus = 'pending';
+                $this->privatePropertiesData = [];
+                $this->privatePropertiesCount = 0;
+
+                return;
+            }
+
+            $this->rebuild();
+
+            return;
+        }
 
         if ($this->rehydrateBeforeRebuild(surfaceFailure: false)) {
             $this->rebuild();

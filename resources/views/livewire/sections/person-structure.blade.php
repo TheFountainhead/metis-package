@@ -82,7 +82,28 @@
                 <button type="button" wire:click="retrySkeleton" class="underline">{{ __('Prøv igen') }}</button>
             </p>
         @elseif($skeletonStatus === 'empty')
-            <p class="text-sm text-zinc-500" wire:key="skeleton-empty">{{ __('Ingen aktive selskabsrelationer') }}</p>
+            {{-- 'empty' is provisional until the private-properties layer has
+                 been consulted: fase 1 counts companies alone, and the private
+                 fetch lives on the poll — which this branch must therefore
+                 host too, or the phase never starts for a person with zero
+                 active companies. loadPrivateProperties() promotes the
+                 skeleton to 'loaded' when rows land, which swaps this whole
+                 branch out for the graph. --}}
+            @if($privatePropertiesStatus === 'pending')
+                <div wire:key="empty-private-poll" wire:poll.2s="tick" class="h-4 w-64 animate-pulse rounded bg-zinc-100"></div>
+            @else
+                <p class="text-sm text-zinc-500" wire:key="skeleton-empty">{{ __('Ingen aktive selskabsrelationer') }}</p>
+
+                {{-- null ≠ tom: a FAILED private fetch must not be read as
+                     "no private properties either" — surface it, with the
+                     phase's own retry (which re-runs the promotion path). --}}
+                @if($privatePropertiesStatus === 'failed')
+                    <p class="mgraph-note" wire:key="empty-private-failed">
+                        {{ __('Private ejendomme kunne ikke hentes.') }}
+                        <button type="button" wire:click="retryPrivateProperties" class="underline">{{ __('Prøv igen') }}</button>
+                    </p>
+                @endif
+            @endif
         @elseif($skeletonStatus === 'loaded')
             {{-- The progressive-phase poll. GATED: it exists only while a
                  phase actually has work queued, so it stops of its own accord
