@@ -761,6 +761,34 @@ class RegistryApi
     }
 
     /**
+     * Companies for a person looked up by NAME (no CPR) — same shape as the
+     * CPR path so PersonStructure can classify() it unchanged.
+     *
+     * post() never returns null itself: a RequestException is caught by
+     * errorFrom() and turned into ['error' => 'upstream_error', 'status' =>
+     * $e->getCode()], and a ConnectionException into ['error' =>
+     * 'upstream_error', 'status' => 0] via transportErrorFrom(). Those two
+     * failure modes mean different things to the caller, so they're kept
+     * distinct here rather than both collapsing to null:
+     *
+     * - status 404 ⇒ the participant genuinely doesn't exist in CVR. Mapped
+     *   to null so the caller can render a real empty state.
+     * - any other error (incl. status 0 for a transport failure) ⇒ returned
+     *   as-is, the ['error' => ...] shape. The caller must NOT read this as
+     *   "no companies" — null ≠ an error.
+     */
+    public function fetchCompaniesByName(string $name): ?array
+    {
+        $result = $this->post('/v1/cvr/person-companies-by-name', ['name' => $name]);
+
+        if (($result['status'] ?? null) === 404) {
+            return null;
+        }
+
+        return $result;
+    }
+
+    /**
      * Cachet variant af fetchCompaniesByCpr() — nøglen hashes (sha1) så et
      * rå CPR-nummer aldrig havner i cache-nøglen eller -loggen. 5 min TTL:
      * lang nok til at dæmpe gentagne opslag under samme graf-udvidelse, kort
