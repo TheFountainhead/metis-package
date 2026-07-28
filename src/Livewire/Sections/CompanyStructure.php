@@ -119,6 +119,13 @@ class CompanyStructure extends MetisSection
      */
     protected array $enrichmentData = ['companies' => [], 'properties' => []];
 
+    /**
+     * Memoised buildGraph() results for THIS REQUEST ONLY, keyed by sorted
+     * layer set. Protected on purpose: hydration discards it, which is what
+     * makes it safe (see buildGraph()).
+     */
+    protected array $trialBuildCache = [];
+
     protected function sectionTitle(): string
     {
         return __('Company Structure');
@@ -299,6 +306,25 @@ class CompanyStructure extends MetisSection
     public function layerContributesNodes(string $layer): bool
     {
         if (! in_array($layer, $this->layers, true)) {
+            return false;
+        }
+
+        // 🚨 NO BUILDER INPUT ⇒ NO LOCK. $structureData is protected, so it is
+        // gone on every request that has not rehydrated — and the subsidiary-
+        // discovery poll is exactly that request: pollForUpdates() early-returns
+        // while $enriching is true, BEFORE any rehydrate. Every trial build then
+        // returns the bare searched root, so this method answered "yes, removing
+        // this empties the graph" for all three layers and the user faced three
+        // dead buttons, re-disabled every 3 seconds, for the whole discovery
+        // phase. The chip container itself stays visible throughout because it
+        // reads the PUBLIC $graphModel, which did arrive over the wire.
+        //
+        // Degrading to UNLOCKED (rather than rehydrating per poll, which costs a
+        // structure fetch every 3s) is safe because the two errors are not
+        // symmetric: a wrongly-ENABLED chip is caught by toggleLayer(), which
+        // rehydrates and then refuses the click — pinned by its own test. A
+        // wrongly-DISABLED chip has no recourse whatsoever.
+        if ($this->structureData === []) {
             return false;
         }
 
@@ -626,7 +652,33 @@ class CompanyStructure extends MetisSection
      */
     protected function buildGraph(array $layers): array
     {
-        return app(OwnershipGraphBuilder::class)->build(
+        // PER-REQUEST MEMO. One render asks for three trial builds (one per
+        // chip) and the enrichment paths add a fourth all-layers build — each a
+        // FULL build over PRE-truncation inputs, which the 130-subsidiary +
+        // 130-property fixture shows is not a hypothetical size.
+        //
+        // 🚨 KEYED ON THE INPUTS, NOT JUST THE LAYERS. A layers-only key is
+        // WRONG and was probed as such: 15 existing tests went red. Several
+        // paths build EARLY and then mutate the inputs within the SAME request —
+        // loadProperties() rehydrates (which builds inside
+        // refreshEnrichmentData()), then writes $propertyData, then rebuilds;
+        // expandNode() and the retry paths have the same shape. A layers-only
+        // memo served those second rebuilds a graph from the pre-write inputs,
+        // silently dropping the property nodes and cards the request had just
+        // fetched. So the key covers everything build() actually reads.
+        //
+        // 🚨 NEVER PERSISTED: $trialBuildCache is PROTECTED, so Livewire
+        // hydration discards it and every request starts cold (pinned by its own
+        // test). Promoting it to public or session state would reintroduce
+        // cross-request staleness that the input hash cannot see, because the
+        // API responses behind those inputs can change between requests.
+        $key = $this->trialBuildKey($layers);
+
+        if (array_key_exists($key, $this->trialBuildCache)) {
+            return $this->trialBuildCache[$key];
+        }
+
+        return $this->trialBuildCache[$key] = app(OwnershipGraphBuilder::class)->build(
             query: $this->query,
             companyName: $this->companyName,
             structure: $this->structureData,
@@ -637,6 +689,37 @@ class CompanyStructure extends MetisSection
             now: \Carbon\CarbonImmutable::now(),
             layers: $layers,
         );
+    }
+
+    /**
+     * The memo key: the layer set NORMALISED — deduplicated and sorted — plus a
+     * hash of every OTHER input build() reads.
+     *
+     * The layer half identifies a SET rather than a sequence: callers assemble
+     * their lists in whatever order the toggle produced (`[...$this->layers,
+     * $layer]` appends, array_diff preserves gaps), so an identical question in
+     * a different order must not miss the cache.
+     *
+     * The input half is what makes the memo CORRECT rather than merely fast —
+     * see buildGraph()'s note on the 15 tests a layers-only key broke. Hashed
+     * rather than compared field-by-field so adding a build() input cannot
+     * silently escape the key; `now` is deliberately absent, since a build's
+     * dependence on the clock is exactly what the memo is allowed to collapse
+     * inside one request.
+     */
+    protected function trialBuildKey(array $layers): string
+    {
+        $layers = array_values(array_unique($layers));
+        sort($layers);
+
+        return implode('|', $layers).':'.md5(serialize([
+            $this->query,
+            $this->companyName,
+            $this->structureData,
+            $this->propertyData,
+            $this->enrichmentData,
+            $this->expandedNodeIds,
+        ]));
     }
 
     /**

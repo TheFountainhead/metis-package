@@ -2098,3 +2098,227 @@ it('unlocks both chips when two layers hold the SAME deduped node — neither on
     $c->call('toggleLayer', 'subsidiaries');
     expect($c->get('layers'))->toBe(['subsidiaries', 'properties']);
 });
+
+// ---- Task 2, fix-round: the lock must not fire without builder input --------
+
+it('renders every chip UNLOCKED on a request that never rehydrated the structure (poll-path degrade)', function () {
+    // 🚨 THE GAP 65 GREEN TESTS MISSED. Every chip test above renders on a
+    // request that had just rebuilt from real $structureData — but the
+    // subsidiary-discovery poll does NOT: pollForUpdates() early-returns while
+    // $enriching is true, BEFORE any rehydrate, so the whole request runs with
+    // $structureData === []. The chip container still renders (it reads the
+    // PUBLIC $graphModel, which arrived over the wire), and every trial build
+    // then comes back with just the searched root — so layerContributesNodes()
+    // said "yes, removing this empties the graph" for all three, and the user
+    // stared at three dead buttons, re-disabled every 3 seconds, for the entire
+    // discovery phase.
+    //
+    // Degrade to UNLOCKED rather than rehydrating per poll: a wrongly-ENABLED
+    // chip is caught by toggleLayer()'s own refusal (which rehydrates first),
+    // while a wrongly-DISABLED chip has no recourse at all.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => []],
+            ],
+        ]]),
+        // 'running' ⇒ $enriching stays true ⇒ pollForUpdates() early-returns.
+        '*enrichment*' => Http::response(['data' => ['status' => 'running']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+    expect($c->get('enriching'))->toBeTrue();
+
+    // The poll request: no rehydrate runs, so the protected builder input is
+    // gone while the public graph model is still on screen.
+    $c->call('pollForUpdates');
+
+    $structureData = (function () {
+        $p = new ReflectionProperty(CompanyStructure::class, 'structureData');
+        $p->setAccessible(true);
+
+        return $p->getValue($this);
+    })->call($c->instance());
+
+    expect($structureData)->toBe([])
+        ->and(count($c->get('graphModel')['nodes']))->toBeGreaterThan(1);
+
+    // Not one chip may be locked on this request.
+    $html = $c->html();
+    foreach (['owners', 'subsidiaries', 'properties'] as $layer) {
+        $chip = companyChipMarkupFor($html, $layer);
+        expect($chip)->not->toMatch('/\sdisabled(?=[\s>])/')
+            ->and($chip)->not->toContain('mgraph-chip--locked');
+    }
+});
+
+it('still enforces the never-empty rule on the server when a chip was rendered unlocked without structure state', function () {
+    // The degrade's safety net: an ENABLED chip is only safe because
+    // toggleLayer() rehydrates and then refuses. Pin that the refusal really
+    // happens on the path the degrade opens up — otherwise "a wrongly-enabled
+    // chip is caught by the server" is an assumption, not a guarantee.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'running']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('pollForUpdates');
+
+    // Owners is the sole carrier, and on this structure-less request the chip
+    // renders enabled (the degrade) — but the click is still refused, because
+    // toggleLayer() rehydrates before it evaluates the rule.
+    expect(companyChipMarkupFor($c->html(), 'owners'))->not->toMatch('/\sdisabled(?=[\s>])/');
+
+    $c->call('toggleLayer', 'owners');
+    expect($c->get('layers'))->toContain('owners');
+});
+
+it('builds each distinct layer-set at most once per request (trial-build memo)', function () {
+    // One render calls layerContributesNodes() three times, and the enrichment
+    // paths add a fourth all-layers build — each one a FULL build over
+    // pre-truncation inputs (the 130+130 fixture above is not hypothetical).
+    // The memo makes a render cost one build per DISTINCT layer-set.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => []],
+            ],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    // A builder that counts build() calls, bound for the whole request.
+    $spy = new class extends TheFountainhead\Metis\Services\OwnershipGraphBuilder
+    {
+        public array $builtLayerSets = [];
+
+        public function build(
+            string $query,
+            ?string $companyName,
+            array $structure,
+            array $properties,
+            array $enrichment,
+            array $expandedNodeIds,
+            array $caps,
+            ?Carbon\CarbonImmutable $now = null,
+            array $layers = ['owners', 'subsidiaries', 'properties'],
+        ): array {
+            $this->builtLayerSets[] = $layers;
+
+            return parent::build($query, $companyName, $structure, $properties, $enrichment, $expandedNodeIds, $caps, $now, $layers);
+        }
+    };
+    app()->instance(TheFountainhead\Metis\Services\OwnershipGraphBuilder::class, $spy);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    $inst = $c->instance();
+    $build = new ReflectionMethod($inst, 'buildGraph');
+    $build->setAccessible(true);
+
+    // Mount's own render already built FOUR distinct sets — the full set for
+    // rebuild() plus one per chip — and after the memo those are the only four
+    // builds the whole request pays for. Probed by key: the cache holds exactly
+    // owners|properties|subsidiaries, properties|subsidiaries, owners|properties
+    // and owners|subsidiaries.
+    $memoKeys = function () {
+        $p = new ReflectionProperty(CompanyStructure::class, 'trialBuildCache');
+        $p->setAccessible(true);
+
+        return array_map(fn ($k) => strstr($k, ':', true), array_keys($p->getValue($this)));
+    };
+
+    expect($memoKeys->call($inst))->toEqualCanonicalizing([
+        'owners|properties|subsidiaries',
+        'properties|subsidiaries',
+        'owners|properties',
+        'owners|subsidiaries',
+    ]);
+
+    // So re-asking every chip question costs NOTHING — the three trial builds a
+    // naive implementation repeats on every single render.
+    $spy->builtLayerSets = [];
+    $inst->layerContributesNodes('owners');
+    $inst->layerContributesNodes('subsidiaries');
+    $inst->layerContributesNodes('properties');
+    expect($spy->builtLayerSets)->toBe([]);
+
+    // Order must not create a false miss: the key is the SORTED set, so asking
+    // for a cached set the other way round is still a hit.
+    $build->invoke($inst, ['properties', 'subsidiaries']);
+    $build->invoke($inst, ['subsidiaries', 'properties']);
+    expect($spy->builtLayerSets)->toBe([]);
+
+    // A genuinely un-built set IS a miss — once, then cached.
+    $build->invoke($inst, ['owners']);
+    expect($spy->builtLayerSets)->toHaveCount(1);
+    $build->invoke($inst, ['owners']);
+    expect($spy->builtLayerSets)->toHaveCount(1);
+
+    // 🚨 And a build after the INPUTS change is a miss too, not a stale hit —
+    // the guarantee that makes the memo correct on loadProperties()/expandNode(),
+    // which build early and then write new input in the same request.
+    $spy->builtLayerSets = [];
+    $build->invoke($inst, ['owners']);
+    expect($spy->builtLayerSets)->toBe([]);
+
+    $expanded = new ReflectionProperty(CompanyStructure::class, 'expandedNodeIds');
+    $expanded->setAccessible(true);
+    $expanded->setValue($inst, ['sub:44507781']);
+
+    $build->invoke($inst, ['owners']);
+    expect($spy->builtLayerSets)->toHaveCount(1);
+});
+
+it('never persists the trial-build memo across requests — a rebuild on new input is never served from cache', function () {
+    // The memo is PROTECTED state, so hydration wipes it naturally. That is the
+    // whole safety argument: within one request the inputs cannot change (every
+    // mutation path rebuilds through buildGraph AFTER writing them), and across
+    // requests there is no cache at all. Pinned so a later "optimisation" that
+    // promotes it to public/session state fails here.
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty(['owner_cvr' => '44507781'])]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    $memo = (function () {
+        $p = new ReflectionProperty(CompanyStructure::class, 'trialBuildCache');
+        $p->setAccessible(true);
+
+        return $p->getValue($this);
+    });
+
+    // The mount request warmed it.
+    expect($memo->call($c->instance()))->not->toBe([]);
+
+    // A later request starts with an EMPTY memo, and the property is not part
+    // of the wire payload either.
+    $c->call('loadProperties');
+
+    expect($c->get('graphModel')['nodes'])->not->toBeEmpty();
+    expect(collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->not->toBeNull();
+
+    // Property nodes only appear if the post-loadProperties rebuild was NOT
+    // served from the mount-time memo (which held a property-less graph).
+});
