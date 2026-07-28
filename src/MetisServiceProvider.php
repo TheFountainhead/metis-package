@@ -82,6 +82,7 @@ class MetisServiceProvider extends ServiceProvider
         }
 
         // Admin components
+        Livewire::component('metis-lookup-title', \TheFountainhead\Metis\Livewire\LookupTitle::class);
         Livewire::component('metis-admin-dashboard', \TheFountainhead\Metis\Livewire\Admin\Dashboard::class);
         Livewire::component('metis-admin-leads', \TheFountainhead\Metis\Livewire\Admin\Leads::class);
         Livewire::component('metis-admin-logs', \TheFountainhead\Metis\Livewire\Admin\Logs::class);

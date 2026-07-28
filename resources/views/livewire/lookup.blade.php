@@ -13,6 +13,8 @@
         </a>
     </div>
 
+    <livewire:metis-lookup-title :type="$type" :query="$query" lazy />
+
     {{-- Graf-sektionerne (company-/person-structure) renderes UDEN FOR
          max-w-7xl-kolonnen som full-bleed: ejerskabsgrafen er det eneste
          element der reelt er begrænset af kolonnebredden (Frederiks ønske
