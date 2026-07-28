@@ -6,16 +6,24 @@ function buildGraph(array $overrides = []): array
 {
     $builder = new OwnershipGraphBuilder;
 
-    return $builder->build(
-        query: $overrides['query'] ?? '38653806',
-        companyName: $overrides['companyName'] ?? 'FDL-Invest ApS',
-        structure: $overrides['structure'] ?? ['ancestors' => [], 'subsidiaries' => []],
-        properties: $overrides['properties'] ?? ['list' => [], 'usage' => []],
-        enrichment: $overrides['enrichment'] ?? [],
-        expandedNodeIds: $overrides['expandedNodeIds'] ?? [],
-        caps: $overrides['caps'] ?? ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
-        now: $overrides['now'] ?? null,
-    );
+    $args = [
+        'query' => $overrides['query'] ?? '38653806',
+        'companyName' => $overrides['companyName'] ?? 'FDL-Invest ApS',
+        'structure' => $overrides['structure'] ?? ['ancestors' => [], 'subsidiaries' => []],
+        'properties' => $overrides['properties'] ?? ['list' => [], 'usage' => []],
+        'enrichment' => $overrides['enrichment'] ?? [],
+        'expandedNodeIds' => $overrides['expandedNodeIds'] ?? [],
+        'caps' => $overrides['caps'] ?? ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
+        'now' => $overrides['now'] ?? null,
+    ];
+    // Only pass 'layers' when the caller explicitly set it, so the bulk of
+    // the suite keeps exercising build()'s DEFAULT (no layers arg at all) —
+    // that omission is itself the backward-compat proof (brief Step 3).
+    if (array_key_exists('layers', $overrides)) {
+        $args['layers'] = $overrides['layers'];
+    }
+
+    return $builder->build(...$args);
 }
 
 it('builds the searched node alone for empty input', function () {
@@ -745,6 +753,87 @@ it('does not attach company card/signals to an "other" orphan-parent stub node (
 
 /*
 |--------------------------------------------------------------------------
+| build() — $layers parameter (graf-filter-chips, Task 1)
+|--------------------------------------------------------------------------
+|
+| $layers gates which of the three company-graph layers (owners/
+| subsidiaries/properties) build() populates. The root 'searched' node is
+| always present regardless of $layers. Omitting the argument entirely (the
+| DEFAULT) must be byte-identical to passing all three explicitly — that is
+| the backward-compatibility contract the brief requires, and it's proven by
+| the rest of this file's tests, which never pass 'layers' at all.
+*/
+
+function layersFixture(): array
+{
+    return [
+        'structure' => [
+            'ancestors' => [
+                ['person_name' => 'Frederik G D Larnæs', 'is_company' => false, 'cvr' => null, 'ownership_share' => 100.0, 'parent_of_cvr' => null],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '45170209', 'name' => 'Inova ApS', 'ownership_share' => 100.0, 'children' => []],
+            ],
+        ],
+        'properties' => ['list' => [fdlProperty(['owner_cvr' => '45170209'])], 'usage' => ['2573669' => 'Fritliggende enfamiliehus']],
+    ];
+}
+
+it('omits ancestor nodes/edges when owners is absent from layers, but keeps the root', function () {
+    $fixture = layersFixture();
+    $g = buildGraph([
+        'structure' => $fixture['structure'],
+        'properties' => $fixture['properties'],
+        'layers' => ['subsidiaries', 'properties'],
+    ]);
+
+    expect(collect($g['nodes'])->pluck('id'))->toContain('searched')
+        ->and(collect($g['nodes'])->where('kind', 'person'))->toHaveCount(0)
+        ->and(collect($g['edges'])->where('to', 'searched'))->toHaveCount(0);
+});
+
+it('omits subsidiary nodes/edges when subsidiaries is absent from layers, but keeps the root', function () {
+    $fixture = layersFixture();
+    $g = buildGraph([
+        'structure' => $fixture['structure'],
+        'properties' => $fixture['properties'],
+        'layers' => ['owners', 'properties'],
+    ]);
+
+    expect(collect($g['nodes'])->pluck('id'))->toContain('searched')
+        ->and(collect($g['nodes'])->where('id', '45170209'))->toHaveCount(0)
+        // The property in the fixture is owned by the omitted subsidiary, so
+        // it has no owner node in the graph and cannot be hung either.
+        ->and(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(0);
+});
+
+it('omits property nodes/edges AND their aggregate when properties is absent from layers (spec P2-5)', function () {
+    $fixture = layersFixture();
+    $g = buildGraph([
+        'structure' => $fixture['structure'],
+        'properties' => $fixture['properties'],
+        'layers' => ['owners', 'subsidiaries'],
+    ]);
+
+    $subsidiary = collect($g['nodes'])->firstWhere('id', '45170209');
+    expect(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(0)
+        ->and($subsidiary)->not->toBeNull()
+        // P2-5: finalize() must be called with propertyList: [] when
+        // properties is off, otherwise the owner node gets an agg computed
+        // for properties that are no longer visible in the graph.
+        ->and($subsidiary)->not->toHaveKey('agg');
+});
+
+it('build() without a layers argument equals build() with all three layers explicit (default = full backward-compat graph)', function () {
+    $fixture = layersFixture();
+    $withoutLayers = buildGraph(['structure' => $fixture['structure'], 'properties' => $fixture['properties']]);
+    $withAllLayers = buildGraph(['structure' => $fixture['structure'], 'properties' => $fixture['properties'], 'layers' => ['owners', 'subsidiaries', 'properties']]);
+
+    expect($withoutLayers)->toEqual($withAllLayers);
+});
+
+/*
+|--------------------------------------------------------------------------
 | buildForPerson() — fase 2b, skelet-laget (Task 4)
 |--------------------------------------------------------------------------
 |
@@ -765,6 +854,7 @@ function personCaps(array $overrides = []): array
         'total_nodes' => 120,
         'person_roots' => 20,
         'person_roles' => 15,
+        'person_private_properties' => 10,
     ], $overrides);
 }
 
@@ -781,9 +871,13 @@ function buildPersonGraph(array $overrides = []): array
         properties: $overrides['properties'] ?? [],
         enrichment: $overrides['enrichment'] ?? [],
         expandedNodeIds: $overrides['expandedNodeIds'] ?? [],
-        layers: $overrides['layers'] ?? ['ownership', 'roles'],
+        // 'private_properties' sits in the DEFAULT layer set so the whole
+        // fase-2b suite keeps exercising the ON state; the OFF state gets its
+        // own explicit-layers test (Task 4).
+        layers: $overrides['layers'] ?? ['ownership', 'roles', 'private_properties'],
         caps: $overrides['caps'] ?? personCaps(),
         now: $overrides['now'] ?? null,
+        privateProperties: $overrides['privateProperties'] ?? [],
     );
 }
 
@@ -1538,4 +1632,316 @@ it('buildForPerson: the company path keeps the shared truncation priority (no ro
     expect(count($g['nodes']))->toBe(25)
         ->and(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(0)
         ->and(collect($g['nodes'])->firstWhere('id', 'searched'))->not->toBeNull();
+});
+
+/*
+|--------------------------------------------------------------------------
+| buildForPerson() — private ejendomme som pp:-noder (Task 4)
+|--------------------------------------------------------------------------
+|
+| The person's OWN properties (personal_properties rows from the person
+| property-portfolio endpoint) hang directly on person:root as 'pp:'-nodes —
+| a THIRD layer ('private_properties'), independent of the company property
+| layer addProperties() draws as 'bfe:'-nodes on company nodes.
+|
+| Three structural differences from bfe:-nodes are why they get their own
+| code path rather than a reuse of addProperties():
+|
+|   1. There is no owner_cvr — the owner is the PERSON, and addProperties()
+|      keys strictly on owner_cvr, so it can never reach person:root. Hence
+|      the cap-fold also needs its own path (spec P1-3).
+|   2. There is no matrikel_id: a private row is identified by
+|      matrikelnummer + address, hashed into the node id (spec P2-2), with
+|      the row index folded in ONLY when matrikelnummer is empty.
+|   3. The card is written AT CREATION from the row, because the row already
+|      carries everything the card shows — nothing is fetched for it.
+|      applyEnrichment()'s property branch does substr($id, 4) in blind trust
+|      of a 'bfe:' prefix, so it MUST be gated on that prefix (spec P1-1): an
+|      ungated branch would look a 37-char sha1 fragment up in the bfe map
+|      and, on a collision, hand a pp: node a FOREIGN property's card.
+*/
+
+/** One personal_properties row (shape per person-properties.blade.php). */
+function privateProperty(array $overrides = []): array
+{
+    return array_merge([
+        'matrikelnummer' => '1234a',
+        'address' => 'Travervænget 3',
+        'city' => 'Hillerød',
+        'zip' => '3400',
+        'public_valuation' => 4250000,
+        'area_building' => 142,
+        'year_built' => 1968,
+        'ownership_share' => 50.0,
+        'co_owners' => [['name' => 'Anna Sørensen']],
+        'mortgages' => [['principal' => 1500000], ['principal' => 400000]],
+    ], $overrides);
+}
+
+it('buildForPerson: hangs a private property on person:root as a pp: node whose card is written at creation', function () {
+    $g = buildPersonGraph(['privateProperties' => [privateProperty()]]);
+
+    $pp = collect($g['nodes'])->firstWhere('kind', 'property');
+    expect($pp)->not->toBeNull()
+        ->and($pp['id'])->toBe('pp:'.sha1('1234a|travervænget 3|'))
+        ->and($pp['label'])->toBe('Travervænget 3')
+        ->and($pp['cvr'])->toBeNull()
+        ->and($pp['share'])->toBeNull()
+        ->and($pp['expand'])->toBeNull()
+        // public_valuation is WHOLE KRONER, mapped 1:1, no conversion (spec
+        // P2-1). This assertion is the unit pin: any /100 or *100 fails here.
+        ->and($pp['card'])->toBe([
+            'public_valuation' => 4250000,
+            'area_building' => 142,
+            'year_built' => 1968,
+            'mortgage_count' => 2,
+            'co_owner_count' => 1,
+        ]);
+
+    $edge = collect($g['edges'])->firstWhere('to', $pp['id']);
+    expect($edge['from'])->toBe('person:root')
+        ->and($edge['label'])->toBe('50 %')
+        ->and($edge)->not->toHaveKey('style');
+});
+
+it('buildForPerson: a private property with no matrikelnummer, share or optional fields degrades gracefully', function () {
+    $g = buildPersonGraph(['privateProperties' => [[
+        'address' => 'Bredgade 40',
+        'matrikelnummer' => null,
+        'ownership_share' => null,
+    ]]]);
+
+    $pp = collect($g['nodes'])->firstWhere('kind', 'property');
+    // Empty matrikelnummer ⇒ the row index (0) is folded in as the third
+    // component, so two anonymous rows on one address stay distinct.
+    expect($pp['id'])->toBe('pp:'.sha1('|bredgade 40|0'))
+        ->and($pp['label'])->toBe('Bredgade 40')
+        // Absent scalar fields are omitted from the card entirely (host-JS
+        // cardRows skips missing keys); counts of absent LISTS are 0.
+        ->and($pp['card'])->toBe(['mortgage_count' => 0, 'co_owner_count' => 0])
+        ->and(collect($g['edges'])->firstWhere('to', $pp['id'])['label'])->toBe('');
+});
+
+it('buildForPerson: pp: ids are stable across a double build and normalise case/whitespace', function () {
+    $args = ['privateProperties' => [
+        privateProperty(),
+        privateProperty(['matrikelnummer' => '9999z', 'address' => 'Bredgade 40']),
+    ]];
+
+    $first = buildPersonGraph($args);
+    $second = buildPersonGraph($args);
+
+    expect(collect($second['nodes'])->pluck('id')->all())->toBe(collect($first['nodes'])->pluck('id')->all())
+        ->and($second['edges'])->toEqual($first['edges']);
+
+    // Trim + lowercase before hashing: the same property spelled differently
+    // is the same node (first write wins, as everywhere else in the builder).
+    $variant = buildPersonGraph(['privateProperties' => [
+        privateProperty(['matrikelnummer' => ' 1234A ', 'address' => '  Travervænget 3 ']),
+    ]]);
+    expect(collect($variant['nodes'])->firstWhere('kind', 'property')['id'])
+        ->toBe('pp:'.sha1('1234a|travervænget 3|'));
+});
+
+it('buildForPerson: two empty-matrikelnummer rows on the SAME address become TWO nodes (index fallback)', function () {
+    $g = buildPersonGraph(['privateProperties' => [
+        privateProperty(['matrikelnummer' => '', 'public_valuation' => 1000000]),
+        privateProperty(['matrikelnummer' => '', 'public_valuation' => 2000000]),
+    ]]);
+
+    $pps = collect($g['nodes'])->where('kind', 'property')->values();
+    expect($pps)->toHaveCount(2)
+        ->and($pps[0]['id'])->toBe('pp:'.sha1('|travervænget 3|0'))
+        ->and($pps[1]['id'])->toBe('pp:'.sha1('|travervænget 3|1'))
+        ->and($pps[0]['card']['public_valuation'])->toBe(1000000)
+        ->and($pps[1]['card']['public_valuation'])->toBe(2000000)
+        ->and(collect($g['edges'])->where('from', 'person:root'))->toHaveCount(2);
+
+    // ...and a NON-empty matrikelnummer does NOT fold the index in, so the
+    // same matriculated property in position 0 and position 1 of two
+    // different fetches keeps ONE id (that is the whole point of P2-2).
+    $shifted = buildPersonGraph(['privateProperties' => [
+        privateProperty(['matrikelnummer' => 'other', 'address' => 'Anden vej 1']),
+        privateProperty(),
+    ]]);
+    expect(collect($shifted['nodes'])->pluck('id'))->toContain('pp:'.sha1('1234a|travervænget 3|'));
+});
+
+it('buildForPerson: applyEnrichment never applies a bfe: card to a pp: node (spec P1-1)', function () {
+    // Collision-realistic: the enrichment map is POISONED with the exact key
+    // an ungated substr($id, 4) would produce for the pp: node, alongside a
+    // legitimate bfe: entry. An ungated property branch overwrites the pp:
+    // node's creation-card with this foreign property's card; the gated one
+    // leaves it untouched.
+    $ppId = 'pp:'.sha1('1234a|travervænget 3|');
+    $poisonKey = substr($ppId, 4);
+
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'properties' => ['40072772' => [
+            fdlProperty(['owner_cvr' => '40072772', 'matrikel_id' => '7000001', 'address' => 'Firmavej 1']),
+        ]],
+        'privateProperties' => [privateProperty()],
+        'enrichment' => ['companies' => [], 'properties' => [
+            '7000001' => ['usage' => 'Etageboligbebyggelse', 'valuation' => 500000],
+            $poisonKey => ['usage' => 'FREMMED ANVENDELSE', 'valuation' => 1, 'streetview_url' => 'https://fremmed'],
+        ]],
+    ]);
+
+    $pp = collect($g['nodes'])->firstWhere('id', $ppId);
+    $bfe = collect($g['nodes'])->firstWhere('id', 'bfe:7000001');
+
+    // The bfe: node DOES get its enrichment card — proof the branch still runs.
+    expect($bfe['card'])->toMatchArray(['usage' => 'Etageboligbebyggelse', 'valuation' => 500000])
+        // The pp: node keeps its creation-card, byte for byte.
+        ->and($pp['card'])->toBe([
+            'public_valuation' => 4250000,
+            'area_building' => 142,
+            'year_built' => 1968,
+            'mortgage_count' => 2,
+            'co_owner_count' => 1,
+        ])
+        ->and($pp['card'])->not->toHaveKey('usage')
+        ->and($pp['card'])->not->toHaveKey('streetview_url')
+        ->and($pp)->not->toHaveKey('meta');
+});
+
+it('buildForPerson: person:root gets NO agg from private properties (spec P2-3)', function () {
+    // Mutation-sensitive on purpose: the rows carry an owner_cvr POINTING AT A
+    // COMPANY NODE and a valuation, so merging them into finalize()'s
+    // propertyList — the obvious "reuse the aggregate" refactor — would produce
+    // a visible agg (count 2) on that company from the person's OWN properties.
+    // A combined private valuation sum is an explicit non-goal, on the root or
+    // anywhere else.
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'privateProperties' => [
+            privateProperty(['owner_cvr' => '40072772', 'valuation' => 4250000]),
+            privateProperty(['matrikelnummer' => '5678b', 'address' => 'Bredgade 40', 'owner_cvr' => '40072772', 'valuation' => 1000000]),
+        ],
+    ]);
+
+    expect(collect($g['nodes'])->firstWhere('id', 'person:root'))->not->toHaveKey('agg')
+        ->and(collect($g['nodes'])->firstWhere('id', '40072772'))->not->toHaveKey('agg')
+        ->and(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(2);
+});
+
+it('buildForPerson: private properties beyond person_private_properties fold onto person:root.expand.properties', function () {
+    $rows = collect(range(1, 14))->map(fn ($i) => privateProperty([
+        'matrikelnummer' => 'm'.$i, 'address' => 'Vej '.$i,
+    ]))->all();
+
+    $g = buildPersonGraph(['privateProperties' => $rows]);
+
+    $root = collect($g['nodes'])->firstWhere('id', 'person:root');
+    expect(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(10)
+        ->and($root['expand'])->toBe(['relations' => 0, 'properties' => 4])
+        // Deterministic: the FIRST ten in input order render.
+        ->and(collect($g['nodes'])->where('kind', 'property')->pluck('label')->all())
+        ->toBe(['Vej 1', 'Vej 2', 'Vej 3', 'Vej 4', 'Vej 5', 'Vej 6', 'Vej 7', 'Vej 8', 'Vej 9', 'Vej 10']);
+
+    // The relations fold and the properties fold coexist on the same root: a
+    // hidden role/root count must not be overwritten by the property fold.
+    $withHidden = buildPersonGraph([
+        'privateProperties' => $rows,
+        'roleCompanies' => [roleCompany('91111111'), roleCompany('92222222')],
+        'caps' => personCaps(['person_roles' => 1]),
+    ]);
+    expect(collect($withHidden['nodes'])->firstWhere('id', 'person:root')['expand'])
+        ->toBe(['relations' => 1, 'properties' => 4]);
+});
+
+it('buildForPerson: props:person:root lifts the private cap and sub:person:root does NOT (spec P1-3)', function () {
+    $rows = collect(range(1, 14))->map(fn ($i) => privateProperty([
+        'matrikelnummer' => 'm'.$i, 'address' => 'Vej '.$i,
+    ]))->all();
+
+    // props:person:root — the ejendoms-udvid button on the root — lifts it.
+    $lifted = buildPersonGraph(['privateProperties' => $rows, 'expandedNodeIds' => ['props:person:root']]);
+    expect(collect($lifted['nodes'])->where('kind', 'property'))->toHaveCount(14)
+        ->and(collect($lifted['nodes'])->firstWhere('id', 'person:root')['expand'])->toBeNull();
+
+    // sub:person:root — the RELATIONS button — must leave it completely alone.
+    // The two fold fields are two independent buttons on the same node.
+    $relationsOnly = buildPersonGraph(['privateProperties' => $rows, 'expandedNodeIds' => ['sub:person:root']]);
+    expect(collect($relationsOnly['nodes'])->where('kind', 'property'))->toHaveCount(10)
+        ->and(collect($relationsOnly['nodes'])->firstWhere('id', 'person:root')['expand'])
+        ->toBe(['relations' => 0, 'properties' => 4]);
+});
+
+it('buildForPerson: the private-properties layer is omitted entirely when not in $layers', function () {
+    $args = ['privateProperties' => collect(range(1, 14))->map(fn ($i) => privateProperty([
+        'matrikelnummer' => 'm'.$i, 'address' => 'Vej '.$i,
+    ]))->all()];
+
+    $off = buildPersonGraph(array_merge($args, ['layers' => ['ownership', 'roles']]));
+
+    // No nodes, no edges — and crucially no FOLD either: an expand affordance
+    // for a layer the user switched off would offer to reveal nothing.
+    expect(collect($off['nodes'])->where('kind', 'property'))->toHaveCount(0)
+        ->and($off['nodes'])->toHaveCount(1)
+        ->and($off['edges'])->toBeEmpty()
+        ->and(collect($off['nodes'])->firstWhere('id', 'person:root')['expand'])->toBeNull();
+
+    // ...and the company property layer is untouched by the private chip: the
+    // two are independent layers drawn by independent code paths.
+    $companyProps = buildPersonGraph(array_merge($args, [
+        'layers' => ['ownership', 'roles'],
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'properties' => ['40072772' => [fdlProperty(['owner_cvr' => '40072772', 'matrikel_id' => '7000001'])]],
+    ]));
+    expect(collect($companyProps['nodes'])->pluck('id'))->toContain('bfe:7000001');
+});
+
+it('buildForPerson: private property nodes are cut by the total cap before the person own relations', function () {
+    // pp: nodes are kind 'property', so cutPropertyNodes (pass 1 of the
+    // person truncation) reaches them, and removeNode folds them back onto
+    // person:root's properties field with capped_properties set.
+    $g = buildPersonGraph([
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'privateProperties' => [
+            privateProperty(['matrikelnummer' => 'a', 'address' => 'Vej 1']),
+            privateProperty(['matrikelnummer' => 'b', 'address' => 'Vej 2']),
+        ],
+        'caps' => personCaps(['total_nodes' => 3]),
+    ]);
+
+    expect(count($g['nodes']))->toBe(3)
+        ->and(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(1)
+        ->and(collect($g['nodes'])->pluck('id'))->toContain('40072772')
+        ->and(collect($g['nodes'])->firstWhere('id', 'person:root')['expand'])
+        ->toMatchArray(['properties' => 1, 'capped_properties' => true]);
+
+    $ids = collect($g['nodes'])->pluck('id')->all();
+    foreach ($g['edges'] as $edge) {
+        expect($ids)->toContain($edge['from'])->toContain($edge['to']);
+    }
+});
+
+it('buildForPerson: no node id or edge endpoint ever contains a 10-digit run (CPR-fixture guard)', function () {
+    // CPR must never enter the model (buildForPerson docblock). The pp: id is
+    // a sha1 of address data, but a regression that folded a raw CPR (or any
+    // 10-digit identifier) into an id or an edge would be invisible in the
+    // assertions above — this fixture catches it structurally.
+    $g = buildPersonGraph([
+        'personName' => 'Lars Sørensen',
+        'ownershipCompanies' => [ownershipCompany('40072772', 100.0, 'Holding')],
+        'roleCompanies' => [roleCompany('41527080')],
+        'crossOwnership' => [['parent_cvr' => '40072772', 'child_cvr' => '44018942', 'ownership_share' => 60.0]],
+        'properties' => ['40072772' => [fdlProperty(['owner_cvr' => '40072772', 'matrikel_id' => '7000001'])]],
+        'privateProperties' => [
+            privateProperty(),
+            privateProperty(['matrikelnummer' => '', 'address' => 'Bredgade 40']),
+        ],
+    ]);
+
+    $strings = collect($g['nodes'])->pluck('id')
+        ->merge(collect($g['edges'])->pluck('from'))
+        ->merge(collect($g['edges'])->pluck('to'))
+        ->all();
+
+    expect($strings)->not->toBeEmpty();
+    foreach ($strings as $s) {
+        expect((bool) preg_match('/\d{10}/', $s))->toBeFalse("id/endpoint contains a 10-digit run: {$s}");
+    }
 });

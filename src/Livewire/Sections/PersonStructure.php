@@ -34,13 +34,20 @@ class PersonStructure extends MetisSection
      */
     use ResolvesGraphEnrichment;
 
-    /** 2a's caps + fase 2b's two first-level caps (spec §First-level caps). */
+    /**
+     * 2a's caps + fase 2b's two first-level caps (spec §First-level caps) +
+     * the private-properties cap. person_private_properties is its own cap, not
+     * properties_per_company: those hang off a COMPANY node and are capped per
+     * company, while these all hang off the single person root, so the same
+     * number would mean something entirely different on it.
+     */
     protected const CAPS = [
         'subsidiary_depth' => 2,
         'properties_per_company' => 6,
         'total_nodes' => 120,
         'person_roots' => 20,
         'person_roles' => 15,
+        'person_private_properties' => 10,
     ];
 
     /**
@@ -96,12 +103,25 @@ class PersonStructure extends MetisSection
     public string $enrichmentStatus = 'pending';
 
     /**
-     * Active filter chips. Both preselected; toggleLayer() enforces the
+     * The person's OWN property portfolio — a phase of its own, and the only
+     * one that is not keyed by cvr: it is ONE call for the whole person.
+     *
+     * 'empty' is a SETTLED answer (a successful response with no
+     * personal_properties), 'failed' is a call that did not produce trustworthy
+     * data — the same null≠tom distinction fase 1 rests on. Both stop the poll;
+     * only 'failed' renders a note with a retry.
+     *
+     * @var 'pending'|'loaded'|'empty'|'failed'
+     */
+    public string $privatePropertiesStatus = 'pending';
+
+    /**
+     * Active filter chips. All three preselected; toggleLayer() enforces the
      * never-empty rule server-side (the Blade only disables the button).
      *
-     * @var list<'ownership'|'roles'>
+     * @var list<'ownership'|'roles'|'private_properties'>
      */
-    public array $layers = ['ownership', 'roles'];
+    public array $layers = ['ownership', 'roles', 'private_properties'];
 
     /** 'sub:person:root' / 'roles:person:root' / 'sub:<cvr>' / 'props:<cvr>'. */
     public array $expandedNodeIds = [];
@@ -116,6 +136,19 @@ class PersonStructure extends MetisSection
     public int $ownershipCount = 0;
 
     public int $roleCount = 0;
+
+    /**
+     * Private-properties badge, also PRE-cap (the whole portfolio, not the 10
+     * drawn) — the person-root's ejendoms-udvid button is what reveals the rest.
+     *
+     * 🚨 ZEROED on 'failed' (spec P2-4). A failed phase knows nothing about how
+     * many properties the person has, and a stale count would make the chip
+     * behave as a non-empty layer: the never-empty rule could then LOCK a chip
+     * whose layer contributes no node at all. The Blade renders "(–)" for that
+     * state rather than "(0)", because 0 is a claim about the person and a dash
+     * is a claim about the fetch.
+     */
+    public int $privatePropertiesCount = 0;
 
     /**
      * True when a refetch after hydration failed and the graph on screen is
@@ -147,6 +180,17 @@ class PersonStructure extends MetisSection
     protected array $propertyData = [];
 
     protected array $enrichmentData = ['companies' => [], 'properties' => []];
+
+    /**
+     * The person's raw personal_properties rows — PROTECTED for the same reason
+     * as every other builder input, and here with an extra edge: the rows carry
+     * the person's home address, co-owners and mortgages. Only the derived
+     * pp:-nodes (address + card) reach the browser, never the raw payload.
+     *
+     * Always handed to the builder as a LIST (array_values): the private-property
+     * id helper is int-typed on the row index and a string-keyed map would throw.
+     */
+    protected array $privatePropertiesData = [];
 
     protected function sectionTitle(): string
     {
@@ -235,6 +279,13 @@ class PersonStructure extends MetisSection
         $this->structureData = [];
         $this->propertyData = [];
         $this->enrichmentData = ['companies' => [], 'properties' => []];
+        // Reset too, even though it is keyed by CPR rather than by cvr and a
+        // fresh companies list cannot change it: retrySkeleton()'s contract is
+        // "start over", and a phase left settled here would be the one thing a
+        // full retry could never repair.
+        $this->privatePropertiesStatus = 'pending';
+        $this->privatePropertiesCount = 0;
+        $this->privatePropertiesData = [];
     }
 
     /**
@@ -247,7 +298,7 @@ class PersonStructure extends MetisSection
      */
     public function toggleLayer(string $layer): void
     {
-        if (! in_array($layer, ['ownership', 'roles'], true)) {
+        if (! in_array($layer, ['ownership', 'roles', 'private_properties'], true)) {
             return;
         }
 
@@ -449,6 +500,10 @@ class PersonStructure extends MetisSection
      */
     protected function visibleFirstLevelCvrs(): array
     {
+        // 'private_properties' is omitted rather than forgotten: those nodes
+        // carry no cvr and hang off person:root, so they can never appear in a
+        // depth-1-with-a-cvr filter. Building with them on would only cost a
+        // pass over rows that cannot contribute.
         return collect($this->buildGraph(['ownership', 'roles'])['nodes'])
             ->filter(fn ($n) => ($n['depth'] ?? null) === 1 && ($n['cvr'] ?? null))
             ->pluck('cvr')->unique()->values()->all();
@@ -545,11 +600,29 @@ class PersonStructure extends MetisSection
      * settleStructures()), so gating on it would be gating on a shadow of the
      * real state — and a queue entry stranded behind a stale aggregate would
      * never be fetched again, silently and permanently.
+     *
+     * 🚨 THE PRIVATE-PROPERTIES BRANCH IS THE ONE DELIBERATE EXCEPTION to the
+     * one-thing-per-tick discipline: it runs FIRST and then FALLS THROUGH into
+     * the chain rather than returning (spec P1-5c). Both halves are load-bearing:
+     *
+     *   - FIRST, because the call depends on nothing else. It is keyed by CPR,
+     *     not by cvr, so making it wait behind fases 2/3 would delay the ONE
+     *     layer that is ready to draw immediately by however long a large
+     *     company graph takes to settle.
+     *   - FALL THROUGH, because the reason the other branches return is that
+     *     each one CHANGES THE QUEUE the next branch reads (structures add
+     *     companies; properties key off them). This one touches neither queue
+     *     — it only adds pp:-nodes hanging off person:root — so returning
+     *     would cost fase 2 a full 2s poll interval for no isolation at all.
      */
     public function tick(): void
     {
         if ($this->skeletonStatus !== 'loaded') {
             return;
+        }
+
+        if ($this->privatePropertiesStatus === 'pending') {
+            $this->loadPrivateProperties();
         }
 
         if (in_array('pending', $this->structureByCompany, true)) {
@@ -856,6 +929,92 @@ class PersonStructure extends MetisSection
     }
 
     /**
+     * The private-properties phase: ONE cached call, then settle. Not a queue
+     * and not a budget — there is exactly one request per person, so there is
+     * nothing to batch and nothing to run out of.
+     *
+     * Outcomes, following fase 1's null≠tom rule exactly (attempt() normalises
+     * all three failure shapes to null, see its docblock):
+     *
+     *   null            → 'failed' + count 0. A person with a dozen properties
+     *                     told they have none is worse than an error.
+     *   no rows         → 'empty'. A settled answer; the chip becomes an empty
+     *                     layer and is therefore freely deselectable.
+     *   rows            → 'loaded' + the PRE-cap count.
+     *
+     * Rebuilds only when rows landed: an 'empty'/'failed' outcome changes
+     * nothing the builder reads, and a rebuild re-derives both cvr queues and
+     * re-serialises the whole graph to the browser.
+     *
+     * 🚨 THE REBUILD IS GATED ON rehydrateBeforeRebuild(), like every other
+     * rebuilding path — and this branch is the one where forgetting it is
+     * cheapest to miss and most destructive: it runs FIRST in tick(), before
+     * anything else in the request has recovered $companiesData, so an
+     * unguarded rebuild() here builds the graph from an EMPTY companies list.
+     * Probed: the graph collapsed to a bare person:root, and because rebuild()
+     * also re-derives the queues, refreshStructureQueue() then wrote an EMPTY
+     * structureByCompany — deleting fase 2's entire work list before the
+     * fall-through reached it. The company layers never loaded at all.
+     *
+     * The FETCH deliberately stays outside that gate: it needs nothing but the
+     * CPR, so a recovery blip must not be allowed to withhold the one layer
+     * that does not depend on the companies. Poll path ⇒ silent on failure.
+     */
+    protected function loadPrivateProperties(): void
+    {
+        $result = $this->attempt(fn () => app(RegistryApi::class)->fetchPersonPropertyPortfolioByCprCached($this->query));
+
+        if ($result === null) {
+            $this->privatePropertiesStatus = 'failed';
+            $this->privatePropertiesCount = 0;
+
+            return;
+        }
+
+        // array_values() er PÅKRÆVET også her: fetchPersonPropertyPortfolioByCprCached
+        // returnerer cache-værdien VERBATIM ved hit — samme cache som recovery-stien
+        // læser, og den kan bære en map (re-review C5 beviste TypeError→500 fra
+        // privatePropertyId()'s int-typede rækkeindeks når en map når hertil).
+        // Den tidligere "JSON-decode kan kun give en liste"-begrundelse overså
+        // cache-hit-stien.
+        $rows = array_values($result['personal_properties'] ?? []);
+
+        if ($rows === []) {
+            $this->privatePropertiesStatus = 'empty';
+            $this->privatePropertiesCount = 0;
+            $this->privatePropertiesData = [];
+
+            return;
+        }
+
+        $this->privatePropertiesData = $rows;
+        $this->privatePropertiesCount = count($rows);
+        $this->privatePropertiesStatus = 'loaded';
+
+        if ($this->rehydrateBeforeRebuild(surfaceFailure: false)) {
+            $this->rebuild();
+        }
+    }
+
+    /**
+     * The private-properties phase's OWN retry, deliberately NOT a reuse of
+     * retryProperties(): that one clears the SHARED MAX_PROPERTIES_ATTEMPTS
+     * budget and re-opens every unsettled company portfolio, so wiring this
+     * button to it would let a failed person-portfolio call silently restart
+     * fase 3 — including cvrs the phase had already, correctly, given up on.
+     *
+     * Runs the fetch inline rather than merely setting 'pending' and waiting for
+     * the poll: the poll may well have STOPPED (its gate goes quiet once every
+     * phase settles, and 'failed' is settled), so a status-only reset would
+     * leave a button that appears to do nothing.
+     */
+    public function retryPrivateProperties(): void
+    {
+        $this->privatePropertiesStatus = 'pending';
+        $this->loadPrivateProperties();
+    }
+
+    /**
      * Fase 4. Pools company-info for the enrichable cvrs in the graph and
      * batches the property nodes, then rebuilds so buildForPerson can attach
      * cards/signals. Resolution is entirely in ResolvesGraphEnrichment; the
@@ -1069,6 +1228,11 @@ class PersonStructure extends MetisSection
             $this->settleProperties();
         }
 
+        // Deliberately NOT part of the $downgraded pair above: this phase has no
+        // per-cvr queue and no aggregate derived from one — its status IS its
+        // state, so a miss sets it directly and there is nothing to re-derive.
+        $this->recoverPrivatePropertiesResults();
+
         $this->recoverEnrichmentResults();
     }
 
@@ -1180,6 +1344,47 @@ class PersonStructure extends MetisSection
         }
 
         return $downgraded;
+    }
+
+    /**
+     * The private-properties slice of the recovery pass. $privatePropertiesData
+     * is protected, so it is gone on every subsequent request while
+     * privatePropertiesStatus still says 'loaded' — and without this the
+     * pp:-nodes would VANISH on the next chip toggle, with the status insisting
+     * the layer is there.
+     *
+     * 🚨 CACHE-ONLY (spec P1-5a), and here the rule bites hardest of the three:
+     * fetchPersonPropertyPortfolioByCprCached() falls through to a real POST on
+     * a miss, and this is the slowest endpoint in the package (5-15s cold). A
+     * chip click that quietly paid for it would look like a frozen page. The
+     * FromCache variant never fetches; a miss hands the phase back to 'pending'
+     * and the poll — whose gate reads this exact status — re-runs it properly.
+     *
+     * The count is deliberately left alone on a miss: it is public state that
+     * survived hydration and still describes the person truthfully, so zeroing
+     * it would make the badge flicker to "(0)" for one interactive request
+     * before the poll restored it.
+     */
+    protected function recoverPrivatePropertiesResults(): void
+    {
+        if ($this->privatePropertiesStatus !== 'loaded' || $this->privatePropertiesData !== []) {
+            return;
+        }
+
+        $result = rescue(
+            fn () => app(RegistryApi::class)->fetchPersonPropertyPortfolioByCprFromCache($this->query),
+            null
+        );
+
+        $rows = array_values($result['personal_properties'] ?? []);
+
+        if ($rows === []) {
+            $this->privatePropertiesStatus = 'pending';
+
+            return;
+        }
+
+        $this->privatePropertiesData = $rows;
     }
 
     /**
@@ -1304,6 +1509,14 @@ class PersonStructure extends MetisSection
             layers: $layers,
             caps: self::CAPS,
             now: \Carbon\CarbonImmutable::now(),
+            // Passed straight through: the property is normalised to a LIST at
+            // both of its two write sites (loadPrivateProperties and the
+            // recovery pass), which is where the invariant belongs. A second
+            // array_values() here would be unobservable defence — mutation-
+            // tested, it killed no test, precisely because it can never fire.
+            // The invariant matters because privatePropertyId() types the row
+            // index as int and would throw on a string-keyed map.
+            privateProperties: $this->privatePropertiesData,
         );
     }
 

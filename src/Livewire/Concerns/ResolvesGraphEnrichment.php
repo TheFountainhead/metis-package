@@ -105,6 +105,27 @@ trait ResolvesGraphEnrichment
     }
 
     /**
+     * The node list both scope resolvers below read. Defaults to the graph the
+     * component is currently SHOWING, which is right whenever the shown graph
+     * is the only graph — PersonStructure's case, where chips filter the model
+     * but the enrichment pass re-runs freely as the poll loop advances.
+     *
+     * 🚨 A component whose enrichment pass is TERMINAL must override this with
+     * an all-layers build, or a chip switched off while enrichment ran freezes
+     * those nodes out of scope permanently (spec P1-4). CompanyStructure does
+     * exactly that — see its enrichmentGraphNodes() for the full reasoning.
+     * Overriding here rather than reading $this->graphModel directly in the two
+     * resolvers keeps that decision in ONE place per component instead of
+     * duplicated across both scope derivations.
+     *
+     * @return list<array>
+     */
+    protected function enrichmentGraphNodes(): array
+    {
+        return $this->graphModel['nodes'] ?? [];
+    }
+
+    /**
      * The cvrs to pool company-info for: ENRICHABLE_KINDS nodes IN THE GRAPH.
      *
      * Mirrors the kind-gate in OwnershipGraphBuilder::applyEnrichment(), so
@@ -118,7 +139,7 @@ trait ResolvesGraphEnrichment
      */
     protected function enrichmentCvrs(): array
     {
-        return collect($this->graphModel['nodes'] ?? [])
+        return collect($this->enrichmentGraphNodes())
             ->filter(fn ($node) => in_array($node['kind'] ?? null, OwnershipGraphBuilder::ENRICHABLE_KINDS, true))
             ->pluck('cvr')->filter()->map(fn ($cvr) => (string) $cvr)->unique()->values()->all();
     }
@@ -144,7 +165,7 @@ trait ResolvesGraphEnrichment
      */
     protected function enrichmentMatrikelIds(): array
     {
-        return collect($this->graphModel['nodes'] ?? [])
+        return collect($this->enrichmentGraphNodes())
             ->filter(fn ($node) => ($node['kind'] ?? null) === 'property')
             ->pluck('id')
             ->filter(fn ($id) => is_string($id) && str_starts_with($id, 'bfe:'))

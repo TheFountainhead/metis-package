@@ -1677,3 +1677,648 @@ it('retryProperties() reopens enrichment after a failed-then-succeeded portfolio
         ->and($prop['card']['usage'] ?? null)->toBe('Bolig')
         ->and($prop['card']['streetview_url'] ?? null)->not->toBeNull();
 });
+
+// ---- Task 2 (chips A): filter-chips på selskabs-grafen ----------------------
+// Mirrors PersonStructure's proven chip pattern 1:1 (toggleLayer's never-empty
+// rule, the $otherCount affordance comment, wire:loading.attr + wire:target),
+// with the two divergences spec v2 makes binding for the COMPANY graph:
+// P1-4 (enrichment scope resolves against an ALL-LAYERS graph, never $layers)
+// and P1-6 (the blade lock is a server-computed layerContributesNodes(), not a
+// badge count — on this graph the depth-cap/auto-expand/total-cap make pre-cap
+// badges and actual node contribution diverge far more than on the person side).
+
+/** The single <button> element for one company chip, sliced out of the HTML. */
+function companyChipMarkupFor(string $html, string $layer): string
+{
+    $start = strpos($html, "toggleLayer('{$layer}')");
+
+    expect($start)->not->toBeFalse("chip for layer [{$layer}] not rendered");
+
+    $open = strrpos(substr($html, 0, $start), '<button');
+    $close = strpos($html, '</button>', $start);
+
+    return substr($html, $open, $close - $open);
+}
+
+it('toggles the owners layer off and back on, rebuilding the graph each time', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => []],
+            ],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    expect($c->get('layers'))->toBe(['owners', 'subsidiaries', 'properties']);
+
+    $c->call('toggleLayer', 'owners');
+
+    expect($c->get('layers'))->toBe(['subsidiaries', 'properties'])
+        ->and(collect($c->get('graphModel')['nodes'])->pluck('id'))->not->toContain('11111111')
+        ->and(collect($c->get('graphModel')['nodes'])->pluck('id'))->toContain('44507781');
+    $c->assertDispatched('graph-refit');
+
+    $c->call('toggleLayer', 'owners');
+
+    expect($c->get('layers'))->toBe(['subsidiaries', 'properties', 'owners'])
+        ->and(collect($c->get('graphModel')['nodes'])->pluck('id'))->toContain('11111111');
+});
+
+it('refuses a layer toggle that would leave nothing but the searched company', function () {
+    // A company with ONLY owners: switching the empty subsidiaries/properties
+    // chips off removes nothing and is always allowed; switching the owners
+    // chip off would leave the searched root alone, so the server refuses it
+    // outright and leaves $layers untouched.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    $c->call('toggleLayer', 'subsidiaries');
+    expect($c->get('layers'))->toBe(['owners', 'properties']);
+
+    $c->call('toggleLayer', 'properties');
+    expect($c->get('layers'))->toBe(['owners']);
+
+    // Owners now carries every node but the root — rejected, state untouched.
+    $c->call('toggleLayer', 'owners');
+    expect($c->get('layers'))->toBe(['owners'])
+        ->and(collect($c->get('graphModel')['nodes'])->pluck('id'))->toContain('11111111');
+});
+
+it('locks the chip that carries every node and leaves the empty ones clickable', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    // Matched as the STANDALONE `disabled` attribute: every chip also carries
+    // wire:loading.attr="disabled", which contains the word but is not the lock.
+    $owners = companyChipMarkupFor($c->html(), 'owners');
+    expect($owners)->toMatch('/\sdisabled(?=[\s>])/')
+        ->and($owners)->toContain('mgraph-chip--locked');
+
+    foreach (['subsidiaries', 'properties'] as $layer) {
+        $chip = companyChipMarkupFor($c->html(), $layer);
+        expect($chip)->not->toMatch('/\sdisabled(?=[\s>])/')
+            ->and($chip)->not->toContain('mgraph-chip--locked');
+    }
+});
+
+it('leaves a properties chip deselectable when the total-cap ate every property node, even though K > 0', function () {
+    // 🚨 spec P1-6, the reason the lock is layerContributesNodes() and not the
+    // badge. TWO caps compose here, which is exactly the divergence the person
+    // graph never shows: properties_per_company (6) already trims 130 portfolio
+    // rows to 6 nodes, and then a 130-strong subsidiary tree pushes the graph
+    // past total_nodes (120) — whose FIRST truncation pass is property nodes.
+    // Result: the properties layer contributes ZERO drawn nodes while K reads
+    // 130. A lock computed from the badge would freeze a chip whose toggle
+    // removes nothing.
+    $properties = collect(range(1, 130))
+        ->map(fn ($i) => fdlPortfolioProperty([
+            'owner_cvr' => '38653806',
+            'matrikel_id' => (string) (3000000 + $i),
+            'address' => "Vej {$i}",
+        ]))->all();
+
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [],
+            'subsidiaries' => collect(range(1, 130))
+                ->map(fn ($i) => ['cvr' => (string) (50000000 + $i), 'name' => "Datter {$i}", 'ownership_share' => 100.0, 'children' => []])
+                ->all(),
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio(properties: $properties);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    // Badge is PRE-cap: it answers "how many properties does this company own".
+    expect($c->get('propertyCount'))->toBe(130);
+
+    // …but not one property node survived the total-cap.
+    expect(collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->toBeNull();
+
+    // So the chip must be free — and the server agrees when clicked.
+    $chip = companyChipMarkupFor($c->html(), 'properties');
+    expect($chip)->not->toMatch('/\sdisabled(?=[\s>])/')
+        ->and($chip)->not->toContain('mgraph-chip--locked');
+
+    // 🚨 THE OTHER HALF, and the reason the lock asks "would this EMPTY the
+    // graph" rather than "does this layer contribute nodes". Subsidiaries is
+    // the only layer with drawn nodes right now, so a contribution-based lock
+    // disabled this chip — wrongly: switching it off FREES the total-cap
+    // budget, the 130 properties refill the graph, and toggleLayer() accepts
+    // the click. A disabled button over an accepted click is the same
+    // dead-button failure in mirror image.
+    $subsidiaries = companyChipMarkupFor($c->html(), 'subsidiaries');
+    expect($subsidiaries)->not->toMatch('/\sdisabled(?=[\s>])/')
+        ->and($subsidiaries)->not->toContain('mgraph-chip--locked');
+
+    $c->call('toggleLayer', 'subsidiaries');
+    expect($c->get('layers'))->not->toContain('subsidiaries')
+        // The properties the cap had eaten are now drawn — the graph refilled.
+        ->and(collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->not->toBeNull();
+
+    // And with subsidiaries gone, properties is now the sole carrier: the same
+    // chip that was free a moment ago is refused, and rendered locked.
+    expect(companyChipMarkupFor($c->html(), 'properties'))->toContain('mgraph-chip--locked');
+
+    $c->call('toggleLayer', 'properties');
+    expect($c->get('layers'))->toContain('properties');
+});
+
+it('counts chip badges pre-cap: owners = ancestor rows, subsidiaries = every descendant, properties = portfolio length', function () {
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            // 🚨 N is ancestor ROWS, not owner NODES (spec P3-1) — and here the
+            // two genuinely differ: the second row names a parent_of_cvr that
+            // is not itself an ancestor row, so the builder synthesises an
+            // extra 'other' stub node to keep the chain connected. Rows = 2,
+            // owner-ish nodes drawn = 3. Counting nodes would make the badge
+            // claim an owner the register never listed.
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 60.0],
+                ['person_name' => 'Anden Holding ApS', 'is_company' => true, 'cvr' => '22222222', 'ownership_share' => 40.0, 'parent_of_cvr' => '99999999'],
+            ],
+            // Recursive: 1 child + 1 grandchild + 1 great-grandchild = 3, NOT 1.
+            'subsidiaries' => [[
+                'cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0,
+                'children' => [[
+                    'cvr' => '44018942', 'name' => 'Trygve 1 ApS', 'ownership_share' => 100.0,
+                    'children' => [[
+                        'cvr' => '44027992', 'name' => 'Schneidereit Trygve 1 A/S', 'ownership_share' => 67.0, 'children' => [],
+                    ]],
+                ]],
+            ]],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio(properties: [
+        fdlPortfolioProperty(['owner_cvr' => '38653806', 'matrikel_id' => '1']),
+        fdlPortfolioProperty(['owner_cvr' => '38653806', 'matrikel_id' => '2']),
+    ]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('loadProperties');
+
+    expect($c->get('ownerCount'))->toBe(2)
+        ->and($c->get('subsidiaryCount'))->toBe(3)
+        ->and($c->get('propertyCount'))->toBe(2);
+
+    // The stub really is in the graph — so a node-derived N would read 3 here
+    // and this test would be pinning nothing.
+    expect(collect($c->get('graphModel')['nodes'])->firstWhere('id', '99999999')['kind'])->toBe('other');
+
+    $html = $c->html();
+    expect(companyChipMarkupFor($html, 'owners'))->toContain('(2)')
+        ->and(companyChipMarkupFor($html, 'subsidiaries'))->toContain('(3)')
+        ->and(companyChipMarkupFor($html, 'properties'))->toContain('(2)');
+});
+
+it('keeps the enrichment scope on ALL layers so a chip-off never freezes owners out of their cards (spec P1-4)', function () {
+    // 🚨 THE F3-GATE FREEZE. enrichmentStatus === 'loaded' is permanent (only
+    // retryEnrichment/retryProperties reopen it), so whatever scope the single
+    // enrichment pass resolved is the scope FOREVER. Resolved against
+    // $this->layers, a user who switched owners off before enrichment ran would
+    // have owner nodes with no card for the rest of the page's life — switching
+    // the chip back on returns the nodes but nothing ever fetches their cards.
+    //
+    // MUTATION-SENSITIVE: swap buildGraph(ALL_LAYERS) for $this->layers in the
+    // enrichment scope path and this goes red at the final card assertion.
+    fakeRegistryCompanyInfo('11111111');
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => []],
+            ],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    // Owners OFF, then enrichment runs (the real path: loadProperties settles
+    // propertiesStatus and calls loadEnrichment itself).
+    $c->call('toggleLayer', 'owners');
+    expect(collect($c->get('graphModel')['nodes'])->pluck('id'))->not->toContain('11111111');
+
+    $c->call('loadProperties');
+    expect($c->get('enrichmentStatus'))->toBe('loaded');
+
+    // Owners back ON — the node returns AND carries its card, because the
+    // enrichment pass resolved its scope against an all-layers graph.
+    $c->call('toggleLayer', 'owners');
+
+    $owner = collect($c->get('graphModel')['nodes'])->firstWhere('id', '11111111');
+    expect($owner)->not->toBeNull()
+        ->and($owner['card'] ?? null)->not->toBeNull()
+        ->and($owner['card']['equity'])->toBe(1_000_000);
+});
+
+it('keeps fetching a hidden layers data — chips filter the BUILD, never the fetch', function () {
+    // Established rule (spec §A "Hentning fortsætter uanset chips"): the
+    // portfolio call goes out with the properties chip off, so re-enabling the
+    // chip shows already-fetched data instantly.
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty(['owner_cvr' => '38653806'])]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    $c->call('toggleLayer', 'properties');
+    $c->call('loadProperties');
+
+    expect($c->get('propertiesStatus'))->toBe('loaded');
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'property-portfolio'));
+
+    // Hidden from the drawing…
+    expect(collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->toBeNull();
+
+    // …and instantly back when the chip returns, with no second portfolio call.
+    $before = count(Http::recorded(fn ($request) => str_contains($request->url(), 'property-portfolio')));
+    $c->call('toggleLayer', 'properties');
+
+    expect(collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->not->toBeNull()
+        ->and(count(Http::recorded(fn ($request) => str_contains($request->url(), 'property-portfolio'))))->toBe($before);
+});
+
+it('carries $layers across a rehydrated request so a toggled-off layer stays off', function () {
+    // An owner is needed alongside the subsidiaries: with subsidiaries the ONLY
+    // layer carrying nodes, toggleLayer() would (correctly) refuse the click and
+    // this test would pass for the wrong reason.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => []],
+            ],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('toggleLayer', 'subsidiaries');
+
+    expect($c->get('layers'))->not->toContain('subsidiaries');
+
+    // A later request on the SAME public state (an expand) must keep building
+    // without the layer — $layers is public, so it survives hydration.
+    $c->call('expandNode', 'props:38653806');
+
+    expect($c->get('layers'))->not->toContain('subsidiaries')
+        ->and(collect($c->get('graphModel')['nodes'])->pluck('id'))->not->toContain('44507781');
+});
+
+it('disables the layer chips only while a toggleLayer round-trip is in flight', function () {
+    // 🚨 wire:target is load-bearing: this section polls, and an UNTARGETED
+    // wire:loading would grey the chips out on every poll tick rather than only
+    // during the toggle's own round-trip.
+    $blade = file_get_contents(__DIR__.'/../../../../resources/views/livewire/sections/company-structure.blade.php');
+
+    expect($blade)->toContain('wire:loading.attr="disabled"')
+        ->and($blade)->toContain('wire:target="toggleLayer"');
+});
+
+it('ignores an unknown layer name outright', function () {
+    fakeRegistryStructure();
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('toggleLayer', 'ejendomme');
+
+    expect($c->get('layers'))->toBe(['owners', 'subsidiaries', 'properties']);
+});
+
+it('unlocks both chips when two layers hold the SAME deduped node — neither one alone carries the graph (P1-6: lock reads contribution, not badge)', function () {
+    // 🚨 THE MUTATION-KILLING CASE for the blade lock. A company that is BOTH
+    // an ancestor and a subsidiary (a genuine cross-holding) is drawn ONCE:
+    // addAncestors runs first and claims the id, so whichever layer is switched
+    // off, the other still supplies the node. Both badges read 1, and NEITHER
+    // chip may lock — switching either one off removes nothing.
+    //
+    // A badge-based lock gets this exactly backwards: with `$count > 0` both
+    // chips see the other's badge as zero contribution (each is the sole
+    // "carrier" by badge arithmetic) and BOTH render locked — two dead buttons
+    // over toggles the server happily accepts. Swap layerContributesNodes() for
+    // $count in the blade and this test goes red on the disabled-attribute
+    // assertions below.
+    //
+    // The never-empty rule still holds where it must: with owners already off,
+    // switching subsidiaries off too WOULD empty the graph, and toggleLayer()
+    // refuses that click (asserted at the end) — the guarantee lives in the
+    // server's trial build, never in the affordance.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Krydsejet ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '11111111', 'name' => 'Krydsejet ApS', 'ownership_share' => 100.0, 'children' => []],
+            ],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    // Both badges are 1 — pre-cap, per-layer, exactly as documented…
+    expect($c->get('ownerCount'))->toBe(1)
+        ->and($c->get('subsidiaryCount'))->toBe(1)
+        // …while the graph holds one single node for that cvr.
+        ->and(collect($c->get('graphModel')['nodes'])->where('id', '11111111'))->toHaveCount(1);
+
+    // Server truth: removing EITHER layer alone changes nothing, because the
+    // other still supplies the shared node.
+    expect($c->instance()->layerContributesNodes('owners'))->toBeFalse()
+        ->and($c->instance()->layerContributesNodes('subsidiaries'))->toBeFalse();
+
+    // …so NEITHER chip may render locked.
+    foreach (['owners', 'subsidiaries'] as $layer) {
+        $chip = companyChipMarkupFor($c->html(), $layer);
+        expect($chip)->not->toMatch('/\sdisabled(?=[\s>])/')
+            ->and($chip)->not->toContain('mgraph-chip--locked');
+    }
+
+    // And the server accepts the click the affordance promised.
+    $c->call('toggleLayer', 'owners');
+    expect($c->get('layers'))->toBe(['subsidiaries', 'properties'])
+        ->and(collect($c->get('graphModel')['nodes'])->pluck('id'))->toContain('11111111');
+
+    // The never-empty rule still bites where it must: subsidiaries is now the
+    // sole carrier, so this click IS refused — by the server's trial build.
+    $c->call('toggleLayer', 'subsidiaries');
+    expect($c->get('layers'))->toBe(['subsidiaries', 'properties']);
+});
+
+// ---- Task 2, fix-round: the lock must not fire without builder input --------
+
+it('renders every chip UNLOCKED on a request that never rehydrated the structure (poll-path degrade)', function () {
+    // 🚨 THE GAP 65 GREEN TESTS MISSED. Every chip test above renders on a
+    // request that had just rebuilt from real $structureData — but the
+    // subsidiary-discovery poll does NOT: pollForUpdates() early-returns while
+    // $enriching is true, BEFORE any rehydrate, so the whole request runs with
+    // $structureData === []. The chip container still renders (it reads the
+    // PUBLIC $graphModel, which arrived over the wire), and every trial build
+    // then comes back with just the searched root — so layerContributesNodes()
+    // said "yes, removing this empties the graph" for all three, and the user
+    // stared at three dead buttons, re-disabled every 3 seconds, for the entire
+    // discovery phase.
+    //
+    // Degrade to UNLOCKED rather than rehydrating per poll: a wrongly-ENABLED
+    // chip is caught by toggleLayer()'s own refusal (which rehydrates first),
+    // while a wrongly-DISABLED chip has no recourse at all.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => []],
+            ],
+        ]]),
+        // 'running' ⇒ $enriching stays true ⇒ pollForUpdates() early-returns.
+        '*enrichment*' => Http::response(['data' => ['status' => 'running']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+    expect($c->get('enriching'))->toBeTrue();
+
+    // The poll request: no rehydrate runs, so the protected builder input is
+    // gone while the public graph model is still on screen.
+    $c->call('pollForUpdates');
+
+    $structureData = (function () {
+        $p = new ReflectionProperty(CompanyStructure::class, 'structureData');
+        $p->setAccessible(true);
+
+        return $p->getValue($this);
+    })->call($c->instance());
+
+    expect($structureData)->toBe([])
+        ->and(count($c->get('graphModel')['nodes']))->toBeGreaterThan(1);
+
+    // Not one chip may be locked on this request.
+    $html = $c->html();
+    foreach (['owners', 'subsidiaries', 'properties'] as $layer) {
+        $chip = companyChipMarkupFor($html, $layer);
+        expect($chip)->not->toMatch('/\sdisabled(?=[\s>])/')
+            ->and($chip)->not->toContain('mgraph-chip--locked');
+    }
+});
+
+it('still enforces the never-empty rule on the server when a chip was rendered unlocked without structure state', function () {
+    // The degrade's safety net: an ENABLED chip is only safe because
+    // toggleLayer() rehydrates and then refuses. Pin that the refusal really
+    // happens on the path the degrade opens up — otherwise "a wrongly-enabled
+    // chip is caught by the server" is an assumption, not a guarantee.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'running']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
+        ->call('pollForUpdates');
+
+    // Owners is the sole carrier, and on this structure-less request the chip
+    // renders enabled (the degrade) — but the click is still refused, because
+    // toggleLayer() rehydrates before it evaluates the rule.
+    expect(companyChipMarkupFor($c->html(), 'owners'))->not->toMatch('/\sdisabled(?=[\s>])/');
+
+    $c->call('toggleLayer', 'owners');
+    expect($c->get('layers'))->toContain('owners');
+});
+
+it('builds each distinct layer-set at most once per request (trial-build memo)', function () {
+    // One render calls layerContributesNodes() three times, and the enrichment
+    // paths add a fourth all-layers build — each one a FULL build over
+    // pre-truncation inputs (the 130+130 fixture above is not hypothetical).
+    // The memo makes a render cost one build per DISTINCT layer-set.
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => [
+            'name' => 'FDL-Invest ApS',
+            'owners' => [],
+            'ancestors' => [
+                ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '44507781', 'name' => 'Kirketorvet Ejendomme ApS', 'ownership_share' => 50.0, 'children' => []],
+            ],
+        ]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    // A builder that counts build() calls, bound for the whole request.
+    $spy = new class extends TheFountainhead\Metis\Services\OwnershipGraphBuilder
+    {
+        public array $builtLayerSets = [];
+
+        public function build(
+            string $query,
+            ?string $companyName,
+            array $structure,
+            array $properties,
+            array $enrichment,
+            array $expandedNodeIds,
+            array $caps,
+            ?Carbon\CarbonImmutable $now = null,
+            array $layers = ['owners', 'subsidiaries', 'properties'],
+        ): array {
+            $this->builtLayerSets[] = $layers;
+
+            return parent::build($query, $companyName, $structure, $properties, $enrichment, $expandedNodeIds, $caps, $now, $layers);
+        }
+    };
+    app()->instance(TheFountainhead\Metis\Services\OwnershipGraphBuilder::class, $spy);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    $inst = $c->instance();
+    $build = new ReflectionMethod($inst, 'buildGraph');
+    $build->setAccessible(true);
+
+    // Mount's own render already built FOUR distinct sets — the full set for
+    // rebuild() plus one per chip — and after the memo those are the only four
+    // builds the whole request pays for. Probed by key: the cache holds exactly
+    // owners|properties|subsidiaries, properties|subsidiaries, owners|properties
+    // and owners|subsidiaries.
+    $memoKeys = function () {
+        $p = new ReflectionProperty(CompanyStructure::class, 'trialBuildCache');
+        $p->setAccessible(true);
+
+        return array_map(fn ($k) => strstr($k, ':', true), array_keys($p->getValue($this)));
+    };
+
+    expect($memoKeys->call($inst))->toEqualCanonicalizing([
+        'owners|properties|subsidiaries',
+        'properties|subsidiaries',
+        'owners|properties',
+        'owners|subsidiaries',
+    ]);
+
+    // So re-asking every chip question costs NOTHING — the three trial builds a
+    // naive implementation repeats on every single render.
+    $spy->builtLayerSets = [];
+    $inst->layerContributesNodes('owners');
+    $inst->layerContributesNodes('subsidiaries');
+    $inst->layerContributesNodes('properties');
+    expect($spy->builtLayerSets)->toBe([]);
+
+    // Order must not create a false miss: the key is the SORTED set, so asking
+    // for a cached set the other way round is still a hit.
+    $build->invoke($inst, ['properties', 'subsidiaries']);
+    $build->invoke($inst, ['subsidiaries', 'properties']);
+    expect($spy->builtLayerSets)->toBe([]);
+
+    // A genuinely un-built set IS a miss — once, then cached.
+    $build->invoke($inst, ['owners']);
+    expect($spy->builtLayerSets)->toHaveCount(1);
+    $build->invoke($inst, ['owners']);
+    expect($spy->builtLayerSets)->toHaveCount(1);
+
+    // 🚨 And a build after the INPUTS change is a miss too, not a stale hit —
+    // the guarantee that makes the memo correct on loadProperties()/expandNode(),
+    // which build early and then write new input in the same request.
+    $spy->builtLayerSets = [];
+    $build->invoke($inst, ['owners']);
+    expect($spy->builtLayerSets)->toBe([]);
+
+    $expanded = new ReflectionProperty(CompanyStructure::class, 'expandedNodeIds');
+    $expanded->setAccessible(true);
+    $expanded->setValue($inst, ['sub:44507781']);
+
+    $build->invoke($inst, ['owners']);
+    expect($spy->builtLayerSets)->toHaveCount(1);
+});
+
+it('never persists the trial-build memo across requests — a rebuild on new input is never served from cache', function () {
+    // The memo is PROTECTED state, so hydration wipes it naturally. That is the
+    // whole safety argument: within one request the inputs cannot change (every
+    // mutation path rebuilds through buildGraph AFTER writing them), and across
+    // requests there is no cache at all. Pinned so a later "optimisation" that
+    // promotes it to public/session state fails here.
+    fakeRegistryStructure();
+    fakeRegistryPortfolio(properties: [fdlPortfolioProperty(['owner_cvr' => '44507781'])]);
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806']);
+
+    $memo = (function () {
+        $p = new ReflectionProperty(CompanyStructure::class, 'trialBuildCache');
+        $p->setAccessible(true);
+
+        return $p->getValue($this);
+    });
+
+    // The mount request warmed it.
+    expect($memo->call($c->instance()))->not->toBe([]);
+
+    // A later request starts with an EMPTY memo, and the property is not part
+    // of the wire payload either.
+    $c->call('loadProperties');
+
+    expect($c->get('graphModel')['nodes'])->not->toBeEmpty();
+    expect(collect($c->get('graphModel')['nodes'])->firstWhere('kind', 'property'))->not->toBeNull();
+
+    // Property nodes only appear if the post-loadProperties rebuild was NOT
+    // served from the mount-time memo (which held a property-less graph).
+});

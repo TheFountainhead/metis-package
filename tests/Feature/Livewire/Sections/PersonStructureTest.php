@@ -229,23 +229,26 @@ it('refuses a layer toggle that would leave nothing but the person', function ()
 
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
 
-    // Ownership layer is empty, so it can always be switched off.
+    // Ownership layer is empty, so it can always be switched off. (The
+    // private-properties layer is empty too here — fakeRegistryCpr does not
+    // fake the person-portfolio endpoint, so that phase never loads a row.)
     $test->call('toggleLayer', 'ownership');
-    expect($test->get('layers'))->toBe(['roles']);
+    expect($test->get('layers'))->toBe(['roles', 'private_properties']);
 
     // Roles now carries every visible node — the toggle is rejected outright,
     // leaving state untouched.
     $test->call('toggleLayer', 'roles');
-    expect($test->get('layers'))->toBe(['roles'])
+    expect($test->get('layers'))->toBe(['roles', 'private_properties'])
         ->and(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('22222222');
 });
 
-it('locks the only chip that carries nodes even while the empty chip is still active', function () {
+it('locks the only chip that carries nodes even while the empty chips are still active', function () {
     // The affordance must agree with the SERVER rule. An ownership-only person
-    // has roleCount 0 and both chips active, so count($layers) === 1 is false
+    // has roleCount 0 and every chip active, so count($layers) === 1 is false
     // and the Ejerskab chip rendered ENABLED — while toggleLayer() refuses the
     // click outright. A button that looks live and silently does nothing is
-    // worse than a disabled one: the user reads it as a broken graph.
+    // worse than a disabled one: the user reads it as a broken graph. (The
+    // third layer only widens the gap: two empty chips, not one.)
     fakeRegistryCpr([
         cprOwnershipCompany('11111111', 100.0, 'Holding ApS'),
     ]);
@@ -254,7 +257,7 @@ it('locks the only chip that carries nodes even while the empty chip is still ac
 
     expect($test->get('ownershipCount'))->toBe(1)
         ->and($test->get('roleCount'))->toBe(0)
-        ->and($test->get('layers'))->toBe(['ownership', 'roles']);
+        ->and($test->get('layers'))->toBe(['ownership', 'roles', 'private_properties']);
 
     // The chip that carries every node is locked…
     //
@@ -274,7 +277,7 @@ it('locks the only chip that carries nodes even while the empty chip is still ac
 
     // And the server agrees — the affordance is describing a real refusal.
     $test->call('toggleLayer', 'ownership');
-    expect($test->get('layers'))->toBe(['ownership', 'roles']);
+    expect($test->get('layers'))->toBe(['ownership', 'roles', 'private_properties']);
 });
 
 /** The single <button> element for one chip, sliced out of the rendered HTML. */
@@ -299,12 +302,12 @@ it('toggles a layer off and back on, rebuilding the graph each time', function (
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
 
     $test->call('toggleLayer', 'roles');
-    expect($test->get('layers'))->toBe(['ownership'])
+    expect($test->get('layers'))->toBe(['ownership', 'private_properties'])
         ->and(collect($test->get('graphModel')['nodes'])->pluck('id'))->not->toContain('22222222');
     $test->assertDispatched('graph-refit');
 
     $test->call('toggleLayer', 'roles');
-    expect($test->get('layers'))->toBe(['ownership', 'roles'])
+    expect($test->get('layers'))->toBe(['ownership', 'private_properties', 'roles'])
         ->and(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('22222222');
 });
 
@@ -2372,4 +2375,432 @@ it('gates the card streetview image on the svOk metadata flag in the shared part
 
     expect($partial)->toContain('card.node.card?.streetview_url && card.svOk')
         ->and($partial)->toContain("card.svOk ? (card.node.card?.streetview_url ?? '') : ''");
+});
+
+/*
+|--------------------------------------------------------------------------
+| Private ejendomme — the THIRD layer (Task 5)
+|--------------------------------------------------------------------------
+| The person's OWN property portfolio, fetched once from
+| /v1/person/property-portfolio and hung on person:root as 'pp:'-nodes. It is
+| a phase of its own: independent of the cvr queues (nothing about it waits on
+| a company structure), so tick() runs it in its own branch BEFORE fase 2 and
+| then FALLS THROUGH — the one deliberate exception to the
+| one-thing-per-tick discipline, and the reason the branch is documented
+| rather than merely written (spec P1-5c).
+*/
+
+/**
+ * Fase-1..3 fake PLUS the person's own portfolio endpoint.
+ *
+ * 🚨 The person pattern must be registered BEFORE the generic
+ * property-portfolio wildcard: Http::fake matches in insertion order and that
+ * pattern also matches
+ * '/v1/person/property-portfolio' (it is a suffix of the URL). Registered the
+ * other way round the company handler would answer the person call with a
+ * ['portfolio' => …] payload and every private-properties test would see
+ * 'empty' — the fake, not the component, deciding the outcome.
+ *
+ * $private: a list of personal_properties rows, 'missing' for a 200 whose body
+ * carries no personal_properties key at all, or null for a hard 500.
+ */
+function fakePersonPrivate(array $companies, array|string|null $private = [], array $structures = [], array $portfolios = [], array $relationships = []): void
+{
+    Http::fake([
+        '*/v1/person/property-portfolio*' => match (true) {
+            $private === null => Http::response('Server error', 500),
+            $private === 'missing' => Http::response(['data' => ['summary' => []]]),
+            default => Http::response(['data' => ['personal_properties' => $private]]),
+        },
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => $companies]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => $relationships]]),
+        '*/v1/cvr/company-structure*' => function ($request) use ($structures) {
+            $cvr = $request->data()['cvr'] ?? null;
+            $payload = array_key_exists($cvr, $structures) ? $structures[$cvr] : ['subsidiaries' => []];
+
+            return $payload === null
+                ? Http::response('Server error', 500)
+                : Http::response(['data' => $payload]);
+        },
+        '*/property-portfolio*' => function ($request) use ($portfolios) {
+            preg_match('#/company/(\d+)/property-portfolio#', $request->url(), $m);
+            $cvr = $m[1] ?? '';
+            $rows = array_key_exists($cvr, $portfolios) ? $portfolios[$cvr] : [];
+
+            return Http::response(['data' => ['portfolio' => [
+                'properties' => $rows,
+                'property_count' => count($rows),
+                'total_count' => count($rows),
+            ]]]);
+        },
+        '*/properties/batch*' => Http::response(['data' => []]),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => []]]),
+    ]);
+}
+
+/** One personal_properties row, in the shape the endpoint returns. */
+function privatePropertyRow(string $matrikel = '1a Testby', string $address = 'Travervænget 3'): array
+{
+    return [
+        'matrikelnummer' => $matrikel,
+        'address' => $address,
+        'city' => 'Testby',
+        'zip' => '8000',
+        'public_valuation' => 2_450_000,
+        'area_building' => 142,
+        'year_built' => 1974,
+        'ownership_share' => 50.0,
+        'co_owners' => [['name' => 'Medejer']],
+        'mortgages' => [],
+    ];
+}
+
+it('preselects the private-properties layer and fetches the portfolio on the first tick', function () {
+    fakePersonPrivate([cprOwnershipCompany('11111111')], [privatePropertyRow()]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    // Preselected, and pending until the poll runs — mount does fase 1 only.
+    expect($test->get('layers'))->toContain('private_properties')
+        ->and($test->get('privatePropertiesStatus'))->toBe('pending');
+
+    $test->call('tick');
+
+    expect($test->get('privatePropertiesStatus'))->toBe('loaded')
+        ->and($test->get('privatePropertiesCount'))->toBe(1);
+
+    $pp = collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:'));
+    expect($pp)->toHaveCount(1)
+        ->and($pp->first()['label'])->toBe('Travervænget 3');
+
+    // Hung on the person root, and the CPR never reaches the payload.
+    expect(collect($test->get('graphModel')['edges'])->pluck('from'))->toContain('person:root')
+        ->and(json_encode($test->get('graphModel')))->not->toContain('0101011234');
+});
+
+it('runs the private-properties branch BEFORE fase 2 and then falls through in the same tick', function () {
+    // The whole point of the fall-through (spec P1-5c): the call is independent
+    // of the cvr queues, so making fase 2 wait a whole poll interval for it
+    // would slow the graph down for nothing. One tick must do both.
+    fakePersonPrivate([cprOwnershipCompany('11111111')], [privatePropertyRow()]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    expect($test->get('structureByCompany'))->toBe(['11111111' => 'pending']);
+
+    $test->call('tick');
+
+    expect($test->get('privatePropertiesStatus'))->toBe('loaded')
+        ->and($test->get('structureByCompany'))->toBe(['11111111' => 'loaded']);
+});
+
+it('treats a successful response with no personal properties as empty, not failed', function () {
+    fakePersonPrivate([cprOwnershipCompany('11111111')], 'missing');
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    expect($test->get('privatePropertiesStatus'))->toBe('empty')
+        ->and($test->get('privatePropertiesCount'))->toBe(0);
+
+    // 'empty' is a settled answer, so it says nothing on screen (2a's rule).
+    $test->assertDontSee('Private ejendomme kunne ikke hentes');
+});
+
+it('marks the private-properties phase failed on a hard failure, zeroes the badge and offers its own retry', function () {
+    // null ≠ tom, and P2-4: a failed phase sets the count to 0 so the chip is
+    // treated as an empty layer (freely deselectable) while the badge shows
+    // "(–)" — a dash, never a 0 that would read as a fact about the person.
+    // Sequenced load-then-FAIL rather than fail-then-load, deliberately: the
+    // zeroing is only observable when the count was non-zero first. Probed as
+    // fail-first, the assertion passed against a count that had simply never
+    // moved off its declared 0 — mutation-testing the zeroing away left it green.
+    Http::fake([
+        '*/v1/person/property-portfolio*' => Http::sequence()
+            ->push(['data' => ['personal_properties' => [privatePropertyRow('1a', 'A 1'), privatePropertyRow('2a', 'B 2'), privatePropertyRow('3a', 'C 3')]]])
+            ->push('Server error', 500)
+            ->push(['data' => ['personal_properties' => [privatePropertyRow()]]]),
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [cprOwnershipCompany('11111111')]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+        '*/properties/batch*' => Http::response(['data' => []]),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => []]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    expect($test->get('privatePropertiesStatus'))->toBe('loaded')
+        ->and($test->get('privatePropertiesCount'))->toBe(3);
+
+    // The retry hits the 500. The count must be ZEROED (spec P2-4), not left at
+    // 3: a stale count makes the chip behave as a NON-empty layer, and the
+    // never-empty rule would then be able to lock a chip whose layer draws
+    // nothing at all — an undismissable chip over an invisible layer.
+    \Illuminate\Support\Facades\Cache::flush();
+    $test->call('retryPrivateProperties');
+
+    expect($test->get('privatePropertiesStatus'))->toBe('failed')
+        ->and($test->get('privatePropertiesCount'))->toBe(0);
+
+    $test->assertSee('Private ejendomme kunne ikke hentes')
+        ->assertSee('Private ejendomme (–)');
+
+    // And the retry is its OWN: the fase-3 budget must be untouched (that retry
+    // resets the shared MAX_PROPERTIES_ATTEMPTS counter and re-opens settled cvrs).
+    \Illuminate\Support\Facades\Cache::flush();
+    $test->set('propertiesAttempts', 7)->call('retryPrivateProperties');
+
+    expect($test->get('privatePropertiesStatus'))->toBe('loaded')
+        ->and($test->get('privatePropertiesCount'))->toBe(1)
+        ->and($test->get('propertiesAttempts'))->toBe(7);
+});
+
+it('fetches the private portfolio exactly once per page, not once per tick', function () {
+    fakePersonPrivate([cprOwnershipCompany('11111111')], [privatePropertyRow()]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    tickUntilSettled($test);
+
+    // Cached (5 min) AND status-gated: the gate is what this pins — a cache hit
+    // would hide an ungated branch that re-reads on every one of the ~4 ticks.
+    expect($test->get('privatePropertiesStatus'))->toBe('loaded');
+    expect(collect(Http::recorded())->filter(fn ($pair) => str_contains($pair[0]->url(), '/v1/person/property-portfolio')))
+        ->toHaveCount(1);
+});
+
+it('shows the private-properties chip with a pre-cap badge and filters the layer off', function () {
+    $rows = collect(range(1, 14))->map(fn ($i) => privatePropertyRow("{$i}a Testby", "Vej {$i}"))->all();
+    fakePersonPrivate([cprOwnershipCompany('11111111')], $rows);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    // PRE-cap: 14, not the 10 person_private_properties actually drawn.
+    expect($test->get('privatePropertiesCount'))->toBe(14);
+    $test->assertSee('Private ejendomme (14)');
+
+    expect(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(10);
+
+    $test->call('toggleLayer', 'private_properties');
+
+    expect($test->get('layers'))->not->toContain('private_properties')
+        ->and(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(0);
+});
+
+it('refuses to switch off the private-properties chip when it carries the only nodes', function () {
+    // The never-empty rule (count(nodes) <= 1) needs no third-layer special
+    // case — this pins that it genuinely covers the new layer for a person with
+    // NO companies at all, only private properties.
+    // NB a person with NO companies never gets here: fase 1 settles 'empty' and
+    // no graph is built at all. The only reachable only-private state is a
+    // person WITH a company whose other chips have been switched off first,
+    // which is what this walks.
+    fakePersonPrivate([cprRoleCompany('22222222')], [privatePropertyRow()]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    $test->call('toggleLayer', 'roles');
+    expect($test->get('layers'))->toBe(['ownership', 'private_properties']);
+
+    // Private properties now carry every visible node — the toggle is refused
+    // outright, state untouched.
+    $test->call('toggleLayer', 'private_properties');
+    expect($test->get('layers'))->toBe(['ownership', 'private_properties'])
+        ->and(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(1);
+});
+
+it('recovers the private rows from cache across a hydration boundary without a network call', function () {
+    fakePersonPrivate([cprOwnershipCompany('11111111')], [privatePropertyRow()]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+    expect($test->get('privatePropertiesStatus'))->toBe('loaded');
+
+    // A genuinely fresh instance: $privatePropertiesData is PROTECTED, so it is
+    // gone while privatePropertiesStatus still says 'loaded'. The cache is warm,
+    // so recovery reclaims the rows and the pp:-nodes survive the rebuild.
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    expect($fresh->privatePropertiesStatus)->toBe('loaded')
+        ->and(collect($fresh->graphModel['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(1);
+});
+
+it('hands the private phase back to the poll on a cache miss instead of fetching inside the click', function () {
+    // 🚨 CACHE-ONLY (spec P1-5a). fetchPersonPropertyPortfolioByCprCached FALLS
+    // THROUGH to a real POST on a miss, so recovery must not use it: a chip
+    // toggle would then pay a 5-15s person-portfolio round-trip.
+    fakePersonPrivate([cprOwnershipCompany('11111111')], [privatePropertyRow()]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    \Illuminate\Support\Facades\Cache::flush();
+    Http::fake([
+        '*/v1/person/property-portfolio*' => Http::response(['data' => ['personal_properties' => [privatePropertyRow()]]]),
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [cprOwnershipCompany('11111111')]]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+        '*/v1/cvr/company-structure*' => Http::response(['data' => ['subsidiaries' => []]]),
+        '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
+        '*/properties/batch*' => Http::response(['data' => []]),
+        '*/v1/cvr/company/*' => Http::response(['data' => ['company' => []]]),
+    ]);
+
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    // Reset, not failed — the poll owns fetching.
+    expect($fresh->privatePropertiesStatus)->toBe('pending');
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/v1/person/property-portfolio'));
+});
+
+/**
+ * 🚨 The FRESH-MOUNT half of the recovery contract, and the T8 lesson applied:
+ * rehydratedFrom() copies the PUBLIC state across, and $graphModel is public —
+ * so the test above starts with a graph that ALREADY contains the pp:-nodes and
+ * cannot observe their ABSENCE. Deleting the recovery call entirely would leave
+ * it green.
+ *
+ * Here $graphModel is whatever a fresh mount produced (skeleton only, no
+ * pp:-nodes, because the portfolio had not been fetched at mount time) while
+ * the status is forced to the 'loaded' a hydrated request would carry. That is
+ * the real shape of a second request, and the only shape in which a missing
+ * recovery is visible.
+ */
+it('rebuilds the pp:-nodes from cache on a fresh mount whose graph predates them', function () {
+    fakePersonPrivate([cprOwnershipCompany('11111111')], [privatePropertyRow()]);
+
+    // A previous request ran the phase and warmed the 5-min cache.
+    tickUntilSettled(Livewire::test(PersonStructure::class, ['query' => '0101011234']));
+
+    $second = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    expect(collect($second->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toBeEmpty();
+
+    $second->set('privatePropertiesStatus', 'loaded')
+        ->set('privatePropertiesCount', 1)
+        ->call('toggleLayer', 'roles');
+
+    expect($second->get('privatePropertiesStatus'))->toBe('loaded')
+        ->and(collect($second->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(1);
+});
+
+it('keeps polling while the private phase is pending, even with every other phase settled', function () {
+    // The poll-gate is the ONLY thing that gets the phase run at all (mount
+    // does fase 1 only). Ungated on privatePropertiesStatus, a person whose
+    // companies all settle in the first tick would have the browser stop
+    // polling before the private branch ever ran.
+    fakePersonPrivate([cprOwnershipCompany('11111111')], [privatePropertyRow()]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    $test->set('structuresStatus', 'loaded')
+        ->set('structureByCompany', ['11111111' => 'loaded'])
+        ->set('propertiesStatus', 'loaded')
+        ->set('propertiesByCompany', ['11111111' => 'loaded'])
+        ->set('enrichmentStatus', 'loaded')
+        ->set('privatePropertiesStatus', 'pending');
+
+    expect($test->html())->toContain('wire:poll.2s="tick"');
+
+    // …and stops once it settles.
+    $test->set('privatePropertiesStatus', 'loaded');
+    expect($test->html())->not->toContain('wire:poll.2s="tick"');
+});
+
+it('sends props:person:root from the property-expand button on the person root', function () {
+    // 🚨 spec P1-2. The button emitted 'props:' + node.cvr, and the person root
+    // has cvr=null → 'props:null': a permanently dead button, the only way to
+    // reveal private properties past the cap. The partial is fixed to
+    // (node.cvr ?? node.id), mirroring the relations button.
+    $partial = file_get_contents(__DIR__.'/../../../../resources/views/livewire/sections/partials/graph-node.blade.php');
+
+    expect($partial)->toContain("expandNode('props:' + (node.cvr ?? node.id))")
+        ->and($partial)->not->toContain("expandNode('props:' + node.cvr)");
+
+    // And the id the fixed button emits genuinely lifts the cap on the server.
+    $rows = collect(range(1, 14))->map(fn ($i) => privatePropertyRow("{$i}a Testby", "Vej {$i}"))->all();
+    fakePersonPrivate([cprOwnershipCompany('11111111')], $rows);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    $root = collect($test->get('graphModel')['nodes'])->firstWhere('id', 'person:root');
+    expect($root['expand']['properties'] ?? 0)->toBe(4);
+
+    $test->call('expandNode', 'props:person:root');
+
+    expect($test->get('expandedNodeIds'))->toContain('props:person:root')
+        ->and(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(14);
+});
+
+/**
+ * buildForPerson()'s privatePropertyId() is int-typed on the row index, so a
+ * STRING-keyed map throws a TypeError rather than degrading. Verified, not
+ * assumed: a GAP-keyed map (3 => …, 7 => …) does NOT throw — integer keys
+ * satisfy the type whatever their values — so only string keys are dangerous,
+ * and that is precisely the shape array_values() has to absorb.
+ *
+ * The endpoint itself cannot produce one (a JSON array always decodes as a
+ * list), but the CACHE can: fetchPersonPropertyPortfolioByCprCached stores
+ * whatever it is handed, so any pass that ever keys rows by matrikelnummer —
+ * a natural thing to do to dedupe them — plants a string-keyed payload that the
+ * recovery path then reads back verbatim.
+ *
+ * Probed WITHOUT the normalisation: TypeError out of the builder, 500, no graph.
+ */
+it('normalises a string-keyed cached portfolio into a list before it reaches the builder', function () {
+    fakePersonPrivate([cprOwnershipCompany('11111111')], [privatePropertyRow('1a', 'A-vej 1'), privatePropertyRow('2a', 'B-vej 2')]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    expect(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(2);
+
+    // A matrikel-keyed cache entry — a map, not a list.
+    \Illuminate\Support\Facades\Cache::put(
+        'metis:person_property_portfolio:'.sha1('0101011234'),
+        ['personal_properties' => ['1a' => privatePropertyRow('1a', 'A-vej 1'), '2a' => privatePropertyRow('2a', 'B-vej 2')]],
+        300,
+    );
+
+    $fresh = rehydratedFrom($test);
+    $fresh->toggleLayer('roles');
+
+    expect($fresh->privatePropertiesStatus)->toBe('loaded')
+        ->and(collect($fresh->graphModel['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(2);
+});
+
+it('survives a string-keyed cached portfolio on the FETCH path — planted BEFORE the first tick', function () {
+    // Re-review C5: fetchPersonPropertyPortfolioByCprCached returnerer cache-
+    // værdien verbatim ved hit; en map her nåede privatePropertyId()'s int-
+    // typede rækkeindeks som string → TypeError/500. De eksisterende map-tests
+    // plantede cachen EFTER tick() og ramte kun recovery-stien.
+    Cache::put('metis:person_property_portfolio:'.sha1('0101011234'), [
+        'personal_properties' => ['1234a' => [
+            'matrikelnummer' => '1234a', 'address' => 'Testvej 1', 'city' => 'X', 'zip' => '1000',
+            'public_valuation' => 1000000, 'area_building' => 100, 'year_built' => 1980,
+            'ownership_share' => 50, 'co_owners' => [], 'mortgages' => [],
+        ]],
+        'summary' => ['personal_property_count' => 1],
+    ], 300);
+    fakeRegistryCpr([cprOwnershipCompany('11111111', 100.0, 'Holding')]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    expect($test->get('privatePropertiesStatus'))->toBe('loaded')
+        ->and(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:'))->count())->toBe(1);
 });

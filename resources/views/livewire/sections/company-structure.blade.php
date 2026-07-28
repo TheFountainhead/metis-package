@@ -2,6 +2,62 @@
     <flux:card>
         <div class="flex items-center justify-between mb-4">
             <flux:heading size="lg">{{ __('Company Structure') }}</flux:heading>
+
+            {{-- Filter chips with count badges. The never-empty rule is
+                 enforced SERVER-side in toggleLayer(); :disabled here is only
+                 the affordance, never the guarantee — a chip that carries
+                 every visible node cannot be switched off, but a chip for an
+                 EMPTY layer always can (it removes nothing). --}}
+            @if(count($graphModel['nodes'] ?? []) > 1)
+                <div class="flex items-center gap-2">
+                    @foreach([['owners', __('Ejere'), $ownerCount], ['subsidiaries', __('Datterselskaber'), $subsidiaryCount], ['properties', __('Ejendomme'), $propertyCount]] as [$layer, $label, $count])
+                        @php
+                            $active = in_array($layer, $layers);
+                            // Switching this chip off would empty the graph iff it is
+                            // the only ACTIVE chip that contributes any node at all —
+                            // which is NOT the same as being the only active chip.
+                            // An owners-only company has subsidiaryCount 0 with ALL
+                            // chips on, so counting chips left the Ejere chip enabled
+                            // over a click toggleLayer() refuses: a live-looking button
+                            // that silently does nothing, which reads as a broken graph.
+                            //
+                            // 🚨 ASKED OF THE SERVER, NOT OF THE BADGES (spec P1-6).
+                            // The person page could sum its pre-cap badges here because
+                            // they track its node counts closely. On THIS graph they do
+                            // not: the depth cap, the auto-expand threshold and the
+                            // total_nodes cap can leave a layer with a three-digit badge
+                            // and zero drawn nodes. layerContributesNodes() runs the
+                            // SAME trial build toggleLayer() runs, so the affordance and
+                            // the refusal are one rule — no summing here, and no chance
+                            // of a disabled button over a click the server would accept.
+                            $locked = $active && $this->layerContributesNodes($layer);
+                        @endphp
+                        {{-- 🚨 wire:target is load-bearing: this section polls
+                             while the subsidiary tree is being discovered, and an
+                             UNTARGETED wire:loading would grey the chips out on
+                             every poll tick rather than only during the toggle's
+                             own round-trip. --}}
+                        <button
+                            type="button"
+                            wire:click="toggleLayer('{{ $layer }}')"
+                            wire:key="chip-{{ $layer }}"
+                            wire:loading.attr="disabled"
+                            wire:target="toggleLayer"
+                            @disabled($locked)
+                            @class([
+                                'mgraph-chip',
+                                'mgraph-chip--active' => $active,
+                                'mgraph-chip--locked' => $locked,
+                            ])
+                            @if($locked) title="{{ __('Kan ikke slås fra — grafen ville være tom') }}" @endif
+                        >
+                            <span aria-hidden="true">{{ $active ? '✓' : '' }}</span>
+                            {{ $label }} ({{ $count }})
+                        </button>
+                    @endforeach
+                </div>
+            @endif
+
             @if($enriching)
                 <div class="flex items-center gap-2 text-blue-600 dark:text-blue-400 text-sm">
                     <svg class="size-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

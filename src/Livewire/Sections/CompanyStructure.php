@@ -29,6 +29,14 @@ class CompanyStructure extends MetisSection
     protected const MAX_PROPERTIES_ATTEMPTS = 8;
 
     /**
+     * The layer set the graph is built against when the answer must NOT depend
+     * on the user's chips. Named rather than inlined because it is the
+     * enrichment-scope invariant (spec P1-4) and the trial-build baseline
+     * (layerContributesNodes()) at once — two callers that must never drift.
+     */
+    protected const ALL_LAYERS = ['owners', 'subsidiaries', 'properties'];
+
+    /**
      * Historical-owner data only — the ownership tree (built from ancestors
      * inside $structureData, via the builder) is the single source for
      * CURRENT owners. $owners still feeds the Blade's "Historical" block.
@@ -50,6 +58,38 @@ class CompanyStructure extends MetisSection
      * OwnershipGraphBuilder — nothing ever appends to it directly.
      */
     public array $graphModel = ['nodes' => [], 'edges' => []];
+
+    /**
+     * Active filter chips, all three preselected. Public state, so it survives
+     * hydration exactly like $expandedNodeIds — a layer switched off stays off
+     * across the poll/expand/enrichment requests that follow.
+     *
+     * toggleLayer() enforces the never-empty rule server-side; the Blade only
+     * renders the affordance.
+     *
+     * @var list<'owners'|'subsidiaries'|'properties'>
+     */
+    public array $layers = ['owners', 'subsidiaries', 'properties'];
+
+    /**
+     * Chip badge counts. Deliberately PRE-cap: they answer "how many owners /
+     * subsidiaries / properties does this company have", not "how many are
+     * currently drawn". A post-cap count would shrink to whatever survived
+     * subsidiary_depth / properties_per_company / total_nodes and make the
+     * hidden remainder invisible in the very control meant to advertise it —
+     * the per-node expand buttons are what reveal the difference.
+     *
+     * The divergence is much larger here than on the person graph (spec P1-6),
+     * which is exactly why the chip LOCK is layerContributesNodes() rather than
+     * these numbers: a properties layer the total-cap ate entirely still reads
+     * K=130, and locking a chip whose toggle removes nothing would be a dead
+     * button. These counts drive the badge TEXT and nothing else.
+     */
+    public int $ownerCount = 0;
+
+    public int $subsidiaryCount = 0;
+
+    public int $propertyCount = 0;
 
     /** 'sub:<cvr>' / 'props:<cvr>' node ids the user has expanded past the cap. */
     public array $expandedNodeIds = [];
@@ -78,6 +118,13 @@ class CompanyStructure extends MetisSection
      * rehydrateBeforeRebuild() from enrichmentStatus === 'loaded'.
      */
     protected array $enrichmentData = ['companies' => [], 'properties' => []];
+
+    /**
+     * Memoised buildGraph() results for THIS REQUEST ONLY, keyed by sorted
+     * layer set. Protected on purpose: hydration discards it, which is what
+     * makes it safe (see buildGraph()).
+     */
+    protected array $trialBuildCache = [];
 
     protected function sectionTitle(): string
     {
@@ -195,6 +242,95 @@ class CompanyStructure extends MetisSection
             // here is safe — it degrades to a no-op when either gate isn't ready.
             $this->loadEnrichment();
         }
+    }
+
+    /**
+     * Chip toggle, PersonStructure::toggleLayer()'s shape 1:1. NEVER-EMPTY
+     * RULE, enforced here rather than in the Blade: a toggle whose result
+     * would leave nothing but the searched company (spec P1-6: `count(nodes)
+     * <= 1` after a trial build, not "zero nodes") is rejected outright —
+     * state untouched, no rebuild, no refit. Switching a chip for an EMPTY
+     * layer off is always allowed (it removes nothing), which is what lets a
+     * company with only owners hide its subsidiaries and properties chips.
+     *
+     * The candidate set is evaluated by ASKING THE BUILDER (buildGraph), never
+     * by re-deriving the visibility rules — caps, auto-expand and total-cap
+     * truncation live in exactly one place and a second copy would drift.
+     */
+    public function toggleLayer(string $layer): void
+    {
+        if (! in_array($layer, self::ALL_LAYERS, true)) {
+            return;
+        }
+
+        $this->rehydrateBeforeRebuild();
+
+        $next = in_array($layer, $this->layers, true)
+            ? array_values(array_diff($this->layers, [$layer]))
+            : [...$this->layers, $layer];
+
+        if (count($this->buildGraph($next)['nodes']) <= 1) {
+            return;
+        }
+
+        $this->layers = $next;
+        $this->rebuild();
+        $this->dispatch('graph-refit');
+    }
+
+    /**
+     * Whether switching $layer OFF would leave nothing but the searched
+     * company — i.e. whether toggleLayer() would REFUSE the click. The Blade
+     * lock's only input (spec P1-6).
+     *
+     * 🚨 NOT the badge count. The badges are pre-cap by design, and on THIS
+     * graph pre-cap and drawn diverge wildly: subsidiary_depth, the auto-expand
+     * threshold and the total_nodes cap can each leave a layer with a
+     * three-digit badge and zero nodes on screen. A lock computed from the
+     * badge would freeze a chip whose toggle removes nothing — a live-looking
+     * button that silently does nothing, which reads as a broken graph.
+     *
+     * 🚨 AND NOT "does this layer contribute nodes" either, which is the
+     * subtler trap the same caps set. Probed while writing the total-cap test:
+     * a 130-strong subsidiary tree squeezes every property node out of the
+     * graph, so subsidiaries looked like the sole carrier and the chip rendered
+     * locked — but switching it off FREES the cap budget, the properties layer
+     * refills the graph, and the server accepted the very click the affordance
+     * had disabled. Contribution and emptiness are different questions whenever
+     * one layer can expand into another's freed budget.
+     *
+     * So this asks the SAME question toggleLayer() asks, of the SAME trial
+     * build: `count(nodes) <= 1` for the candidate set. Affordance and refusal
+     * cannot disagree, because they are now one rule evaluated twice.
+     */
+    public function layerContributesNodes(string $layer): bool
+    {
+        if (! in_array($layer, $this->layers, true)) {
+            return false;
+        }
+
+        // 🚨 NO BUILDER INPUT ⇒ NO LOCK. $structureData is protected, so it is
+        // gone on every request that has not rehydrated — and the subsidiary-
+        // discovery poll is exactly that request: pollForUpdates() early-returns
+        // while $enriching is true, BEFORE any rehydrate. Every trial build then
+        // returns the bare searched root, so this method answered "yes, removing
+        // this empties the graph" for all three layers and the user faced three
+        // dead buttons, re-disabled every 3 seconds, for the whole discovery
+        // phase. The chip container itself stays visible throughout because it
+        // reads the PUBLIC $graphModel, which did arrive over the wire.
+        //
+        // Degrading to UNLOCKED (rather than rehydrating per poll, which costs a
+        // structure fetch every 3s) is safe because the two errors are not
+        // symmetric: a wrongly-ENABLED chip is caught by toggleLayer(), which
+        // rehydrates and then refuses the click — pinned by its own test. A
+        // wrongly-DISABLED chip has no recourse whatsoever.
+        if ($this->structureData === []) {
+            return false;
+        }
+
+        $without = array_values(array_diff($this->layers, [$layer]));
+
+        return count($this->buildGraph($without)['nodes']) <= 1;
     }
 
     /**
@@ -489,7 +625,60 @@ class CompanyStructure extends MetisSection
      */
     protected function rebuild(): void
     {
-        $this->graphModel = app(OwnershipGraphBuilder::class)->build(
+        $this->graphModel = $this->buildGraph($this->layers);
+
+        // Counts are PRE-cap by design; see the $ownerCount docblock. N is
+        // ancestors ROWS (spec P3), not resulting nodes: dedup and orphan-stub
+        // synthesis change the node total, and the badge answers a question
+        // about the company's relations, not about the drawing.
+        $this->ownerCount = count($this->structureData['ancestors'] ?? []);
+        $this->subsidiaryCount = app(OwnershipGraphBuilder::class)
+            ->countDescendants($this->structureData['subsidiaries'] ?? []);
+        $this->propertyCount = count($this->propertyData['list'] ?? []);
+    }
+
+    /**
+     * Builds against an ARBITRARY layer set rather than always $this->layers,
+     * so toggleLayer() and layerContributesNodes() can evaluate the never-empty
+     * rule on the graph a candidate set WOULD produce, and
+     * enrichmentGraphNodes() can resolve an all-layers scope regardless of the
+     * chips — asking the builder instead of re-deriving the visibility rules
+     * (depth cap, auto-expand, total-cap truncation) a second time and risking
+     * the two disagreeing.
+     *
+     * `now` is CarbonImmutable::now() HERE, in the component: non-determinism
+     * never lives inside OwnershipGraphBuilder, which stays pure/deterministic
+     * (same input → same output) per its class docblock.
+     */
+    protected function buildGraph(array $layers): array
+    {
+        // PER-REQUEST MEMO. One render asks for three trial builds (one per
+        // chip) and the enrichment paths add a fourth all-layers build — each a
+        // FULL build over PRE-truncation inputs, which the 130-subsidiary +
+        // 130-property fixture shows is not a hypothetical size.
+        //
+        // 🚨 KEYED ON THE INPUTS, NOT JUST THE LAYERS. A layers-only key is
+        // WRONG and was probed as such: 15 existing tests went red. Several
+        // paths build EARLY and then mutate the inputs within the SAME request —
+        // loadProperties() rehydrates (which builds inside
+        // refreshEnrichmentData()), then writes $propertyData, then rebuilds;
+        // expandNode() and the retry paths have the same shape. A layers-only
+        // memo served those second rebuilds a graph from the pre-write inputs,
+        // silently dropping the property nodes and cards the request had just
+        // fetched. So the key covers everything build() actually reads.
+        //
+        // 🚨 NEVER PERSISTED: $trialBuildCache is PROTECTED, so Livewire
+        // hydration discards it and every request starts cold (pinned by its own
+        // test). Promoting it to public or session state would reintroduce
+        // cross-request staleness that the input hash cannot see, because the
+        // API responses behind those inputs can change between requests.
+        $key = $this->trialBuildKey($layers);
+
+        if (array_key_exists($key, $this->trialBuildCache)) {
+            return $this->trialBuildCache[$key];
+        }
+
+        return $this->trialBuildCache[$key] = app(OwnershipGraphBuilder::class)->build(
             query: $this->query,
             companyName: $this->companyName,
             structure: $this->structureData,
@@ -498,7 +687,69 @@ class CompanyStructure extends MetisSection
             expandedNodeIds: $this->expandedNodeIds,
             caps: ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
             now: \Carbon\CarbonImmutable::now(),
+            layers: $layers,
         );
+    }
+
+    /**
+     * The memo key: the layer set NORMALISED — deduplicated and sorted — plus a
+     * hash of every OTHER input build() reads.
+     *
+     * The layer half identifies a SET rather than a sequence: callers assemble
+     * their lists in whatever order the toggle produced (`[...$this->layers,
+     * $layer]` appends, array_diff preserves gaps), so an identical question in
+     * a different order must not miss the cache.
+     *
+     * The input half is what makes the memo CORRECT rather than merely fast —
+     * see buildGraph()'s note on the 15 tests a layers-only key broke. Hashed
+     * rather than compared field-by-field so adding a build() input cannot
+     * silently escape the key; `now` is deliberately absent, since a build's
+     * dependence on the clock is exactly what the memo is allowed to collapse
+     * inside one request.
+     */
+    protected function trialBuildKey(array $layers): string
+    {
+        $layers = array_values(array_unique($layers));
+        sort($layers);
+
+        return implode('|', $layers).':'.md5(serialize([
+            $this->query,
+            $this->companyName,
+            $this->structureData,
+            $this->propertyData,
+            $this->enrichmentData,
+            $this->expandedNodeIds,
+        ]));
+    }
+
+    /**
+     * 🚨 ENRICHMENT SCOPE IS NEVER CHIP-DEPENDENT (spec P1-4). The trait's
+     * enrichmentCvrs()/enrichmentMatrikelIds() resolve their scope off THIS
+     * node list rather than off $this->graphModel, and this one is built with
+     * ALL_LAYERS — deliberately not $this->layers.
+     *
+     * Two rules that look alike but are not, the lesson PersonStructure paid
+     * for in visibleFirstLevelCvrs():
+     *
+     *   - A CAP is about work no one asked for: a node past the cap is not
+     *     drawn and cannot be revealed without an explicit expand, so resolving
+     *     enrichment for it is pure waste. Capped nodes stay out of scope, and
+     *     they do: this builds through the same caps as every other path.
+     *   - A CHIP is about what is drawn RIGHT NOW. Spec §A: "Hentning
+     *     fortsætter uanset chip-tilstand — chips filtrerer kun bygningen", so
+     *     that re-enabling a chip shows already-fetched data instantly.
+     *
+     * Conflating them here is worse than on the person side, because
+     * enrichment on this component runs EXACTLY ONCE: loadEnrichment()'s F3
+     * gate makes 'loaded' terminal (only retryEnrichment/retryProperties
+     * reopen it). So a scope resolved while a chip was off would be frozen
+     * permanently — switch owners off, let enrichment run, switch owners back
+     * on, and those owner nodes have no card for the rest of the page's life,
+     * with nothing left in any path to repair it.
+     */
+    protected function enrichmentGraphNodes(): array
+    {
+        return $this->buildGraph(self::ALL_LAYERS)['nodes'];
     }
 
     public function render()

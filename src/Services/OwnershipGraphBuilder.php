@@ -45,6 +45,7 @@ class OwnershipGraphBuilder
         array $expandedNodeIds,
         array $caps,
         ?CarbonImmutable $now = null,
+        array $layers = ['owners', 'subsidiaries', 'properties'],
     ): array {
         $nodes = [[
             'id' => 'searched',
@@ -55,8 +56,12 @@ class OwnershipGraphBuilder
         $edges = [];
         $edgeSeen = [];
 
-        $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
-        $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
+        if (in_array('owners', $layers, true)) {
+            $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
+        }
+        if (in_array('subsidiaries', $layers, true)) {
+            $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
+        }
 
         // usage-bagudkompatibilitet: enrichment['properties'][mid]['usage'] wins
         // over the legacy properties['usage'][mid] map (2a.1 shape) so Task 3 can
@@ -68,8 +73,15 @@ class OwnershipGraphBuilder
             }
         }
 
-        $this->addProperties($properties['list'] ?? [], $usage, $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
-        $this->finalize($nodes, $edges, $properties['list'] ?? [], $enrichment, $caps, $query, $now);
+        $propertiesOn = in_array('properties', $layers, true);
+        if ($propertiesOn) {
+            $this->addProperties($properties['list'] ?? [], $usage, $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
+        }
+        // spec P2-5: when the properties layer is off, finalize() must get an
+        // EMPTY property list — not $properties['list'] — otherwise
+        // aggregateProperties() would compute an owner's agg (count/value)
+        // for properties that were never added to the graph as nodes.
+        $this->finalize($nodes, $edges, $propertiesOn ? ($properties['list'] ?? []) : [], $enrichment, $caps, $query, $now);
 
         return ['nodes' => $nodes, 'edges' => $edges];
     }
@@ -85,9 +97,16 @@ class OwnershipGraphBuilder
      * attributes derived from it) can never leak the CPR the page was looked
      * up by.
      *
-     * $layers is a subset of ['ownership', 'roles'] — the two filter chips.
-     * Filtering happens HERE, not in the view, because the dedup between the
-     * two layers is layer-aware (see dedup rule below).
+     * $layers is a subset of ['ownership', 'roles', 'private_properties'] —
+     * the three filter chips. Filtering happens HERE, not in the view, because
+     * the dedup between the first two layers is layer-aware (see dedup rule
+     * below).
+     *
+     * $privateProperties is the person's OWN property portfolio: raw
+     * personal_properties rows (matrikelnummer/address/city/zip/
+     * public_valuation/area_building/year_built/ownership_share/co_owners/
+     * mortgages). They hang directly on person:root as 'pp:'-nodes — see
+     * addPrivateProperties() for why they cannot go through addProperties().
      *
      * $structures / $properties are the progressive-loading inputs, both
      * keyed by cvr and both containing ONLY the cvr's fetched so far — a
@@ -129,6 +148,7 @@ class OwnershipGraphBuilder
         array $layers,
         array $caps,
         ?CarbonImmutable $now = null,
+        array $privateProperties = [],
     ): array {
         $nodes = [[
             'id' => 'person:root',
@@ -286,6 +306,17 @@ class OwnershipGraphBuilder
         }
 
         $this->addProperties($propertyList, $usage, $expandedNodeIds, $caps['properties_per_company'], null, $nodes, $seen, $edges, $edgeSeen);
+
+        // --- Private ejendomme: the person's OWN properties -----------------
+        if (in_array('private_properties', $layers, true)) {
+            $this->addPrivateProperties($privateProperties, $expandedNodeIds, $caps['person_private_properties'], $nodes, $seen, $edges, $edgeSeen);
+        }
+
+        // NOTE: $propertyList — the COMPANY portfolios — is the only thing
+        // finalize() aggregates. Private rows are deliberately absent from it:
+        // aggregateProperties() is owner_cvr-keyed and person:root has no cvr,
+        // so a private row could never land anywhere anyway, and a combined
+        // private valuation sum on the root is an explicit non-goal (spec P2-3).
         $this->finalize($nodes, $edges, $propertyList, $enrichment, $caps, null, $now, personPriority: true);
 
         return ['nodes' => $nodes, 'edges' => $edges];
@@ -645,6 +676,18 @@ class OwnershipGraphBuilder
             }
 
             if ($node['kind'] === 'property') {
+                // Gated on the 'bfe:' prefix, NOT on kind alone (spec P1-1):
+                // kind 'property' also covers the person graph's 'pp:'-nodes,
+                // whose card is written at creation from the portfolio row.
+                // The substr() below trusts the prefix blindly, so an ungated
+                // branch would look a 37-char sha1 fragment up in the bfe-keyed
+                // enrichment map — normally a harmless miss, but on a collision
+                // it would overwrite a pp: node's own card with a FOREIGN
+                // property's data.
+                if (! str_starts_with($node['id'], 'bfe:')) {
+                    continue;
+                }
+
                 // Keyed off the node id, not meta.bfe — meta.bfe is deliberately
                 // null for non-matriculated properties (addProperties), but the
                 // matrikel_id (and its enrichment lookup) still applies to them.
@@ -869,8 +912,15 @@ class OwnershipGraphBuilder
      * recursively — NOT just the direct children count used for the
      * expand-signal. Drives the Task 9 auto-expand threshold: a linear
      * chain of 3 single-child levels is 3 descendants, not 1.
+     *
+     * PUBLIC because CompanyStructure's "Datterselskaber (M)" chip badge is
+     * the same question asked of the same raw payload (spec §A: M = totalt
+     * antal datterselskaber, rekursivt). Re-implementing the walk in the
+     * component would give a second definition of "descendant" free to drift
+     * from the one the builder actually draws by — and the badge would then
+     * disagree with the graph it labels.
      */
-    protected function countDescendants(array $subs): int
+    public function countDescendants(array $subs): int
     {
         $count = 0;
         foreach ($subs as $s) {
@@ -965,6 +1015,122 @@ class OwnershipGraphBuilder
             }
             $perOwner[$ownerId]++;
         }
+    }
+
+    /**
+     * The person's OWN properties, hung directly on person:root as 'pp:'-nodes.
+     *
+     * A SEPARATE path from addProperties() rather than a reuse, for three
+     * reasons that each break that method's contract:
+     *
+     *   1. No owner_cvr. addProperties() resolves an owner node by cvr, and
+     *      person:root has none — it could never reach the root, which is also
+     *      why the over-cap fold below is written here rather than inherited
+     *      (spec P1-3).
+     *   2. No matrikel_id. A private row is identified by matrikelnummer +
+     *      address (see privatePropertyId), not by a BFE the endpoint doesn't
+     *      return.
+     *   3. The card comes from the ROW, written here at creation — a private
+     *      row already carries valuation/area/year/mortgages/co-owners, so
+     *      nothing is ever fetched for it. applyEnrichment()'s property branch
+     *      must therefore skip these nodes entirely; it is gated on the 'bfe:'
+     *      prefix for exactly that reason (spec P1-1).
+     *
+     * The nodes are kind 'property' — the same kind bfe:-nodes use — so the
+     * host-JS rendering, and cutPropertyNodes()' cheapest-to-lose truncation
+     * pass, treat both alike with no new kind to teach either of them.
+     *
+     * The over-cap count folds onto person:root's expand['properties'], which
+     * is the ejendoms-udvid button, lifted by 'props:person:root'. The
+     * relations button ('sub:person:root') is a genuinely independent
+     * affordance on the same node and must NOT lift this cap — hence the
+     * `?? 0`-preserving write, which keeps a relations count set by the
+     * first-level fold above intact.
+     */
+    protected function addPrivateProperties(array $rows, array $expandedNodeIds, int $cap, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
+    {
+        $capLifted = in_array('props:person:root', $expandedNodeIds, true);
+        $shown = 0;
+        $hidden = 0;
+
+        foreach ($rows as $i => $row) {
+            if (! $capLifted && $shown >= $cap) {
+                $hidden++;
+
+                continue;
+            }
+
+            $id = $this->privatePropertyId($row, $i);
+            if (! isset($seen[$id])) {
+                $seen[$id] = true;
+                $nodes[] = [
+                    'id' => $id,
+                    'label' => ($row['address'] ?? null) ?: __('Property'),
+                    'cvr' => null, 'kind' => 'property', 'share' => null,
+                    'card' => $this->privatePropertyCard($row),
+                    'expand' => null,
+                ];
+            }
+            if (! isset($edgeSeen['person:root|'.$id])) {
+                $edgeSeen['person:root|'.$id] = true;
+                $edges[] = ['from' => 'person:root', 'to' => $id, 'label' => $this->shareLabel($row['ownership_share'] ?? null)];
+            }
+            $shown++;
+        }
+
+        if ($hidden === 0) {
+            return;
+        }
+
+        $nodes[0]['expand'] = [
+            'relations' => $nodes[0]['expand']['relations'] ?? 0,
+            'properties' => ($nodes[0]['expand']['properties'] ?? 0) + $hidden,
+        ];
+    }
+
+    /**
+     * Stable, CPR-free node id for a private property (spec P2-2).
+     *
+     * matrikelnummer + address, trimmed and lowercased so the same property
+     * spelled two ways in two fetches is one node — the graph is rebuilt on
+     * every tick and chip toggle, and an id that moved with the spelling would
+     * make the node jump position between builds.
+     *
+     * The row index is folded in ONLY when matrikelnummer is empty (the same
+     * disambiguation addAncestors() does with md5($i.'|'…) for same-named
+     * persons). Two genuinely different unmatriculated properties can share an
+     * address, so without it they would collapse into one node; WITH it on a
+     * matriculated row the id would instead move whenever the portfolio's row
+     * order changed, which is the failure mode this asymmetry avoids.
+     */
+    protected function privatePropertyId(array $row, int $rowIndex): string
+    {
+        $matrikel = mb_strtolower(trim((string) ($row['matrikelnummer'] ?? '')));
+        $address = mb_strtolower(trim((string) ($row['address'] ?? '')));
+
+        return 'pp:'.sha1($matrikel.'|'.$address.'|'.($matrikel === '' ? $rowIndex : ''));
+    }
+
+    /**
+     * Hover-card for a private property, from the row itself.
+     *
+     * public_valuation is WHOLE KRONER and is mapped 1:1 — no conversion
+     * (spec P2-1, settled against the four existing consumers of the field).
+     *
+     * Absent scalars are dropped (host-JS cardRows renders only present keys),
+     * but the two COUNTS are always written: 0 mortgages is a fact about the
+     * property, not missing data, and array_filter's !== null test keeps a
+     * legitimate 0 rather than swallowing it.
+     */
+    protected function privatePropertyCard(array $row): array
+    {
+        return array_filter([
+            'public_valuation' => $row['public_valuation'] ?? null,
+            'area_building' => $row['area_building'] ?? null,
+            'year_built' => $row['year_built'] ?? null,
+            'mortgage_count' => count($row['mortgages'] ?? []),
+            'co_owner_count' => count($row['co_owners'] ?? []),
+        ], fn ($v) => $v !== null);
     }
 
     /**
