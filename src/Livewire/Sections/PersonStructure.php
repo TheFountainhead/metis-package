@@ -192,6 +192,13 @@ class PersonStructure extends MetisSection
      */
     protected array $privatePropertiesData = [];
 
+    /**
+     * Where the company skeleton comes from. Set explicitly from the blade —
+     * NEVER derived from the query's shape, since a 10-character name must not
+     * be misclassified as a CPR number.
+     */
+    public string $source = 'cpr';
+
     protected function sectionTitle(): string
     {
         return __('Selskabsstruktur');
@@ -200,6 +207,19 @@ class PersonStructure extends MetisSection
     public function mount(string $query): void
     {
         $this->query = $query;
+
+        if ($this->source === 'name') {
+            // The private-properties layer is CPR-exclusive. It is not "empty" here —
+            // the chip does not exist at all, so the layer never enters $layers.
+            //
+            // privatePropertiesStatus is settled from mount so #128's provisional-empty
+            // mechanic behaves: tick()'s empty branch no-ops (status is not 'pending'),
+            // the poll gate does not wait for the phase, and the empty message renders
+            // directly instead of shimmering forever.
+            $this->layers = ['ownership', 'roles'];
+            $this->privatePropertiesStatus = 'empty';
+        }
+
         $this->loadSkeleton();
     }
 
@@ -283,7 +303,13 @@ class PersonStructure extends MetisSection
         // fresh companies list cannot change it: retrySkeleton()'s contract is
         // "start over", and a phase left settled here would be the one thing a
         // full retry could never repair.
-        $this->privatePropertiesStatus = 'pending';
+        //
+        // In name mode the "untouched start state" is 'empty', not 'pending':
+        // the private-properties endpoint does not exist for a name lookup, so
+        // resetting to 'pending' here would resurrect the shimmer-forever bug
+        // on every retrySkeleton() call (mount() only runs once, on the
+        // initial component boot).
+        $this->privatePropertiesStatus = $this->source === 'name' ? 'empty' : 'pending';
         $this->privatePropertiesCount = 0;
         $this->privatePropertiesData = [];
     }
@@ -439,7 +465,9 @@ class PersonStructure extends MetisSection
     /** The companies[] list, or null if the call failed in ANY of its ways. */
     protected function fetchCompanies(): ?array
     {
-        $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCompaniesByCprCached($this->query));
+        $result = $this->source === 'name'
+            ? $this->attempt(fn () => app(RegistryApi::class)->fetchCompaniesByName($this->query))
+            : $this->attempt(fn () => app(RegistryApi::class)->fetchCompaniesByCprCached($this->query));
 
         return $result === null ? null : ($result['companies'] ?? []);
     }
