@@ -72,6 +72,24 @@ it('keeps private properties settled across a skeleton retry in name mode', func
         ->assertSet('privatePropertiesStatus', 'empty');
 });
 
+it('keeps private properties settled across a manual retry in name mode', function () {
+    // Mirrors the retrySkeleton test above, but for retryPrivateProperties()
+    // directly: the chip is never rendered in name mode, but the method is
+    // public and a Livewire call can be constructed regardless of what is on
+    // screen. Håndhævet ved at UDELADE person-portfolio-mønstret +
+    // preventStrayRequests() (global i TestCase) — et kald der rammer
+    // /v1/person/property-portfolio ville poste NAVNET som "cpr" og fejle
+    // testen med en stray-request-exception i stedet for en assertion-fejl.
+    Http::fake(['*person-companies-by-name*' => Http::response([
+        'data' => ['person_name' => 'Test Person', 'companies' => []],
+    ])]);
+
+    Livewire::test(PersonStructure::class, ['query' => 'Test Person', 'source' => 'name'])
+        ->assertSet('privatePropertiesStatus', 'empty')
+        ->call('retryPrivateProperties')
+        ->assertSet('privatePropertiesStatus', 'empty');
+});
+
 it('shows the cpr note in name mode', function () {
     Http::fake(['*person-companies-by-name*' => Http::response(nameModeCompaniesPayload())]);
 

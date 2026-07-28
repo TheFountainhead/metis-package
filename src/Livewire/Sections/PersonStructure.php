@@ -1093,6 +1093,16 @@ class PersonStructure extends MetisSection
      */
     public function retryPrivateProperties(): void
     {
+        // Same reasoning as toggleLayer()'s guard: the retry button never
+        // renders in name mode (privatePropertiesStatus is 'empty', never
+        // 'failed'), but the method is public and a Livewire call can be
+        // constructed regardless of what is on screen. Without this, a call
+        // would POST the NAME to the CPR-only person-portfolio endpoint and
+        // reopen a phase that can never settle with real data in name mode.
+        if ($this->source === 'name') {
+            return;
+        }
+
         $this->privatePropertiesStatus = 'pending';
         $this->loadPrivateProperties();
     }
