@@ -26,7 +26,7 @@ Ejerskabskortlægning (relationsgrafen — reelt stærk til DD), tinglyst gæld/
 
 ## Spor 3: Sags-workflow (kan starte nu; kræver produktbeslutning FØRST)
 
-**Beslutningspunkt (Frederik):** sager kræver identitet. Nuværende model er verificeret-email + pilot-tokens — rækker den til "mine sager" (session/email-bundet), eller er det anledningen til rigtige konti? Deling med kolleger kræver reelt konti/organisationer. **Anbefaling: MVP på verificeret-email (sager knyttet til email), deling udskydes** — så blokerer kontospørgsmålet ikke MVP'en.
+**Identitetsvalg — AFGJORT af Frederik 28/7:** sager bindes til den **verificerede email** (mulighed 1). Sager gemmes på emailen; gensyn på ny maskine = samme kode-verifikationsflow som gaten; ingen passwords/login-sider bygges. Deling med kolleger og organisationer udskydes til konto-spørgsmålet rejses af deling eller betaling — det blokerer ikke MVP'en.
 
 **MVP-scope:** "Sag" = navngiven samling af opslag (ejendomme/selskaber/personer) · "Tilføj til sag"-knap på lookup-sider · sagsside med samlet oversigt · samlet DD-rapport-PDF med tidsstempler (udvidelse af eksisterende PdfController). **Senere:** deling/invitationer, audit-spor, akt-vedhæftning (kobler til spor 1).
 
