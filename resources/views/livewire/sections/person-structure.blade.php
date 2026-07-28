@@ -17,7 +17,19 @@
                  EMPTY layer always can (it removes nothing). --}}
             @if($skeletonStatus === 'loaded')
                 <div class="flex items-center gap-2">
-                    @foreach([['ownership', __('Ejerskab'), $ownershipCount], ['roles', __('Roller'), $roleCount]] as [$layer, $label, $count])
+                    @php
+                        // The three chips, as (layer, label, count) — declared once
+                        // so the $otherCount sum below reads the SAME list the loop
+                        // renders. Two hand-maintained copies is exactly how the
+                        // third layer would end up missing from the lock arithmetic
+                        // while looking perfectly present on screen.
+                        $chips = [
+                            ['ownership', __('Ejerskab'), $ownershipCount],
+                            ['roles', __('Roller'), $roleCount],
+                            ['private_properties', __('Private ejendomme'), $privatePropertiesCount],
+                        ];
+                    @endphp
+                    @foreach($chips as [$layer, $label, $count])
                         @php
                             $active = in_array($layer, $layers);
                             // Switching this chip off would empty the graph iff it is
@@ -27,11 +39,16 @@
                             // on, so counting chips left the Ejerskab chip enabled over
                             // a click toggleLayer() refuses: a live-looking button that
                             // silently does nothing, which reads as a broken graph.
-                            $otherCount = collect([['ownership', $ownershipCount], ['roles', $roleCount]])
+                            $otherCount = collect($chips)
                                 ->reject(fn ($pair) => $pair[0] === $layer)
                                 ->filter(fn ($pair) => in_array($pair[0], $layers))
-                                ->sum(fn ($pair) => $pair[1]);
-                            $locked = $active && $count > 0 && (count($layers) === 1 || $otherCount === 0);
+                                ->sum(fn ($pair) => $pair[2]);
+                            $locked = $active && $count > 0 && $otherCount === 0;
+                            // "(–)" ONLY for a failed fetch (spec P2-4): the count is
+                            // zeroed in that state, so "(0)" would read as "this person
+                            // owns nothing privately" — a claim about the person made
+                            // out of a claim about the network.
+                            $badge = $layer === 'private_properties' && $privatePropertiesStatus === 'failed' ? '–' : $count;
                         @endphp
                         {{-- 🚨 wire:target is load-bearing: this section polls
                              every 2s, and an UNTARGETED wire:loading would grey
@@ -52,7 +69,7 @@
                             @if($locked) title="{{ __('Kan ikke slås fra — grafen ville være tom') }}" @endif
                         >
                             <span aria-hidden="true">{{ $active ? '✓' : '' }}</span>
-                            {{ $label }} ({{ $count }})
+                            {{ $label }} ({{ $badge }})
                         </button>
                     @endforeach
                 </div>
@@ -79,9 +96,15 @@
                  raw $query: it is the CPR (see the graph partial). --}}
             <div class="metis-org-chart"
                 wire:key="org-chart-{{ sha1($query) }}"
+                {{-- The private-properties phase is part of the gate because
+                     mount() runs fase 1 only: the poll is the ONLY thing that
+                     ever runs it. Ungated, a person whose companies all settle
+                     in the first tick would have the browser stop polling
+                     before the private layer was ever fetched. --}}
                 @if($structuresStatus === 'loading'
                     || in_array($propertiesStatus, ['pending', 'building'], true)
-                    || $enrichmentStatus === 'pending')
+                    || $enrichmentStatus === 'pending'
+                    || $privatePropertiesStatus === 'pending')
                     wire:poll.2s="tick"
                 @endif
             >
@@ -121,6 +144,16 @@
                     <p class="mgraph-note" wire:key="properties-failed">
                         {{ __('Ejendomme kunne ikke hentes.') }}
                         <button type="button" wire:click="retryProperties" class="underline">{{ __('Prøv igen') }}</button>
+                    </p>
+                @endif
+
+                {{-- Its OWN retry, not retryProperties(): that one clears the
+                     shared fase-3 budget and re-opens settled company
+                     portfolios. --}}
+                @if($privatePropertiesStatus === 'failed')
+                    <p class="mgraph-note" wire:key="private-properties-failed">
+                        {{ __('Private ejendomme kunne ikke hentes.') }}
+                        <button type="button" wire:click="retryPrivateProperties" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
                 @endif
 

@@ -851,7 +851,7 @@ class RegistryApi
      */
     public function fetchPersonPropertyPortfolioByCprCached(string $cpr): ?array
     {
-        $cacheKey = 'metis:person_property_portfolio:'.sha1($cpr);
+        $cacheKey = self::personPropertyPortfolioCacheKey($cpr);
 
         if (! is_null($cached = Cache::get($cacheKey))) {
             return $cached;
@@ -864,6 +864,29 @@ class RegistryApi
         }
 
         return $result;
+    }
+
+    /**
+     * CACHE-ONLY variant, the exact counterpart of
+     * fetchCompanyStructureFromCache(): a miss returns null and the caller
+     * decides, rather than falling through to the real POST the way the
+     * ...Cached() method above does.
+     *
+     * For recovery paths that run inside INTERACTIVE requests (a chip toggle,
+     * an expand). This endpoint is the most expensive one in the package —
+     * 5-15s on a cold call — so a recovery pass allowed to fall through would
+     * make a single chip click hang for that long, which is the whole reason
+     * the cache-only/never-fetch split exists.
+     */
+    public function fetchPersonPropertyPortfolioByCprFromCache(string $cpr): ?array
+    {
+        return Cache::get(self::personPropertyPortfolioCacheKey($cpr));
+    }
+
+    /** sha1'd so a raw CPR never lands in a cache key, a log line or a dump. */
+    protected static function personPropertyPortfolioCacheKey(string $cpr): string
+    {
+        return 'metis:person_property_portfolio:'.sha1($cpr);
     }
 
     /**

@@ -102,10 +102,16 @@
             </template>
             <span x-show="node.expand?.relations && node.expand?.capped_relations" x-text="'↓ ' + (node.expand?.relations ?? 0) + ' relationer'"></span>
 
+            {{-- `node.cvr ?? node.id`, exactly as the relations button above
+                 and for the same reason: the person root's cvr is null, so
+                 plain node.cvr emitted 'props:null' — a permanently dead
+                 button, and the ONLY affordance for revealing the person's own
+                 private properties past their cap. No-op on the company page,
+                 where every property owner in the graph has a cvr. --}}
             <template x-if="node.expand?.properties">
                 <button type="button" x-show="!node.expand?.capped_properties"
                         wire:loading.attr="disabled" wire:target="expandNode"
-                        @mousedown.stop @click.stop="$wire.expandNode('props:' + node.cvr)"
+                        @mousedown.stop @click.stop="$wire.expandNode('props:' + (node.cvr ?? node.id))"
                         x-text="'+ ' + node.expand.properties + ' ejendomme'"></button>
             </template>
             <span x-show="node.expand?.properties && node.expand?.capped_properties" x-text="'+ ' + (node.expand?.properties ?? 0) + ' skjult'"></span>
