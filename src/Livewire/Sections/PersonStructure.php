@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Livewire\Sections;
 
+use Livewire\Attributes\Locked;
 use TheFountainhead\Metis\Livewire\Concerns\ResolvesGraphEnrichment;
 use TheFountainhead\Metis\Services\OwnershipGraphBuilder;
 use TheFountainhead\Metis\Services\RegistryApi;
@@ -192,6 +193,24 @@ class PersonStructure extends MetisSection
      */
     protected array $privatePropertiesData = [];
 
+    /**
+     * Where the company skeleton comes from. Set explicitly from the blade —
+     * NEVER derived from the query's shape, since a 10-character name must not
+     * be misclassified as a CPR number.
+     *
+     * 🚨 #[Locked]: mount() still sets this normally (Locked only rejects
+     * client-side ->set()/wire:model writes after mount, not initialisation),
+     * but without it a tampered `set('source','cpr')` followed by
+     * `call('retryPrivateProperties')` posts the NAME as a CPR to the
+     * CPR-exclusive endpoint. The per-method guards in mount(),
+     * resetDownstreamPhases(), toggleLayer() and retryPrivateProperties()
+     * stay as defence in depth — this closes every OTHER public method,
+     * present and future, in one place instead of relying on each new one to
+     * remember its own check.
+     */
+    #[Locked]
+    public string $source = 'cpr';
+
     protected function sectionTitle(): string
     {
         return __('Selskabsstruktur');
@@ -200,6 +219,19 @@ class PersonStructure extends MetisSection
     public function mount(string $query): void
     {
         $this->query = $query;
+
+        if ($this->source === 'name') {
+            // The private-properties layer is CPR-exclusive. It is not "empty" here —
+            // the chip does not exist at all, so the layer never enters $layers.
+            //
+            // privatePropertiesStatus is settled from mount so #128's provisional-empty
+            // mechanic behaves: tick()'s empty branch no-ops (status is not 'pending'),
+            // the poll gate does not wait for the phase, and the empty message renders
+            // directly instead of shimmering forever.
+            $this->layers = ['ownership', 'roles'];
+            $this->privatePropertiesStatus = 'empty';
+        }
+
         $this->loadSkeleton();
     }
 
@@ -283,7 +315,13 @@ class PersonStructure extends MetisSection
         // fresh companies list cannot change it: retrySkeleton()'s contract is
         // "start over", and a phase left settled here would be the one thing a
         // full retry could never repair.
-        $this->privatePropertiesStatus = 'pending';
+        //
+        // In name mode the "untouched start state" is 'empty', not 'pending':
+        // the private-properties endpoint does not exist for a name lookup, so
+        // resetting to 'pending' here would resurrect the shimmer-forever bug
+        // on every retrySkeleton() call (mount() only runs once, on the
+        // initial component boot).
+        $this->privatePropertiesStatus = $this->source === 'name' ? 'empty' : 'pending';
         $this->privatePropertiesCount = 0;
         $this->privatePropertiesData = [];
     }
@@ -299,6 +337,15 @@ class PersonStructure extends MetisSection
     public function toggleLayer(string $layer): void
     {
         if (! in_array($layer, ['ownership', 'roles', 'private_properties'], true)) {
+            return;
+        }
+
+        // The chip does not render in name mode (mount()'s $layers never
+        // contains it), but the method itself is public and a Livewire call
+        // can be constructed regardless of what is on screen. Without this,
+        // $layers would silently gain a layer whose data can never arrive —
+        // breaking the invariant mount()'s comment states as fact.
+        if ($layer === 'private_properties' && $this->source === 'name') {
             return;
         }
 
@@ -439,7 +486,9 @@ class PersonStructure extends MetisSection
     /** The companies[] list, or null if the call failed in ANY of its ways. */
     protected function fetchCompanies(): ?array
     {
-        $result = $this->attempt(fn () => app(RegistryApi::class)->fetchCompaniesByCprCached($this->query));
+        $result = $this->source === 'name'
+            ? $this->attempt(fn () => app(RegistryApi::class)->fetchCompaniesByName($this->query))
+            : $this->attempt(fn () => app(RegistryApi::class)->fetchCompaniesByCprCached($this->query));
 
         return $result === null ? null : ($result['companies'] ?? []);
     }
@@ -1056,6 +1105,16 @@ class PersonStructure extends MetisSection
      */
     public function retryPrivateProperties(): void
     {
+        // Same reasoning as toggleLayer()'s guard: the retry button never
+        // renders in name mode (privatePropertiesStatus is 'empty', never
+        // 'failed'), but the method is public and a Livewire call can be
+        // constructed regardless of what is on screen. Without this, a call
+        // would POST the NAME to the CPR-only person-portfolio endpoint and
+        // reopen a phase that can never settle with real data in name mode.
+        if ($this->source === 'name') {
+            return;
+        }
+
         $this->privatePropertiesStatus = 'pending';
         $this->loadPrivateProperties();
     }

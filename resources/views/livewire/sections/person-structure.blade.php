@@ -18,16 +18,22 @@
             @if($skeletonStatus === 'loaded')
                 <div class="flex items-center gap-2">
                     @php
-                        // The three chips, as (layer, label, count) — declared once
-                        // so the $otherCount sum below reads the SAME list the loop
-                        // renders. Two hand-maintained copies is exactly how the
-                        // third layer would end up missing from the lock arithmetic
-                        // while looking perfectly present on screen.
-                        $chips = [
+                        // The chips, as (layer, label, count) — declared once so the
+                        // $otherCount sum below reads the SAME list the loop renders.
+                        // Two hand-maintained copies is exactly how the third layer
+                        // would end up missing from the lock arithmetic while looking
+                        // perfectly present on screen.
+                        //
+                        // private_properties is filtered out entirely in name mode: that
+                        // endpoint is CPR-exclusive (PersonStructure::mount()), so the
+                        // layer does not EXIST for a name lookup, not merely "is empty".
+                        // Filtering the list here — rather than an extra @if in the loop
+                        // below — keeps $otherCount's arithmetic correct automatically.
+                        $chips = collect([
                             ['ownership', __('Ejerskab'), $ownershipCount],
                             ['roles', __('Roller'), $roleCount],
                             ['private_properties', __('Private ejendomme'), $privatePropertiesCount],
-                        ];
+                        ])->reject(fn ($pair) => $pair[0] === 'private_properties' && $source === 'name')->all();
                     @endphp
                     @foreach($chips as [$layer, $label, $count])
                         @php
@@ -75,6 +81,16 @@
                 </div>
             @endif
         </div>
+
+        {{-- CPR-noten: navne-mode kan aldrig vise private ejendomme (den
+             endpoint findes kun for CPR), så oplyser vi det synligt i BEGGE
+             tilstande — grafen og den tomme tilstand — fordi personen KAN
+             have private ejendomme vi ikke kan se herfra. --}}
+        @if($source === 'name')
+            <p class="mgraph-note" wire:key="cpr-note">
+                {{ __('Søg med CPR-nummer for også at se personens private ejendomme.') }}
+            </p>
+        @endif
 
         @if($skeletonStatus === 'failed')
             <p class="mgraph-note" wire:key="skeleton-failed">

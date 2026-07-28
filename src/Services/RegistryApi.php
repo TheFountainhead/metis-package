@@ -761,6 +761,47 @@ class RegistryApi
     }
 
     /**
+     * Companies for a person looked up by NAME (no CPR) — same shape as the
+     * CPR path so PersonStructure can classify() it unchanged.
+     *
+     * post() never returns null itself: a RequestException is caught by
+     * errorFrom() and turned into ['error' => 'upstream_error', 'status' =>
+     * $e->getCode()], and a ConnectionException into ['error' =>
+     * 'upstream_error', 'status' => 0] via transportErrorFrom(). Those two
+     * failure modes mean different things to the caller, so they're kept
+     * distinct here rather than both collapsing to one shape:
+     *
+     * - status 404 ⇒ the participant genuinely doesn't exist in CVR. This is
+     *   NOT a failure — it's a real, settled answer of zero companies. Mapped
+     *   to ['companies' => []] so the caller reaches its ordinary EMPTY state
+     *   (skeletonStatus = 'empty') rather than its FAILED state. Returning
+     *   null here previously made PersonStructure::attempt() normalise it to
+     *   a failure, so a name that simply isn't in CVR rendered "Selskabsrelationerne
+     *   kunne ikke hentes." with a retry button that could never succeed —
+     *   the exact "findes ikke ligner kunne ikke hentes" bug this guards
+     *   against now.
+     * - any other error (incl. status 0 for a transport failure) ⇒ returned
+     *   as-is, the ['error' => ...] shape. The caller must NOT read this as
+     *   "no companies" — a transport failure is genuinely retryable, unlike a
+     *   404, so it must keep failing PersonStructure::attempt() into 'failed'.
+     */
+    public function fetchCompaniesByName(string $name): ?array
+    {
+        $result = $this->post('/v1/cvr/person-companies-by-name', ['name' => $name]);
+
+        // 'status' alone is not a safe discriminator: it's already a business
+        // field elsewhere in this class (company['status'] === 'NORMAL' in
+        // searchPersonByName()/fetchCompany()), and nothing stops a success
+        // payload from carrying a 'status' key of its own. Only errorFrom()
+        // and transportErrorFrom() set 'error' — gate on that first.
+        if (isset($result['error']) && ($result['status'] ?? null) === 404) {
+            return ['companies' => []];
+        }
+
+        return $result;
+    }
+
+    /**
      * Cachet variant af fetchCompaniesByCpr() — nøglen hashes (sha1) så et
      * rå CPR-nummer aldrig havner i cache-nøglen eller -loggen. 5 min TTL:
      * lang nok til at dæmpe gentagne opslag under samme graf-udvidelse, kort

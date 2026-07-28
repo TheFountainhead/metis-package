@@ -46,6 +46,7 @@
                 <livewire:metis-person-relations :query="$query" lazy />
             </div>
         @elseif($type === 'person')
+            <livewire:metis-person-structure :query="$query" source="name" lazy />
             <livewire:metis-person-roles :query="$query" lazy />
         @elseif($type === 'address')
             <livewire:metis-map-panel :query="$query" lazy />
