@@ -2,7 +2,6 @@
 
 namespace TheFountainhead\Metis\Livewire\Sections;
 
-use Livewire\Attributes\Locked;
 use TheFountainhead\Metis\Livewire\Concerns\ResolvesGraphEnrichment;
 use TheFountainhead\Metis\Services\OwnershipGraphBuilder;
 use TheFountainhead\Metis\Services\RegistryApi;
@@ -198,17 +197,24 @@ class PersonStructure extends MetisSection
      * NEVER derived from the query's shape, since a 10-character name must not
      * be misclassified as a CPR number.
      *
-     * 🚨 #[Locked]: mount() still sets this normally (Locked only rejects
-     * client-side ->set()/wire:model writes after mount, not initialisation),
-     * but without it a tampered `set('source','cpr')` followed by
-     * `call('retryPrivateProperties')` posts the NAME as a CPR to the
-     * CPR-exclusive endpoint. The per-method guards in mount(),
-     * resetDownstreamPhases(), toggleLayer() and retryPrivateProperties()
-     * stay as defence in depth — this closes every OTHER public method,
-     * present and future, in one place instead of relying on each new one to
-     * remember its own check.
+     * 🚨 NO #[Locked] HERE. It was added 28/7 to block a tampered
+     * `set('source','cpr')` + `call('retryPrivateProperties')`, and it broke
+     * the CPR page in production within four minutes
+     * (PublicPropertyNotFoundException, Flare #9103976).
+     *
+     * Why: this component inherits #[Lazy] from MetisSection, so Livewire
+     * hydrates it from a snapshot in a SECOND request. Locked rejects that
+     * rehydration too — Livewire cannot tell its own snapshot restore from a
+     * client write. Every Livewire::test() stayed green because the test
+     * harness never goes through the lazy snapshot cycle, so 509 passing
+     * tests proved nothing about the real page.
+     *
+     * The tamper path is instead closed by explicit guards in mount(),
+     * resetDownstreamPhases(), toggleLayer() and retryPrivateProperties().
+     * A new public method that touches private-properties state must add its
+     * own guard — that is the cost of not having Locked, and it is cheaper
+     * than a broken CPR page.
      */
-    #[Locked]
     public string $source = 'cpr';
 
     protected function sectionTitle(): string
