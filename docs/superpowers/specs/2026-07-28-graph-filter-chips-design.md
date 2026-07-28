@@ -1,6 +1,6 @@
 # Graf-filter-chips: selskabs-grafen + privat-ejendoms-lag på person-grafen — design
 
-**Dato:** 2026-07-28 · **Status:** afventer Frederiks review · **Bygger på:** 2a (CompanyStructure, LIVE), 2b (PersonStructure m. chips-mønstret, LIVE), person/property-portfolio-undersøgelsen 28/7.
+**Dato:** 2026-07-28 · **Version:** 2 (spec-review indarbejdet — 6 P1 + 5 P2, kode-grounded reviewer) · **Status:** afventer Frederiks review · **Bygger på:** 2a (CompanyStructure, LIVE), 2b (PersonStructure m. chips-mønstret, LIVE), person/property-portfolio-undersøgelsen 28/7.
 
 ## Mål
 
@@ -51,3 +51,24 @@ Package-PR (builder-layers + begge komponenter + blades + cache-metode + PersonP
 ## Non-goals
 
 Street View/skråfoto for private ejendomme (afventer registry-api-payload), fuldskærms-knap, pant-DETALJER i kortet (kun antal), navne-siden, gæld/aktieposter (fase 3).
+
+
+## Bindende præciseringer fra spec-review (v2)
+
+**P1-rettelser (hver ville have givet en lydløs fejl):**
+
+1. **`applyEnrichment()` skal gates på `bfe:`-prefix.** Property-grenen gør `substr($node['id'], 4)` i blind tillid til `bfe:`-prefixet — en `pp:`-node ville få et vrøvl-opslag (og ved kollision et FREMMED ejendomskort). `pp:`-noder springer bfe-kort-grenen over og får deres kort skrevet ved node-oprettelse fra portefølje-rækken. Test: graf med både `bfe:`- og `pp:`-noder; `pp:` får aldrig `bfe:`-kortet.
+2. **`graph-node.blade.php`s ejendoms-udvid-knap sender `props:' + node.cvr` UDEN `?? node.id`** (modsat relations-knappen) — på person-roden (cvr null) bliver det `props:null`: permanent død knap. Blade-fix `'props:' + (node.cvr ?? node.id)` (no-op for selskabssiden, hvor ejere altid har cvr) + test der klikker rodens ejendoms-udvid og asserterer `props:person:root` + nodevækst. NB: dette er PACKAGE-partialen, ikke host-JS — ret leverance-noten tilsvarende.
+3. **Person-rodens to fold-felter er to uafhængige knapper:** private ejendomme folder på `expand['properties']` på `person:root` i en NY kodesti i `buildForPerson()` (`addProperties()` keyer på owner_cvr og rammer aldrig roden). `sub:person:root` lifter fortsat KUN `relations` — private ejendomme er IKKE med i det klik.
+4. **Enrichment-scope må ALDRIG være chip-afhængigt** (person-sidens `visibleFirstLevelCvrs()`-lære): slås `owners` fra og enrichment kører, fryser F3-gaten scope permanent — ejere uden kort for evigt. CompanyStructure får en `buildGraph(array $layers)`-metode; enrichment-stierne resolver mod en graf bygget med ALLE tre lag. Test: owners fra → til → ejer-noder har `card`.
+5. **`privatePropertiesData` recovery + poll-gate + tick-placering fastlagt:** (a) protected state → cache-only `recoverPrivatePropertiesResults()` kaldt fra `recoverPhaseResults()`; ufuldstændig recovery → status `pending`, pollen overtager. (b) Bladens poll-gate udvides med `|| $privatePropertiesStatus === 'pending'`. (c) Hentes som en separat gren FØR fase-2-grenen i `tick()` (kaldet er uafhængigt af cvr-køerne og må ikke vente på strukturer) — én request, derefter falder grenen igennem. (d) EGEN `retryPrivateProperties()` — fase-3-retry genbruges IKKE (den nulstiller delt budget).
+6. **Aldrig-tom-reglen præciseret:** reglen er `count(nodes) <= 1` efter prøvebygning (kun roden tilbage), ikke "nul noder". Badge-tal forbliver pre-cap, MEN blade-låsen beregnes af serveren mod en faktisk prøvebygning pr. lag (`layerContributesNodes(string $layer): bool`) — på selskabs-grafen divergerer pre-cap-tal og faktisk bidrag langt mere end på person-siden (depth-cap/auto-udvid/total-cap). Test: selskab hvor properties-laget er cappet helt væk → chippen kan slås fra selvom K > 0.
+
+**P2-afklaringer:**
+- `public_valuation` er **HELE KRONER** — afgjort af 4 eksisterende konsumenter + trait-kontrakten; mappes 1:1, ingen konvertering. Enheds-pin beholdes som regressionsværn.
+- `pp:`-id-stabilitet: felter trimmes+lowercases før hash; rækkeindeks foldes ind som tredje komponent når matrikelnummer er tomt (samme mønster som addAncestors' `md5($i.'|'...)`). Tests: dobbelt-byg → identiske ids; to tomme-matrikel-rækker → to noder.
+- `person:root` får INTET `agg` fra private ejendomme (aggregatet er owner_cvr-keyet); samlet privat-vurderingssum er non-goal.
+- Ved `failed` sættes `privatePropertiesCount = 0` (chippen behandles som tomt lag = frit fravælgelig); "(–)" er ren visning.
+- `'properties' ∉ layers` ⇒ addProperties springes over OG `finalize()` kaldes med `propertyList: []` (ellers agg for usynlige ejendomme).
+
+**P3:** Badge N = antal ancestors-RÆKKER (pre-cap-princippet; dedup/stubs ændrer nodetal). Udtrækkes chips-partial ikke, SKAL $otherCount-kommentaren kopieres med. svOk-gaten for manglende streetview_url er kode-verificeret — plan-fasen behøver ikke gentjekke.
