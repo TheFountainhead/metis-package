@@ -14,14 +14,18 @@ it('returns the companies payload for a matched name', function () {
         ->and($result['companies'])->toHaveCount(1);
 });
 
-it('returns null on a 404 so the caller can show a genuine empty state', function () {
+it('returns an empty companies array on a 404 so the caller renders a genuine empty state', function () {
     // registry-api svarer 404 når deltageren slet ikke findes (Task 1-2's
-    // kontrakt) — IKKE et tomt companies-array. post()'s errorFrom() giver
-    // ['error' => 'upstream_error', 'status' => 404], så metoden skal mappe
-    // det aktivt til null her, ikke antage at post() selv giver null.
+    // kontrakt) — det er en SETTLED tom-tilstand, ikke en fejl. post()'s
+    // errorFrom() giver ['error' => 'upstream_error', 'status' => 404], så
+    // metoden skal mappe det aktivt til ['companies' => []] her — IKKE null,
+    // som PersonStructure::attempt() normaliserer til 'failed'. Reviewed
+    // fund: en advokat der søger på et navn der ikke findes i CVR så før
+    // denne rettelse "Selskabsrelationerne kunne ikke hentes." med en
+    // "Prøv igen"-knap der aldrig kunne lykkes.
     Http::fake(['*person-companies-by-name*' => Http::response(['error' => 'Person not found'], 404)]);
 
-    expect(app(RegistryApi::class)->fetchCompaniesByName('Ukendt'))->toBeNull();
+    expect(app(RegistryApi::class)->fetchCompaniesByName('Ukendt'))->toBe(['companies' => []]);
 });
 
 it('surfaces a transport failure as an error shape, not as null', function () {

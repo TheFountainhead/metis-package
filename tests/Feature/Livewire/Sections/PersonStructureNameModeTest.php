@@ -57,6 +57,19 @@ it('sets failed, not empty, when the fetch fails', function () {
         ->assertSet('skeletonStatus', 'failed');
 });
 
+it('shows the empty state and the cpr note, not the failed message, when the name has no CVR hits', function () {
+    // 404 means "genuinely not in CVR", not "could not be fetched" — asks
+    // what the USER sees through the whole component, not just what the
+    // client method returns, which is the gap that let this bug ship.
+    Http::fake(['*person-companies-by-name*' => Http::response(['error' => 'Person not found'], 404)]);
+
+    Livewire::test(PersonStructure::class, ['query' => 'Ukendt Person', 'source' => 'name'])
+        ->assertSet('skeletonStatus', 'empty')
+        ->assertSee('Ingen aktive selskabsrelationer')
+        ->assertSee('Søg med CPR-nummer')
+        ->assertDontSee('Selskabsrelationerne kunne ikke hentes.');
+});
+
 it('defaults to cpr mode so existing behaviour is unchanged', function () {
     expect((new PersonStructure)->source)->toBe('cpr');
 });
@@ -70,6 +83,28 @@ it('keeps private properties settled across a skeleton retry in name mode', func
         ->assertSet('privatePropertiesStatus', 'empty')
         ->call('retrySkeleton')
         ->assertSet('privatePropertiesStatus', 'empty');
+});
+
+it('rejects a client-side tampered source, so a name can never be posted as a cpr', function () {
+    // Reviewed fund: `set('source', 'cpr')` followed by
+    // `call('retryPrivateProperties')` used to POST the NAME as `cpr` to the
+    // CPR-exclusive /v1/person/property-portfolio endpoint — a person NAME in
+    // a CPR-tagged field. #[Locked] on $source rejects the client-side write
+    // outright with an exception, BEFORE retryPrivateProperties() ever runs
+    // — no request is ever sent. Håndhævet ved UDELADE af
+    // person-portfolio-mønstret + preventStrayRequests(): a request reaching
+    // that endpoint would fail the test as a stray request, not merely as a
+    // wrong assertion.
+    Http::fake(['*person-companies-by-name*' => Http::response([
+        'data' => ['person_name' => 'Test Person', 'companies' => []],
+    ])]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Frederik Testperson', 'source' => 'name']);
+
+    expect(fn () => $test->set('source', 'cpr'))
+        ->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
+
+    expect($test->get('source'))->toBe('name');
 });
 
 it('keeps private properties settled across a manual retry in name mode', function () {

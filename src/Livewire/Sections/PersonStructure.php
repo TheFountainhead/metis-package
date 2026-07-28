@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Livewire\Sections;
 
+use Livewire\Attributes\Locked;
 use TheFountainhead\Metis\Livewire\Concerns\ResolvesGraphEnrichment;
 use TheFountainhead\Metis\Services\OwnershipGraphBuilder;
 use TheFountainhead\Metis\Services\RegistryApi;
@@ -196,7 +197,18 @@ class PersonStructure extends MetisSection
      * Where the company skeleton comes from. Set explicitly from the blade —
      * NEVER derived from the query's shape, since a 10-character name must not
      * be misclassified as a CPR number.
+     *
+     * 🚨 #[Locked]: mount() still sets this normally (Locked only rejects
+     * client-side ->set()/wire:model writes after mount, not initialisation),
+     * but without it a tampered `set('source','cpr')` followed by
+     * `call('retryPrivateProperties')` posts the NAME as a CPR to the
+     * CPR-exclusive endpoint. The per-method guards in mount(),
+     * resetDownstreamPhases(), toggleLayer() and retryPrivateProperties()
+     * stay as defence in depth — this closes every OTHER public method,
+     * present and future, in one place instead of relying on each new one to
+     * remember its own check.
      */
+    #[Locked]
     public string $source = 'cpr';
 
     protected function sectionTitle(): string

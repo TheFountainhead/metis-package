@@ -769,13 +769,21 @@ class RegistryApi
      * $e->getCode()], and a ConnectionException into ['error' =>
      * 'upstream_error', 'status' => 0] via transportErrorFrom(). Those two
      * failure modes mean different things to the caller, so they're kept
-     * distinct here rather than both collapsing to null:
+     * distinct here rather than both collapsing to one shape:
      *
-     * - status 404 ⇒ the participant genuinely doesn't exist in CVR. Mapped
-     *   to null so the caller can render a real empty state.
+     * - status 404 ⇒ the participant genuinely doesn't exist in CVR. This is
+     *   NOT a failure — it's a real, settled answer of zero companies. Mapped
+     *   to ['companies' => []] so the caller reaches its ordinary EMPTY state
+     *   (skeletonStatus = 'empty') rather than its FAILED state. Returning
+     *   null here previously made PersonStructure::attempt() normalise it to
+     *   a failure, so a name that simply isn't in CVR rendered "Selskabsrelationerne
+     *   kunne ikke hentes." with a retry button that could never succeed —
+     *   the exact "findes ikke ligner kunne ikke hentes" bug this guards
+     *   against now.
      * - any other error (incl. status 0 for a transport failure) ⇒ returned
      *   as-is, the ['error' => ...] shape. The caller must NOT read this as
-     *   "no companies" — null ≠ an error.
+     *   "no companies" — a transport failure is genuinely retryable, unlike a
+     *   404, so it must keep failing PersonStructure::attempt() into 'failed'.
      */
     public function fetchCompaniesByName(string $name): ?array
     {
@@ -787,7 +795,7 @@ class RegistryApi
         // payload from carrying a 'status' key of its own. Only errorFrom()
         // and transportErrorFrom() set 'error' — gate on that first.
         if (isset($result['error']) && ($result['status'] ?? null) === 404) {
-            return null;
+            return ['companies' => []];
         }
 
         return $result;
