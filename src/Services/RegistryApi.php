@@ -841,6 +841,32 @@ class RegistryApi
     }
 
     /**
+     * Cachet variant af fetchPersonPropertyPortfolioByCpr() — spejler
+     * fetchCompaniesByCprCached() præcist: nøglen hashes (sha1) så et rå
+     * CPR-nummer aldrig havner i cache-nøglen eller -loggen, 300s TTL, og
+     * fejl caches ALDRIG. post()'s catch-block returnerer aldrig null ved en
+     * RequestException — den giver et ['error' => ..., 'status' => ...]-array
+     * — den fejlform skal behandles som "fejlede" på samme måde som et rent
+     * null-svar, ellers cacher vi en 500'er (eller transportfejl) i 5 minutter.
+     */
+    public function fetchPersonPropertyPortfolioByCprCached(string $cpr): ?array
+    {
+        $cacheKey = 'metis:person_property_portfolio:'.sha1($cpr);
+
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
+        $result = $this->fetchPersonPropertyPortfolioByCpr($cpr);
+
+        if (! is_null($result) && ! isset($result['error'])) {
+            Cache::put($cacheKey, $result, 300);
+        }
+
+        return $result;
+    }
+
+    /**
      * Resolve address to property analysis with caching.
      * Merged from MetisInputDetector::resolveAddressAnalysis().
      */

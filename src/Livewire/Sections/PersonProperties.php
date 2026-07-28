@@ -20,7 +20,7 @@ class PersonProperties extends MetisSection
     public function mount(string $query): void
     {
         $this->query = $query;
-        $result = rescue(fn () => app(RegistryApi::class)->fetchPersonPropertyPortfolioByCpr($query));
+        $result = rescue(fn () => app(RegistryApi::class)->fetchPersonPropertyPortfolioByCprCached($query));
 
         $this->personalProperties = $result['personal_properties'] ?? [];
         $this->companies = $result['companies'] ?? [];

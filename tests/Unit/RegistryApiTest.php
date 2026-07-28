@@ -581,6 +581,82 @@ it('companies-by-cpr cache key never contains the raw cpr', function () {
     expect(Cache::has('metis:companies_by_cpr:0101011234'))->toBeFalse();
 });
 
+/*
+|--------------------------------------------------------------------------
+| Person-property-portfolio cache (Task 3, graph-filter-chips) — mirrors
+| fetchCompaniesByCprCached exactly: 300s TTL, sha1-hashed key, failures
+| (both null AND ['error' => ...] shapes) never cached.
+|--------------------------------------------------------------------------
+*/
+
+it('caches person-property-portfolio on a hashed key so a second call is a cache hit', function () {
+    Http::fake(['*/v1/person/property-portfolio' => Http::response(['data' => ['personal_properties' => [['address' => 'Bredgade 40']]]])]);
+
+    $api = app(RegistryApi::class);
+    $first = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
+    $second = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
+
+    Http::assertSentCount(1);
+    expect($second)->toBe($first)
+        ->and(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeTrue();
+});
+
+it('person-property-portfolio cache key never contains the raw cpr', function () {
+    Http::fake(['*/v1/person/property-portfolio' => Http::response(['data' => ['personal_properties' => []]])]);
+
+    app(RegistryApi::class)->fetchPersonPropertyPortfolioByCprCached('0101011234');
+
+    expect(Cache::has('metis:person_property_portfolio:0101011234'))->toBeFalse();
+});
+
+it('never caches a failed person-property-portfolio call (error shape)', function () {
+    // post() turns a 500 into ['error' => ...] rather than throwing — that shape
+    // must not shadow fresh data for 5 minutes, same rule as fetchCompaniesByCprCached.
+    Http::fake(['*/v1/person/property-portfolio' => Http::response('Server error', 500)]);
+
+    $api = app(RegistryApi::class);
+    $first = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
+    $second = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
+
+    expect($first)->toHaveKey('error')->and($second)->toHaveKey('error');
+    Http::assertSentCount(2);
+    expect(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeFalse();
+});
+
+it('never caches a failed person-property-portfolio call (transport/null shape) and retries genuinely on the next call', function () {
+    // Http::failedConnection() is the canonical way to simulate a transport
+    // failure that RESPECTS the retry layer — a raw throw from a fake closure
+    // bypasses retry handling and is never re-invoked (documented trap in the
+    // companies-by-cpr tests above). It returns a closure($request), so it is
+    // invoked manually inside a stateful fake for fail-then-succeed.
+    //
+    // client()'s retry(2, ...) means 2 TOTAL attempts per outer call. To make
+    // the FIRST outer call fail end-to-end (both attempts fail, so ['error']
+    // comes back and nothing is cached), the fake must fail on calls 1 AND 2,
+    // then succeed from call 3 onward — which lands on the SECOND outer call's
+    // first attempt.
+    $calls = 0;
+    Http::fake(function ($request) use (&$calls) {
+        $calls++;
+        if ($calls <= 2) {
+            return (Http::failedConnection('cURL error 28: transient'))($request);
+        }
+
+        return Http::response(['data' => ['personal_properties' => [['address' => 'Bredgade 40']]]]);
+    });
+
+    $api = app(RegistryApi::class);
+    $first = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
+
+    expect($first)->toHaveKey('error')
+        ->and(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeFalse();
+
+    $second = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
+
+    expect($second['personal_properties'][0]['address'])->toBe('Bredgade 40')
+        ->and(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeTrue();
+});
+
 it('pools structure fetches with per-cvr null on failure', function () {
     Http::fake([
         '*/v1/cvr/company-structure' => Http::sequence()
