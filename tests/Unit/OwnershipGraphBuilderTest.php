@@ -6,16 +6,24 @@ function buildGraph(array $overrides = []): array
 {
     $builder = new OwnershipGraphBuilder;
 
-    return $builder->build(
-        query: $overrides['query'] ?? '38653806',
-        companyName: $overrides['companyName'] ?? 'FDL-Invest ApS',
-        structure: $overrides['structure'] ?? ['ancestors' => [], 'subsidiaries' => []],
-        properties: $overrides['properties'] ?? ['list' => [], 'usage' => []],
-        enrichment: $overrides['enrichment'] ?? [],
-        expandedNodeIds: $overrides['expandedNodeIds'] ?? [],
-        caps: $overrides['caps'] ?? ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
-        now: $overrides['now'] ?? null,
-    );
+    $args = [
+        'query' => $overrides['query'] ?? '38653806',
+        'companyName' => $overrides['companyName'] ?? 'FDL-Invest ApS',
+        'structure' => $overrides['structure'] ?? ['ancestors' => [], 'subsidiaries' => []],
+        'properties' => $overrides['properties'] ?? ['list' => [], 'usage' => []],
+        'enrichment' => $overrides['enrichment'] ?? [],
+        'expandedNodeIds' => $overrides['expandedNodeIds'] ?? [],
+        'caps' => $overrides['caps'] ?? ['subsidiary_depth' => 2, 'properties_per_company' => 6, 'total_nodes' => 120],
+        'now' => $overrides['now'] ?? null,
+    ];
+    // Only pass 'layers' when the caller explicitly set it, so the bulk of
+    // the suite keeps exercising build()'s DEFAULT (no layers arg at all) —
+    // that omission is itself the backward-compat proof (brief Step 3).
+    if (array_key_exists('layers', $overrides)) {
+        $args['layers'] = $overrides['layers'];
+    }
+
+    return $builder->build(...$args);
 }
 
 it('builds the searched node alone for empty input', function () {
@@ -741,6 +749,87 @@ it('does not attach company card/signals to an "other" orphan-parent stub node (
     expect($stub['kind'])->toBe('other')
         ->and($stub)->not->toHaveKey('card')
         ->and($stub)->not->toHaveKey('signals');
+});
+
+/*
+|--------------------------------------------------------------------------
+| build() — $layers parameter (graf-filter-chips, Task 1)
+|--------------------------------------------------------------------------
+|
+| $layers gates which of the three company-graph layers (owners/
+| subsidiaries/properties) build() populates. The root 'searched' node is
+| always present regardless of $layers. Omitting the argument entirely (the
+| DEFAULT) must be byte-identical to passing all three explicitly — that is
+| the backward-compatibility contract the brief requires, and it's proven by
+| the rest of this file's tests, which never pass 'layers' at all.
+*/
+
+function layersFixture(): array
+{
+    return [
+        'structure' => [
+            'ancestors' => [
+                ['person_name' => 'Frederik G D Larnæs', 'is_company' => false, 'cvr' => null, 'ownership_share' => 100.0, 'parent_of_cvr' => null],
+            ],
+            'subsidiaries' => [
+                ['cvr' => '45170209', 'name' => 'Inova ApS', 'ownership_share' => 100.0, 'children' => []],
+            ],
+        ],
+        'properties' => ['list' => [fdlProperty(['owner_cvr' => '45170209'])], 'usage' => ['2573669' => 'Fritliggende enfamiliehus']],
+    ];
+}
+
+it('omits ancestor nodes/edges when owners is absent from layers, but keeps the root', function () {
+    $fixture = layersFixture();
+    $g = buildGraph([
+        'structure' => $fixture['structure'],
+        'properties' => $fixture['properties'],
+        'layers' => ['subsidiaries', 'properties'],
+    ]);
+
+    expect(collect($g['nodes'])->pluck('id'))->toContain('searched')
+        ->and(collect($g['nodes'])->where('kind', 'person'))->toHaveCount(0)
+        ->and(collect($g['edges'])->where('to', 'searched'))->toHaveCount(0);
+});
+
+it('omits subsidiary nodes/edges when subsidiaries is absent from layers, but keeps the root', function () {
+    $fixture = layersFixture();
+    $g = buildGraph([
+        'structure' => $fixture['structure'],
+        'properties' => $fixture['properties'],
+        'layers' => ['owners', 'properties'],
+    ]);
+
+    expect(collect($g['nodes'])->pluck('id'))->toContain('searched')
+        ->and(collect($g['nodes'])->where('id', '45170209'))->toHaveCount(0)
+        // The property in the fixture is owned by the omitted subsidiary, so
+        // it has no owner node in the graph and cannot be hung either.
+        ->and(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(0);
+});
+
+it('omits property nodes/edges AND their aggregate when properties is absent from layers (spec P2-5)', function () {
+    $fixture = layersFixture();
+    $g = buildGraph([
+        'structure' => $fixture['structure'],
+        'properties' => $fixture['properties'],
+        'layers' => ['owners', 'subsidiaries'],
+    ]);
+
+    $subsidiary = collect($g['nodes'])->firstWhere('id', '45170209');
+    expect(collect($g['nodes'])->where('kind', 'property'))->toHaveCount(0)
+        ->and($subsidiary)->not->toBeNull()
+        // P2-5: finalize() must be called with propertyList: [] when
+        // properties is off, otherwise the owner node gets an agg computed
+        // for properties that are no longer visible in the graph.
+        ->and($subsidiary)->not->toHaveKey('agg');
+});
+
+it('build() without a layers argument equals build() with all three layers explicit (default = full backward-compat graph)', function () {
+    $fixture = layersFixture();
+    $withoutLayers = buildGraph(['structure' => $fixture['structure'], 'properties' => $fixture['properties']]);
+    $withAllLayers = buildGraph(['structure' => $fixture['structure'], 'properties' => $fixture['properties'], 'layers' => ['owners', 'subsidiaries', 'properties']]);
+
+    expect($withoutLayers)->toEqual($withAllLayers);
 });
 
 /*

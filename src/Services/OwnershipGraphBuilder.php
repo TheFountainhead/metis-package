@@ -45,6 +45,7 @@ class OwnershipGraphBuilder
         array $expandedNodeIds,
         array $caps,
         ?CarbonImmutable $now = null,
+        array $layers = ['owners', 'subsidiaries', 'properties'],
     ): array {
         $nodes = [[
             'id' => 'searched',
@@ -55,8 +56,12 @@ class OwnershipGraphBuilder
         $edges = [];
         $edgeSeen = [];
 
-        $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
-        $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
+        if (in_array('owners', $layers, true)) {
+            $this->addAncestors($structure['ancestors'] ?? [], $query, $nodes, $seen, $edges, $edgeSeen);
+        }
+        if (in_array('subsidiaries', $layers, true)) {
+            $this->addSubsidiaries($structure['subsidiaries'] ?? [], 'searched', 1, $caps['subsidiary_depth'], $expandedNodeIds, $nodes, $seen, $edges, $edgeSeen);
+        }
 
         // usage-bagudkompatibilitet: enrichment['properties'][mid]['usage'] wins
         // over the legacy properties['usage'][mid] map (2a.1 shape) so Task 3 can
@@ -68,8 +73,15 @@ class OwnershipGraphBuilder
             }
         }
 
-        $this->addProperties($properties['list'] ?? [], $usage, $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
-        $this->finalize($nodes, $edges, $properties['list'] ?? [], $enrichment, $caps, $query, $now);
+        $propertiesOn = in_array('properties', $layers, true);
+        if ($propertiesOn) {
+            $this->addProperties($properties['list'] ?? [], $usage, $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
+        }
+        // spec P2-5: when the properties layer is off, finalize() must get an
+        // EMPTY property list — not $properties['list'] — otherwise
+        // aggregateProperties() would compute an owner's agg (count/value)
+        // for properties that were never added to the graph as nodes.
+        $this->finalize($nodes, $edges, $propertiesOn ? ($properties['list'] ?? []) : [], $enrichment, $caps, $query, $now);
 
         return ['nodes' => $nodes, 'edges' => $edges];
     }
