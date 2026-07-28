@@ -60,3 +60,14 @@ it('sets failed, not empty, when the fetch fails', function () {
 it('defaults to cpr mode so existing behaviour is unchanged', function () {
     expect((new PersonStructure)->source)->toBe('cpr');
 });
+
+it('keeps private properties settled across a skeleton retry in name mode', function () {
+    Http::fake(['*person-companies-by-name*' => Http::response([
+        'data' => ['person_name' => 'Test Person', 'companies' => []],
+    ])]);
+
+    Livewire::test(PersonStructure::class, ['query' => 'Test Person', 'source' => 'name'])
+        ->assertSet('privatePropertiesStatus', 'empty')
+        ->call('retrySkeleton')
+        ->assertSet('privatePropertiesStatus', 'empty');
+});
