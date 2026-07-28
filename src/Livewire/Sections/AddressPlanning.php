@@ -17,7 +17,12 @@ class AddressPlanning extends MetisSection
     {
         $this->query = $query;
         $analysis = app(RegistryApi::class)->resolveAddressAnalysis($query);
-        $this->plans = $analysis['property']['local_plans'] ?? null;
+
+        // local_plans is a wrapper, not the plan list itself; 'local_plans' is
+        // the pre-#199 legacy key, kept as fallback since deploy order across
+        // repos isn't guaranteed. An error wrapper has neither -> [] -> empty state.
+        $this->plans = data_get($analysis, 'property.local_plans.plans')
+            ?? data_get($analysis, 'property.local_plans.local_plans', []);
     }
 
     public function render()
