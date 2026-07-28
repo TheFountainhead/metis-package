@@ -162,11 +162,77 @@ it('treats a successful but empty companies list as empty, with no graph canvas'
 
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
 
+    // 'empty' is provisional at this point: the private-properties layer has
+    // not been consulted yet, so the section shows a shimmer + poll, NOT the
+    // empty message — declaring "ingen" before the last layer has answered
+    // would be a lie for a person who owns property privately.
     expect($test->get('skeletonStatus'))->toBe('empty')
+        ->and($test->get('privatePropertiesStatus'))->toBe('pending')
         ->and($test->get('graphModel')['nodes'])->toBe([]);
+
+    $test->assertDontSee('Ingen aktive selskabsrelationer');
+
+    // fakeRegistryCpr's property-portfolio wildcard answers the person call
+    // with a company-shaped body → no personal_properties key → 'empty'. Only
+    // NOW is the verdict final and the message on screen.
+    $test->call('tick');
+
+    expect($test->get('skeletonStatus'))->toBe('empty')
+        ->and($test->get('privatePropertiesStatus'))->toBe('empty');
 
     $test->assertSee('Ingen aktive selskabsrelationer')
         ->assertDontSee('Prøv igen');
+});
+
+it('promotes an empty skeleton to a graph when private properties land on the tick', function () {
+    // Zero ACTIVE companies (fase 1 settles 'empty') but one private property:
+    // the poll must still run the private phase, and rows landing must promote
+    // the skeleton — found live 28/7, where the empty-state hid a person's
+    // private property because the poll only existed under 'loaded'.
+    fakePersonPrivate([], [privatePropertyRow()]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+
+    expect($test->get('skeletonStatus'))->toBe('empty');
+
+    $test->call('tick');
+
+    expect($test->get('skeletonStatus'))->toBe('loaded')
+        ->and($test->get('privatePropertiesStatus'))->toBe('loaded')
+        ->and(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(1)
+        ->and($test->get('layers'))->toContain('private_properties');
+
+    $test->assertDontSee('Ingen aktive selskabsrelationer');
+});
+
+it('keeps the empty skeleton with a retry when the private fetch fails, and promotes on retry', function () {
+    Http::fake([
+        '*/v1/person/property-portfolio*' => Http::sequence()
+            ->push('Server error', 500)
+            ->push(['data' => ['personal_properties' => [privatePropertyRow()]]]),
+        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => []]]),
+        '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
+    ]);
+
+    $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
+    $test->call('tick');
+
+    // null ≠ tom: the failed fetch must not silently pass as "no private
+    // properties either" — the empty message shows, but WITH the phase's own
+    // retry affordance beside it.
+    expect($test->get('skeletonStatus'))->toBe('empty')
+        ->and($test->get('privatePropertiesStatus'))->toBe('failed');
+
+    $test->assertSee('Ingen aktive selskabsrelationer')
+        ->assertSee('Private ejendomme kunne ikke hentes.');
+
+    // The retry runs the same promotion path loadPrivateProperties() owns.
+    $test->call('retryPrivateProperties');
+
+    expect($test->get('skeletonStatus'))->toBe('loaded')
+        ->and(collect($test->get('graphModel')['nodes'])->filter(fn ($n) => str_starts_with($n['id'], 'pp:')))
+        ->toHaveCount(1);
 });
 
 it('builds a graph with the person root and both layers when the skeleton loads', function () {
@@ -2593,12 +2659,10 @@ it('shows the private-properties chip with a pre-cap badge and filters the layer
 
 it('refuses to switch off the private-properties chip when it carries the only nodes', function () {
     // The never-empty rule (count(nodes) <= 1) needs no third-layer special
-    // case — this pins that it genuinely covers the new layer for a person with
-    // NO companies at all, only private properties.
-    // NB a person with NO companies never gets here: fase 1 settles 'empty' and
-    // no graph is built at all. The only reachable only-private state is a
-    // person WITH a company whose other chips have been switched off first,
-    // which is what this walks.
+    // case — this pins that it genuinely covers the new layer. Two routes
+    // reach the only-private state: a person with NO active companies (the
+    // promotion path — its own test above) and a person WITH a company whose
+    // other chips have been switched off first, which is what this walks.
     fakePersonPrivate([cprRoleCompany('22222222')], [privatePropertyRow()]);
 
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
