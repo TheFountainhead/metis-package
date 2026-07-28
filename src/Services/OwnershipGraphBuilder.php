@@ -881,8 +881,15 @@ class OwnershipGraphBuilder
      * recursively — NOT just the direct children count used for the
      * expand-signal. Drives the Task 9 auto-expand threshold: a linear
      * chain of 3 single-child levels is 3 descendants, not 1.
+     *
+     * PUBLIC because CompanyStructure's "Datterselskaber (M)" chip badge is
+     * the same question asked of the same raw payload (spec §A: M = totalt
+     * antal datterselskaber, rekursivt). Re-implementing the walk in the
+     * component would give a second definition of "descendant" free to drift
+     * from the one the builder actually draws by — and the badge would then
+     * disagree with the graph it labels.
      */
-    protected function countDescendants(array $subs): int
+    public function countDescendants(array $subs): int
     {
         $count = 0;
         foreach ($subs as $s) {
