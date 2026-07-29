@@ -232,6 +232,14 @@ class Search extends Component
             if ($this->searchMode === 'company' && preg_match('/^\d{8}$/', $query)) {
                 $type = 'cvr';
             }
+
+            // Samme opgradering for person-mode: uden den mapper 'person' hårdt til
+            // 'name', CPR-tjekket nedenfor nås aldrig, og et CPR-nummer bliver søgt
+            // som et PERSONNAVN — brugeren får "Ingen resultater", altså en påstand
+            // om at personen ikke findes, hvor sandheden er at vi aldrig søgte.
+            if ($this->searchMode === 'person' && preg_match('/^\d{6}-?\d{4}$/', $query)) {
+                $type = 'cpr';
+            }
         } else {
             $detector = new SearchDetector;
             $type = $detector->detect($query);
