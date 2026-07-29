@@ -35,6 +35,39 @@
                         </span>
                     @endif
                 </div>
+
+                {{-- Dækningsforbehold.
+
+                     Tallene ovenfor ser komplette ud, også når vi kun har
+                     undersøgt en brøkdel. AKACIETORVET viste "Ejendomme: 4,
+                     Pantebreve: 1" hvor 3 af de 4 aldrig var slået op — og
+                     de tre bærer 79,9 mio. i hæftelser.
+
+                     Tallet er ikke forkert. Det er ufuldstændigt uden at
+                     sige det. Vises kun når der faktisk mangler noget. --}}
+                @php($cov = $treeMeta['coverage'] ?? null)
+                @if($cov && ! ($cov['all_properties_answered'] ?? true) && ($cov['properties_total'] ?? 0) > 0)
+                    <div class="mb-5 rounded-lg border border-sand-200/60 bg-white px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+                        <p class="text-ink-800 dark:text-zinc-100">
+                            {{ __(':answered af :total ejendomme undersøgt.', [
+                                'answered' => $cov['properties_answered'] ?? 0,
+                                'total' => $cov['properties_total'],
+                            ]) }}
+                            @if(($cov['properties_blocked'] ?? 0) > 0)
+                                {{ __(':n mangler adressedata og kan ikke slås op.', ['n' => $cov['properties_blocked']]) }}
+                            @endif
+                            @if(($cov['properties_pending'] ?? 0) > 0)
+                                {{ __(':n er endnu ikke hentet.', ['n' => $cov['properties_pending']]) }}
+                            @endif
+                        </p>
+                        <p class="mt-1 text-sand-300 dark:text-zinc-400">
+                            {{ __('Tallene ovenfor dækker kun det undersøgte. Fravær af hæftelser er ikke et udsagn om at der ingen er.') }}
+                            @if(! empty($cov['oldest_answer_at']))
+                                {{ __('Ældste opslag: :date.', ['date' => \Illuminate\Support\Carbon::parse($cov['oldest_answer_at'])->isoFormat('D. MMM YYYY')]) }}
+                            @endif
+                        </p>
+                    </div>
+                @endif
             @endif
 
             {{-- filter-bar (Q5 + Q8) --}}
