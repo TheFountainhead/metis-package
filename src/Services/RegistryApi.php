@@ -866,13 +866,25 @@ class RegistryApi
     public function fetchPersonPropertyPortfolio(string $name): ?array
     {
         try {
-            return $this->client()
+            $response = $this->client()
                 ->timeout(60)
-                ->post('/v1/cvr/person-property-portfolio', ['name' => $name])
-                ->throw()
-                ->json('data');
-        } catch (RequestException $e) {
-            return null;
+                ->post('/v1/cvr/person-property-portfolio', ['name' => $name]);
+
+            // 404 = personen findes ikke i CVR. Det er et SVAR, ikke en fejl:
+            // returnér den tomme portefølje så konsumenten kan sige "ingen
+            // ejendomme" i stedet for at vise ingenting. Uden denne gren blev
+            // 404 til null, og "Vis alle ejendomme"-knappen fejlede tavst
+            // (Flare 29/7). ->throw() konstruerer desuden exceptionen som
+            // Flare rapporterer, selv når vi fanger den.
+            if ($response->status() === 404) {
+                return ['companies' => [], 'summary' => [
+                    'company_count' => 0, 'total_properties' => 0, 'total_valuation' => 0,
+                ]];
+            }
+
+            return $response->throw()->json('data');
+        } catch (ConnectionException|RequestException $e) {
+            return null;   // ægte fejl — konsumenten må tilbyde retry
         }
     }
 

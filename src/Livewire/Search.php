@@ -58,6 +58,17 @@ class Search extends Component
 
     public bool $loadingPersonProperties = false;
 
+    /**
+     * idle | loaded | empty | failed.
+     *
+     * $personProperties alene kan ikke bære betydningen: null betød både
+     * "ikke hentet endnu", "personen findes ikke" og "kaldet fejlede". De to
+     * sidste ramte samme blinde Blade-gate, så et klik på "Vis alle
+     * ejendomme" kunne give NUL synlig respons (Flare 29/7). 'empty' og
+     * 'failed' skilles ad fordi kun den ene bør tilbyde retry.
+     */
+    public string $personPropertiesStatus = 'idle';
+
     public function setSearchMode(string $mode): void
     {
         if (! in_array($mode, ['', 'person', 'company', 'address'], true)) {
@@ -125,7 +136,7 @@ class Search extends Component
         // sees an old "best fuzzy match" while typing a new query, e.g.
         // searching "christian ø" returned Christian Øster Due, then user
         // continued typing "hlers" and the old result lingered.
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'personProperties']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'personProperties', 'personPropertiesStatus']);
 
         if (strlen($q) < 3) {
             return;
@@ -203,7 +214,7 @@ class Search extends Component
         $previousSuggestions = $this->suggestions;
         $previousSuggestionType = $this->suggestionType;
         $this->suggestions = [];
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties', 'personPropertiesStatus']);
         $this->retryCount = 0;
 
         $query = trim($this->query);
@@ -328,7 +339,7 @@ class Search extends Component
 
     public function clearSearch(): void
     {
-        $this->reset(['query', 'result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties']);
+        $this->reset(['query', 'result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties', 'personPropertiesStatus']);
         $this->dispatch('scroll-top');
         $this->js("history.pushState(null, '', '/'); document.title = 'Metis';");
     }
@@ -344,9 +355,22 @@ class Search extends Component
         }
 
         $this->loadingPersonProperties = true;
-        $this->personProperties = app(RegistryApi::class)
+        $portfolio = app(RegistryApi::class)
             ->fetchPersonPropertyPortfolio($this->result['persons'][0]['name']);
         $this->loadingPersonProperties = false;
+
+        // null = kaldet fejlede. Tom companies-liste = personen har ingen
+        // ejendomme via selskaber. Begge gav før "ingen ejendomme og ingen
+        // besked" — knappen kom bare igen.
+        if ($portfolio === null) {
+            $this->personProperties = null;
+            $this->personPropertiesStatus = 'failed';
+
+            return;
+        }
+
+        $this->personProperties = $portfolio;
+        $this->personPropertiesStatus = empty($portfolio['companies'] ?? []) ? 'empty' : 'loaded';
     }
 
     public function fillChip(string $chip): void
@@ -364,7 +388,9 @@ class Search extends Component
         }
 
         $this->query = $value;
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        // personProperties/-Status skal med: uden dem baerer et krydsopslag den
+        // forrige persons ejendomsliste og besked med over paa den nye enhed.
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties', 'personPropertiesStatus']);
 
         // CVR/address → show sections inline
         if (in_array($type, ['cvr', 'address'])) {

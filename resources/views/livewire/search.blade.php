@@ -247,7 +247,7 @@
                                     <span class="text-sand-300 font-normal normal-case ml-2">{{ $person['total_properties'] }} {{ __('ejendomme') }} via {{ count($owned) }} {{ __('selskaber') }}</span>
                                 @endif
                             </h3>
-                            @if(($person['total_properties'] ?? 0) > 0 && empty($personProperties) && ! $loadingPersonProperties)
+                            @if(($person['total_properties'] ?? 0) > 0 && $personPropertiesStatus === 'idle' && ! $loadingPersonProperties)
                                 <button wire:click="loadPersonProperties"
                                         class="text-xs px-3 py-1 bg-warm-500 text-white rounded hover:bg-warm-600 transition-colors">
                                     {{ __('Vis alle ejendomme') }} →
@@ -281,7 +281,20 @@
                     @endif
 
                     {{-- Aggregated property portfolio across all owned companies --}}
-                    @if($personProperties && ! empty($personProperties['companies'] ?? []))
+                    @if($personPropertiesStatus === 'failed')
+                        <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
+                            <p class="text-ink-800 text-sm">{{ __('Ejendomsporteføljen kunne ikke hentes.') }}</p>
+                            <button wire:click="loadPersonProperties" class="mt-2 text-xs px-3 py-1 bg-warm-500 text-white rounded hover:bg-warm-600 transition-colors">{{ __('Prøv igen') }}</button>
+                        </div>
+                    @endif
+
+                    @if($personPropertiesStatus === 'empty')
+                        <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
+                            <p class="text-ink-800 text-sm">{{ __('Ingen ejendomme fundet på selskaberne.') }}</p>
+                        </div>
+                    @endif
+
+                    @if($personPropertiesStatus === 'loaded')
                         <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
                             <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-4">
                                 {{ __('Alle ejendomme') }}
