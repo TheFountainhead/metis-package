@@ -724,8 +724,12 @@ class RegistryApi
                 ->throw()
                 ->json();
         } catch (\Throwable $e) {
-            // Cach ALDRIG en fejl: en retry inden for TTL'en ville få det cachede
-            // null tilbage og gøre knappen virkningsløs.
+            // Cach ALDRIG en fejl. Note: Cache::remember() cacher aldrig en null
+            // callback-retur (Repository::remember() tjekker kun is_null() på
+            // det LÆSTE hit, ikke på det der skulle skrives) — en fejl kunne
+            // altså ikke tidligere "sidde fast" som cachet null. Catch'en ligger
+            // her for at undgå et unødigt Cache::put($key, null, 5 min) ved
+            // HVER fejl, ikke for at forhindre en stale-fejl-replay.
             return null;
         }
 
