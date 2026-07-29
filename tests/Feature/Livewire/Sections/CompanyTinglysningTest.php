@@ -568,3 +568,96 @@ it('resets the poll-failure budget when a filter changes', function () {
 
     expect($t->get('pollFailures'))->toBe(0);
 });
+
+it('discloses that most properties were never examined', function () {
+    // AKACIETORVET (CVR 29798486) i prod: 4 ejendomme, KUN 1 undersoegt, 3
+    // mangler adressedata. Skaermen viste "Ejendomme: 4, Pantebreve: 1" — et
+    // tal der ser KOMPLET ud. En advokat laeser det som "jeg har set hele
+    // billedet", hvor sandheden er at 79,9 mio. i haeftelser ligger paa de tre
+    // uundersoegte.
+    //
+    // Tallet er ikke forkert. Det er ufuldstaendigt uden at sige det.
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'tree_meta' => [
+            'total_descendant_companies' => 0,
+            'total_properties' => 4,
+            'total_mortgages' => 1,
+            'total_principal_amount' => 0,
+            'weighted_ltv' => null,
+            'tree_depth' => 0,
+            'applied_tree_depth' => 1,
+            'result_kind' => 'ok',
+            'coverage' => [
+                'properties_total' => 4,
+                'properties_answered' => 1,
+                'properties_pending' => 0,
+                'properties_blocked' => 3,
+                'all_properties_answered' => false,
+                'oldest_answer_at' => '2026-07-13 04:55:55',
+            ],
+        ],
+    ]))]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '29798486'])
+        ->assertSee('1 af 4 ejendomme undersøgt')
+        ->assertSee('3 mangler adressedata');
+});
+
+it('says nothing extra when every property was examined', function () {
+    // Forbeholdet maa ikke staa paa hvert eneste opslag. Er alt undersoegt,
+    // er tallet autoritativt og skal praesenteres som saadant.
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'tree_meta' => [
+            'total_descendant_companies' => 0,
+            'total_properties' => 4,
+            'total_mortgages' => 7,
+            'total_principal_amount' => 100_000,
+            'weighted_ltv' => null,
+            'tree_depth' => 0,
+            'applied_tree_depth' => 1,
+            'result_kind' => 'ok',
+            'coverage' => [
+                'properties_total' => 4,
+                'properties_answered' => 4,
+                'properties_pending' => 0,
+                'properties_blocked' => 0,
+                'all_properties_answered' => true,
+                'oldest_answer_at' => '2026-07-13 04:55:55',
+            ],
+        ],
+    ]))]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '29798486'])
+        ->assertDontSee('ejendomme undersøgt')
+        ->assertDontSee('mangler adressedata');
+});
+
+it('distinguishes properties still in queue from those that can never be fetched', function () {
+    // 'pending' bliver komplet af sig selv; 'blocked' goer ikke. Raadet til
+    // brugeren er forskelligt: vent vs. undersoeg manuelt.
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'tree_meta' => [
+            'total_descendant_companies' => 0,
+            'total_properties' => 10,
+            'total_mortgages' => 3,
+            'total_principal_amount' => 500_000,
+            'weighted_ltv' => null,
+            'tree_depth' => 0,
+            'applied_tree_depth' => 1,
+            'result_kind' => 'ok',
+            'coverage' => [
+                'properties_total' => 10,
+                'properties_answered' => 6,
+                'properties_pending' => 4,
+                'properties_blocked' => 0,
+                'all_properties_answered' => false,
+                'oldest_answer_at' => '2026-07-13 04:55:55',
+            ],
+        ],
+    ]))]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '29798486'])
+        ->assertSee('6 af 10 ejendomme undersøgt')
+        ->assertSee('4 er endnu ikke hentet')
+        ->assertDontSee('mangler adressedata');
+});
