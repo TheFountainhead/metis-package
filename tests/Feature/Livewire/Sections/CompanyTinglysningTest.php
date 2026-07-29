@@ -178,6 +178,52 @@ it('pollForUpdates is no-op when not streaming', function () {
     Http::assertSentCount(1);
 });
 
+it('retries immediately after a failure instead of serving a cached null', function () {
+    // catch(Throwable) → null lå INDE i Cache::remember(5 min), så en
+    // "Prøv igen"-knap fik det cachede null tilbage og gjorde beviseligt intet.
+    // Samme fejlklasse som den tavse "Vis alle ejendomme"-knap (pkg #133).
+    config(['cache.default' => 'array']);   // ikke null-driver — ellers tester vi ingenting
+
+    Http::fake(['*tinglysning-overview*' => Http::sequence()
+        ->push(status: 500)
+        ->push(fakeTinglysningOverview(), 200)]);
+
+    $t = Livewire::test(CompanyTinglysning::class, ['query' => '12345678']);
+    expect($t->get('hasError'))->toBeTrue();
+
+    $t->call('retry');
+
+    expect($t->get('hasError'))->toBeFalse();
+    Http::assertSentCount(2);   // to reelle forsøg, ikke ét + cache
+});
+
+it('stops polling after repeated failures so a dead backend is not hammered', function () {
+    config(['cache.default' => 'array']);
+    Http::fake(['*tinglysning-overview*' => Http::sequence()
+        ->push(fakeTinglysningOverview([
+            'streaming' => [
+                'complete' => false,
+                'cursor' => 'cursor-1',
+                'total_expected' => 2,
+                'delivered_so_far' => 1,
+            ],
+        ]))
+        ->push(status: 500)
+        ->push(status: 500)
+        ->push(status: 500)]);
+
+    $t = Livewire::test(CompanyTinglysning::class, ['query' => '12345678'])
+        ->assertSet('streaming', true);
+
+    foreach (range(1, 3) as $_) {
+        $t->call('pollForUpdates');
+    }
+
+    // wire:poll er bundet til $streaming — slukkes den, stopper stormen
+    expect($t->get('streaming'))->toBeFalse();
+    expect($t->get('pollFailures'))->toBe(3);
+});
+
 it('retry clears error-state and re-fetches', function () {
     Http::fake([
         '*tinglysning-overview*' => Http::sequence()

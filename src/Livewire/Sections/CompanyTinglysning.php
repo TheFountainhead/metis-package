@@ -17,6 +17,10 @@ class CompanyTinglysning extends MetisSection
     public int $totalExpected = 0;
     public int $deliveredSoFar = 0;
 
+    /** Loft på polling-forsøg. Uden det kører wire:poll.5s videre mod et dødt
+     *  backend: 12 kald/min pr. fane mod et endpoint throttlet til 60/min. */
+    public int $pollFailures = 0;
+
     // Filters (Q5 + Q8 per spec lines 460-465)
     public string $status = 'active'; // active | inactive | all
     public array $mortgageTypeFilter = [];
@@ -59,9 +63,15 @@ class CompanyTinglysning extends MetisSection
             ->fetchCompanyTinglysningOverview($this->query, $this->filters(), $this->cursor));
 
         if (! $response) {
-            // Transport blip during streaming — keep current state, retry next tick.
+            if (++$this->pollFailures >= 3) {
+                $this->streaming = false;   // slukker wire:poll
+                $this->hasError = true;
+            }
+
             return;
         }
+
+        $this->pollFailures = 0;
 
         $this->appendStreamedResponse($response);
     }
