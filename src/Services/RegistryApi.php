@@ -708,22 +708,34 @@ class RegistryApi
     ): ?array {
         $cacheKey = "metis:tinglysning_overview:{$cvr}:" . md5(json_encode([$filters, $cursor]));
 
-        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($cvr, $filters, $cursor) {
-            $query = array_filter([
-                ...$filters,
-                'cursor' => $cursor,
-            ], fn ($v) => $v !== null && $v !== '');
+        if ($cached = Cache::get($cacheKey)) {
+            return $cached;
+        }
 
-            try {
-                return $this->client()
-                    ->timeout(15)
-                    ->get("/v1/companies/{$cvr}/tinglysning-overview", $query)
-                    ->throw()
-                    ->json();
-            } catch (\Throwable $e) {
-                return null;
-            }
-        });
+        $query = array_filter([
+            ...$filters,
+            'cursor' => $cursor,
+        ], fn ($v) => $v !== null && $v !== '');
+
+        try {
+            $result = $this->client()
+                ->timeout(15)
+                ->get("/v1/companies/{$cvr}/tinglysning-overview", $query)
+                ->throw()
+                ->json();
+        } catch (\Throwable $e) {
+            // Cach ALDRIG en fejl. Note: Cache::remember() cacher aldrig en null
+            // callback-retur (Repository::remember() tjekker kun is_null() på
+            // det LÆSTE hit, ikke på det der skulle skrives) — en fejl kunne
+            // altså ikke tidligere "sidde fast" som cachet null. Catch'en ligger
+            // her for at undgå et unødigt Cache::put($key, null, 5 min) ved
+            // HVER fejl, ikke for at forhindre en stale-fejl-replay.
+            return null;
+        }
+
+        Cache::put($cacheKey, $result, now()->addMinutes(5));
+
+        return $result;
     }
 
     public function getEnrichmentStatus(string $cvr): ?array

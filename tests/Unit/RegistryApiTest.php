@@ -861,6 +861,33 @@ it('never caches a failed cross-ownership call', function () {
     Http::assertSentCount(2);
 });
 
+it('never caches a failed tinglysning-overview call', function () {
+    // Cache::remember() never actually caches a null callback-return (it only
+    // treats the READ side as a hit via is_null(), so a null result would be
+    // recomputed on every call regardless) — the real defect fixed here is
+    // that the old form wrote Cache::put($key, null, 5 min) on EVERY failure,
+    // an unnecessary cache write. This asserts the actual, testable change:
+    // a failed call never reaches the cache at all.
+    Http::fake(['*tinglysning-overview*' => Http::sequence()
+        ->push(status: 500)
+        ->push(['tree_meta' => ['total_mortgages' => 3]], 200)]);
+
+    $api = new RegistryApi;
+    $cacheKey = 'metis:tinglysning_overview:12345678:'.md5(json_encode([[], null]));
+
+    $first = $api->fetchCompanyTinglysningOverview('12345678');
+
+    expect($first)->toBeNull()
+        ->and(Cache::has($cacheKey))->toBeFalse();
+
+    // The retry genuinely re-requests rather than replaying a cached miss.
+    $second = $api->fetchCompanyTinglysningOverview('12345678');
+
+    expect($second['tree_meta']['total_mortgages'])->toBe(3)
+        ->and(Cache::has($cacheKey))->toBeTrue();
+    Http::assertSentCount(2);
+});
+
 /*
 |--------------------------------------------------------------------------
 | Cache tenancy — a DECISION, pinned so changing it is a conversation

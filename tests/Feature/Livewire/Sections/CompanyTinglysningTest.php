@@ -178,6 +178,33 @@ it('pollForUpdates is no-op when not streaming', function () {
     Http::assertSentCount(1);
 });
 
+it('stops polling after repeated failures so a dead backend is not hammered', function () {
+    config(['cache.default' => 'array']);
+    Http::fake(['*tinglysning-overview*' => Http::sequence()
+        ->push(fakeTinglysningOverview([
+            'streaming' => [
+                'complete' => false,
+                'cursor' => 'cursor-1',
+                'total_expected' => 2,
+                'delivered_so_far' => 1,
+            ],
+        ]))
+        ->push(status: 500)
+        ->push(status: 500)
+        ->push(status: 500)]);
+
+    $t = Livewire::test(CompanyTinglysning::class, ['query' => '12345678'])
+        ->assertSet('streaming', true);
+
+    foreach (range(1, 3) as $_) {
+        $t->call('pollForUpdates');
+    }
+
+    // wire:poll er bundet til $streaming — slukkes den, stopper stormen
+    expect($t->get('streaming'))->toBeFalse();
+    expect($t->get('pollFailures'))->toBe(3);
+});
+
 it('retry clears error-state and re-fetches', function () {
     Http::fake([
         '*tinglysning-overview*' => Http::sequence()
@@ -505,4 +532,39 @@ it('exportXlsx Pantebreve sheet has one row per mortgage with sampant flag prese
     // Unique mortgages = 2; sampant-count = 1
     expect((int) $oversigt->getCell('B4')->getValue())->toBe(2);
     expect((int) $oversigt->getCell('B8')->getValue())->toBe(1);
+});
+
+it('resets the poll-failure budget when the user retries', function () {
+    // Uden dette stod taelleren paa 2 efter en succesfuld retry, saa ét enkelt
+    // blip slukkede stroemmen — budgettet skulle vaere 3. Samme fejlklasse som
+    // #128: en invariant skal holde ALLE steder tilstanden nulstilles.
+    config(['cache.default' => 'array']);
+    Http::fake(['*tinglysning-overview*' => Http::response(status: 500)]);
+
+    $t = Livewire::test(CompanyTinglysning::class, ['query' => '12345678'])
+        ->set('streaming', true)
+        ->call('pollForUpdates')
+        ->call('pollForUpdates');
+
+    expect($t->get('pollFailures'))->toBe(2);
+
+    $t->call('retry');
+
+    expect($t->get('pollFailures'))->toBe(0);
+});
+
+it('resets the poll-failure budget when a filter changes', function () {
+    config(['cache.default' => 'array']);
+    Http::fake(['*tinglysning-overview*' => Http::response(status: 500)]);
+
+    $t = Livewire::test(CompanyTinglysning::class, ['query' => '12345678'])
+        ->set('streaming', true)
+        ->call('pollForUpdates')
+        ->call('pollForUpdates');
+
+    expect($t->get('pollFailures'))->toBe(2);
+
+    $t->set('sortBy', 'ltv_desc');
+
+    expect($t->get('pollFailures'))->toBe(0);
 });
