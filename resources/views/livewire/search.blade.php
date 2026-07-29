@@ -247,7 +247,7 @@
                                     <span class="text-sand-300 font-normal normal-case ml-2">{{ $person['total_properties'] }} {{ __('ejendomme') }} via {{ count($owned) }} {{ __('selskaber') }}</span>
                                 @endif
                             </h3>
-                            @if(($person['total_properties'] ?? 0) > 0 && $personPropertiesStatus === 'idle' && ! $loadingPersonProperties)
+                            @if(($person['total_properties'] ?? 0) > 0 && $personPropertiesStatus === 'pending' && ! $loadingPersonProperties)
                                 <button wire:click="loadPersonProperties"
                                         class="text-xs px-3 py-1 bg-warm-500 text-white rounded hover:bg-warm-600 transition-colors">
                                     {{ __('Vis alle ejendomme') }} →
@@ -282,15 +282,40 @@
 
                     {{-- Aggregated property portfolio across all owned companies --}}
                     @if($personPropertiesStatus === 'failed')
-                        <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
-                            <p class="text-ink-800 text-sm">{{ __('Ejendomsporteføljen kunne ikke hentes.') }}</p>
-                            <button wire:click="loadPersonProperties" class="mt-2 text-xs px-3 py-1 bg-warm-500 text-white rounded hover:bg-warm-600 transition-colors">{{ __('Prøv igen') }}</button>
+                        <div class="bg-white rounded-2xl p-6 border border-sand-200/60 text-center">
+                            <p class="text-ink-800 mb-1">{{ __('Ejendomsporteføljen kunne ikke hentes.') }}</p>
+                            <button wire:click="loadPersonProperties" class="text-sand-300 text-sm underline hover:text-ink-800 transition-colors">{{ __('Prøv igen') }}</button>
+                        </div>
+                    @endif
+
+                    @if($personPropertiesStatus === 'permanent')
+                        <div class="bg-white rounded-2xl p-6 border border-sand-200/60 text-center">
+                            <p class="text-ink-800 mb-1">{{ __('Vi kan ikke hente data lige nu.') }}</p>
+                            <p class="text-sand-300 text-sm">{{ __('Antal ejendomme pr. selskab står ovenfor.') }}</p>
+                        </div>
+                    @endif
+
+                    {{-- 404 = navneopslaget fandt ingen person. Må ALDRIG sige
+                         "ingen ejendomme": knappen vises kun når vi allerede har
+                         skrevet "N ejendomme via M selskaber" ovenfor. --}}
+                    @if($personPropertiesStatus === 'not_found')
+                        <div class="bg-white rounded-2xl p-6 border border-sand-200/60 text-center">
+                            <p class="text-ink-800 mb-1">{{ __('Vi kunne ikke slå ejendommene op på dette navn.') }}</p>
+                            <p class="text-sand-300 text-sm">{{ __('Antal ejendomme pr. selskab står ovenfor.') }}</p>
                         </div>
                     @endif
 
                     @if($personPropertiesStatus === 'empty')
-                        <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
-                            <p class="text-ink-800 text-sm">{{ __('Ingen ejendomme fundet på selskaberne.') }}</p>
+                        <div class="bg-white rounded-2xl p-6 border border-sand-200/60 text-center">
+                            @if(($person['total_properties'] ?? 0) > 0)
+                                {{-- Selvmodsigelse undgået: overskriften har lige
+                                     sagt at der ER ejendomme. De to tal kommer fra
+                                     hver sin kilde og kan divergere. --}}
+                                <p class="text-ink-800 mb-1">{{ __('Ejendommene kunne ikke listes samlet.') }}</p>
+                                <p class="text-sand-300 text-sm">{{ __('Antal ejendomme pr. selskab står ovenfor.') }}</p>
+                            @else
+                                <p class="text-ink-800">{{ __('Ingen ejendomme fundet på selskaberne.') }}</p>
+                            @endif
                         </div>
                     @endif
 

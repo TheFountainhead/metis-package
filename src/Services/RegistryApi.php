@@ -870,16 +870,20 @@ class RegistryApi
                 ->timeout(60)
                 ->post('/v1/cvr/person-property-portfolio', ['name' => $name]);
 
-            // 404 = personen findes ikke i CVR. Det er et SVAR, ikke en fejl:
-            // returnér den tomme portefølje så konsumenten kan sige "ingen
-            // ejendomme" i stedet for at vise ingenting. Uden denne gren blev
-            // 404 til null, og "Vis alle ejendomme"-knappen fejlede tavst
-            // (Flare 29/7). ->throw() konstruerer desuden exceptionen som
-            // Flare rapporterer, selv når vi fanger den.
+            // Tjek status FØR ->throw(): 404 er et svar vi vil behandle,
+            // ikke en fejl vi vil kaste på.
+            //
+            // 404 betyder at NAVNEOPSLAGET ikke fandt en person
+            // (CvrController::personPropertyPortfolioByName: searchPersonRolesByName()
+            // gav falsy). Det er "vi slog ikke op" — IKKE "personen har ingen
+            // ejendomme". Returnér derfor en egen markør, ikke en tom
+            // portefølje: en tom portefølje ville få viewet til at påstå
+            // fravær, og knappen vises kun når vi ALLEREDE har skrevet
+            // "N ejendomme via M selskaber" paa skærmen. Det ville være en falsk
+            // autoritativ benægtelse — den værste fejlmodus i due diligence.
+            //
             if ($response->status() === 404) {
-                return ['companies' => [], 'summary' => [
-                    'company_count' => 0, 'total_properties' => 0, 'total_valuation' => 0,
-                ]];
+                return ['not_found' => true];
             }
 
             return $response->throw()->json('data');
