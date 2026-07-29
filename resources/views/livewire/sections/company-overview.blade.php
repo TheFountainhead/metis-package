@@ -50,6 +50,31 @@
         </div>
     </div>
 
+    {{-- Dækningsforbehold under KPI-rækken.
+
+         "Tinglyst gæld —" ser ud som "ingen gæld". For AKACIETORVET var
+         sandheden at 3 af 4 ejendomme aldrig var undersøgt og bar 79,9 mio.
+         Samme ordlyd som tinglysning-sektionen, så brugeren møder ét sprog. --}}
+    @if($coverage && ! ($coverage['all_properties_answered'] ?? true) && ($coverage['properties_total'] ?? 0) > 0)
+        <div class="mt-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm">
+            <p class="text-zinc-900">
+                {{ __(':answered af :total ejendomme undersøgt.', [
+                    'answered' => $coverage['properties_answered'] ?? 0,
+                    'total' => $coverage['properties_total'],
+                ]) }}
+                @if(($coverage['properties_blocked'] ?? 0) > 0)
+                    {{ __(':n mangler adressedata og kan ikke slås op.', ['n' => $coverage['properties_blocked']]) }}
+                @endif
+                @if(($coverage['properties_pending'] ?? 0) > 0)
+                    {{ __(':n er endnu ikke hentet.', ['n' => $coverage['properties_pending']]) }}
+                @endif
+            </p>
+            <p class="mt-1 text-zinc-500">
+                {{ __('Tallene ovenfor dækker kun det undersøgte. Fravær af gæld er ikke et udsagn om at der ingen er.') }}
+            </p>
+        </div>
+    @endif
+
     {{-- Map + charts row --}}
     @if(count($mapPins) > 0 || count($usageDistribution) > 0 || count($financialHistory) > 0)
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">

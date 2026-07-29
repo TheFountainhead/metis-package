@@ -11,6 +11,15 @@ class CompanyOverview extends MetisSection
     public int $propertyCount = 0;
     public int $totalValuation = 0;
     public int $totalDebt = 0;
+
+    /**
+     * Datadækning fra registry-api. Uden den viser KPI'en "Tinglyst gæld —",
+     * og den bare streg ser ud som "ingen gæld". AKACIETORVET havde 3 af 4
+     * ejendomme uundersøgt med 79,9 mio. i hæftelser bag stregen.
+     *
+     * @var array<string, mixed>|null
+     */
+    public ?array $coverage = null;
     public ?int $employees = null;
 
     /** @var array<string,int>  Map of building_usage label → property count */
@@ -39,6 +48,11 @@ class CompanyOverview extends MetisSection
 
         $portfolioResp = rescue(fn () => $api->fetchCompanyPropertyPortfolio($query, limit: 500));
         $portfolio = $portfolioResp['portfolio'] ?? null;
+
+        // coverage ligger ved siden af portfolio når den er null, og inde i den
+        // når der er noget at vise. Begge steder skal læses — den tomme
+        // portefølje er netop den tilstand hvor forbeholdet betyder mest.
+        $this->coverage = $portfolio['coverage'] ?? $portfolioResp['coverage'] ?? null;
 
         if (! $portfolio) {
             return;
