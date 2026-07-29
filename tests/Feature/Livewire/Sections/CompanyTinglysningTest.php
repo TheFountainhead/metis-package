@@ -533,3 +533,38 @@ it('exportXlsx Pantebreve sheet has one row per mortgage with sampant flag prese
     expect((int) $oversigt->getCell('B4')->getValue())->toBe(2);
     expect((int) $oversigt->getCell('B8')->getValue())->toBe(1);
 });
+
+it('resets the poll-failure budget when the user retries', function () {
+    // Uden dette stod taelleren paa 2 efter en succesfuld retry, saa ét enkelt
+    // blip slukkede stroemmen — budgettet skulle vaere 3. Samme fejlklasse som
+    // #128: en invariant skal holde ALLE steder tilstanden nulstilles.
+    config(['cache.default' => 'array']);
+    Http::fake(['*tinglysning-overview*' => Http::response(status: 500)]);
+
+    $t = Livewire::test(CompanyTinglysning::class, ['query' => '12345678'])
+        ->set('streaming', true)
+        ->call('pollForUpdates')
+        ->call('pollForUpdates');
+
+    expect($t->get('pollFailures'))->toBe(2);
+
+    $t->call('retry');
+
+    expect($t->get('pollFailures'))->toBe(0);
+});
+
+it('resets the poll-failure budget when a filter changes', function () {
+    config(['cache.default' => 'array']);
+    Http::fake(['*tinglysning-overview*' => Http::response(status: 500)]);
+
+    $t = Livewire::test(CompanyTinglysning::class, ['query' => '12345678'])
+        ->set('streaming', true)
+        ->call('pollForUpdates')
+        ->call('pollForUpdates');
+
+    expect($t->get('pollFailures'))->toBe(2);
+
+    $t->set('sortBy', 'ltv_desc');
+
+    expect($t->get('pollFailures'))->toBe(0);
+});

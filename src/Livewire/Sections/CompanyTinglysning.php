@@ -19,6 +19,15 @@ class CompanyTinglysning extends MetisSection
 
     /** Loft på polling-forsøg. Uden det kører wire:poll.5s videre mod et dødt
      *  backend: 12 kald/min pr. fane mod et endpoint throttlet til 60/min. */
+    /**
+     * Loft på sammenhængende polling-fejl før wire:poll slukkes.
+     *
+     * Naboerne bruger hver sit tal (CompanyStructure: 8, PersonStructure: 24),
+     * hvilket netop viser at loftet er en bevidst beslutning pr. komponent —
+     * og derfor fortjener et navn frem for et nøgent 3 i en if-sætning.
+     */
+    protected const MAX_POLL_FAILURES = 3;
+
     public int $pollFailures = 0;
 
     // Filters (Q5 + Q8 per spec lines 460-465)
@@ -63,7 +72,7 @@ class CompanyTinglysning extends MetisSection
             ->fetchCompanyTinglysningOverview($this->query, $this->filters(), $this->cursor));
 
         if (! $response) {
-            if (++$this->pollFailures >= 3) {
+            if (++$this->pollFailures >= self::MAX_POLL_FAILURES) {
                 $this->streaming = false;   // slukker wire:poll
                 $this->hasError = true;
             }
@@ -80,6 +89,10 @@ class CompanyTinglysning extends MetisSection
     {
         $this->hasError = false;
         $this->errorMessage = null;
+        // Uden dette ville et enkelt blip efter en succesfuld retry slukke
+        // strømmen: taelleren stod stadig på 2 fra før. Invarianten skal holde
+        // ALLE steder tilstanden nulstilles, ikke kun på succes-stien.
+        $this->pollFailures = 0;
         $this->fetch();
     }
 
@@ -231,6 +244,9 @@ class CompanyTinglysning extends MetisSection
         $this->cursor = null;
         $this->streaming = false;
         $this->totalExpected = 0;
+        // Samme invariant som i retry(): et filterskift starter forfra, så
+        // gamle fejl må ikke tælle med i det nye budget.
+        $this->pollFailures = 0;
         $this->deliveredSoFar = 0;
         $this->hasError = false;
         $this->errorMessage = null;
