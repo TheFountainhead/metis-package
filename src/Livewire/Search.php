@@ -58,6 +58,26 @@ class Search extends Component
 
     public bool $loadingPersonProperties = false;
 
+    /**
+     * pending | loaded | empty | not_found | failed | permanent.
+     *
+     * $personProperties alene kunne ikke bære betydningen: null betød både
+     * "ikke hentet endnu", "opslaget fandt ingen person" og "kaldet fejlede".
+     * De to sidste ramte samme blinde Blade-gate, så et klik på "Vis alle
+     * ejendomme" gav NUL synlig respons (Flare 29/7).
+     *
+     * Fire udfald, ikke tre. 'not_found' (HTTP 404 = navneopslaget fandt
+     * ingen person) må IKKE slås sammen med 'empty' (200 med tom liste =
+     * personen har reelt ingen ejendomme via selskaber). Knappen vises kun
+     * når vi allerede har skrevet "N ejendomme via M selskaber", så en
+     * påstand om fravær dér ville modsige skærmen — falsk autoritativ
+     * benægtelse, den værste fejlmodus i due diligence.
+     */
+    public string $personPropertiesStatus = 'pending';
+
+    /** Loft på "Prøv igen", spejler $retryCount-mønstret for hovedsøgningen. */
+    public int $personPropertiesRetries = 0;
+
     public function setSearchMode(string $mode): void
     {
         if (! in_array($mode, ['', 'person', 'company', 'address'], true)) {
@@ -66,6 +86,7 @@ class Search extends Component
         $this->searchMode = $mode;
         $this->query = '';
         $this->reset(['result', 'resultType', 'error', 'errorMessage', 'suggestions', 'cprBlocked', 'rateLimited']);
+        $this->resetPersonProperties();
     }
 
     public function mount(): void
@@ -125,7 +146,8 @@ class Search extends Component
         // sees an old "best fuzzy match" while typing a new query, e.g.
         // searching "christian ø" returned Christian Øster Due, then user
         // continued typing "hlers" and the old result lingered.
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'personProperties']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage']);
+        $this->resetPersonProperties();
 
         if (strlen($q) < 3) {
             return;
@@ -203,7 +225,8 @@ class Search extends Component
         $previousSuggestions = $this->suggestions;
         $previousSuggestionType = $this->suggestionType;
         $this->suggestions = [];
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->resetPersonProperties();
         $this->retryCount = 0;
 
         $query = trim($this->query);
@@ -328,9 +351,26 @@ class Search extends Component
 
     public function clearSearch(): void
     {
-        $this->reset(['query', 'result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personProperties']);
+        $this->reset(['query', 'result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->resetPersonProperties();
         $this->dispatch('scroll-top');
         $this->js("history.pushState(null, '', '/'); document.title = 'Metis';");
+    }
+
+    /**
+     * Nulstil portefølje-tilstanden ét sted.
+     *
+     * Feltparret + tælleren skal holdes synkrone, og at huske dem på hvert
+     * reset()-kald holdt ikke: seks stier blev fundet én ad gangen, hver
+     * gang ved et tilfælde eller en fejlrapport. Spejler
+     * PersonStructure::resetDownstreamPhases() — én liste, ét sted, så en
+     * syvende sti arver rettelsen i stedet for at genindføre fejlen.
+     */
+    protected function resetPersonProperties(): void
+    {
+        $this->personProperties = null;
+        $this->personPropertiesStatus = 'pending';
+        $this->personPropertiesRetries = 0;
     }
 
     /**
@@ -343,10 +383,38 @@ class Search extends Component
             return;
         }
 
+        // Dobbeltklik-guard: knappen skjules af ! $loadingPersonProperties,
+        // men 'failed'-tilstandens "Prøv igen" har ingen tilsvarende gate.
+        if ($this->loadingPersonProperties) {
+            return;
+        }
+
         $this->loadingPersonProperties = true;
-        $this->personProperties = app(RegistryApi::class)
+        $portfolio = app(RegistryApi::class)
             ->fetchPersonPropertyPortfolio($this->result['persons'][0]['name']);
         $this->loadingPersonProperties = false;
+
+        $this->personProperties = null;
+
+        // null = kaldet fejlede (transport). Tæl forsøg som resten af
+        // komponenten gør: uden loft kan brugeren klikke i det uendelige med
+        // 60 sekunders spin pr. gang.
+        if ($portfolio === null) {
+            $this->personPropertiesRetries++;
+            $this->personPropertiesStatus = $this->personPropertiesRetries >= 3 ? 'permanent' : 'failed';
+
+            return;
+        }
+
+        // 404 = navneopslaget fandt ingen person. IKKE "ingen ejendomme".
+        if ($portfolio['not_found'] ?? false) {
+            $this->personPropertiesStatus = 'not_found';
+
+            return;
+        }
+
+        $this->personProperties = $portfolio;
+        $this->personPropertiesStatus = empty($portfolio['companies'] ?? []) ? 'empty' : 'loaded';
     }
 
     public function fillChip(string $chip): void
@@ -364,7 +432,10 @@ class Search extends Component
         }
 
         $this->query = $value;
+        // personProperties/-Status skal med: uden dem baerer et krydsopslag den
+        // forrige persons ejendomsliste og besked med over paa den nye enhed.
         $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->resetPersonProperties();
 
         // CVR/address → show sections inline
         if (in_array($type, ['cvr', 'address'])) {
