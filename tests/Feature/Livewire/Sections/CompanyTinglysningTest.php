@@ -661,3 +661,38 @@ it('distinguishes properties still in queue from those that can never be fetched
         ->assertSee('4 er endnu ikke hentet')
         ->assertDontSee('mangler adressedata');
 });
+
+it('names its property count so it cannot be read as contradicting the KPI', function () {
+    // Frederik i browseren 30/7: siden viste "Ejendomme: 4" i KPI'en og
+    // "Ejendomme: 2" i Tinglysning — to tal med SAMME navn, side om side.
+    //
+    // Begge er korrekte. De maaler bare forskellige ting:
+    //   KPI 4         = portefoeljen fra EJF, kender alle fire BFE'er
+    //   Tinglysning 2 = tree-index, kun det vi kan slaa haeftelser op paa
+    //
+    // Uden forskellige navne ser det ud som en fejl, og saa mister brugeren
+    // tilliden til BEGGE tal.
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'tree_meta' => [
+            'total_descendant_companies' => 0,
+            'total_properties' => 2,
+            'total_mortgages' => 0,
+            'total_principal_amount' => 0,
+            'weighted_ltv' => null,
+            'tree_depth' => 0,
+            'applied_tree_depth' => 1,
+            'result_kind' => 'no_mortgages',
+            'coverage' => [
+                'properties_total' => 2, 'properties_answered' => 2,
+                'properties_pending' => 0, 'properties_blocked' => 0,
+                'all_properties_answered' => false,
+                'oldest_answer_at' => '2026-07-29 16:58:58',
+                'ejf_known_total' => 4, 'properties_missing_vs_ejf' => 2,
+            ],
+        ],
+    ]))]);
+
+    $html = Livewire::test(CompanyTinglysning::class, ['query' => '29798486'])->html();
+
+    expect($html)->toContain('Ejendomme med tinglysningsopslag');
+});

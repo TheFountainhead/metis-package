@@ -14,8 +14,13 @@
                         {{ __('Selskaber i koncern') }}:
                         <span class="font-medium text-zinc-900 dark:text-white">{{ $treeMeta['total_descendant_companies'] ?? 0 }}</span>
                     </span>
-                    <span class="text-zinc-500">
-                        {{ __('Ejendomme') }}:
+                    {{-- "Ejendomme" alene kolliderer med KPI'ens tal øverst på
+                         siden, som tæller HELE porteføljen fra EJF. Dette tal
+                         tæller kun det vi kan slå hæftelser op på (tree-index).
+                         Begge er korrekte; samme navn fik dem til at se ud som
+                         en fejl, og så mister brugeren tilliden til dem begge. --}}
+                    <span class="text-zinc-500" title="{{ __('Antal ejendomme vi har kunnet slå op i Tinglysningen. Kan være færre end selskabets samlede portefølje.') }}">
+                        {{ __('Ejendomme med tinglysningsopslag') }}:
                         <span class="font-medium text-zinc-900 dark:text-white">{{ $treeMeta['total_properties'] ?? 0 }}</span>
                     </span>
                     <span class="text-zinc-500">
