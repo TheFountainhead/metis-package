@@ -59,7 +59,9 @@
                 // Group properties by address to deduplicate ejerlejligheder
                 $grouped = collect($portfolio['properties'])->groupBy(function ($p) {
                     $addr = trim(($p['address'] ?? '') . ', ' . ($p['postal_code'] ?? '') . ' ' . ($p['city'] ?? ''), ', ');
-                    return $addr ?: 'BFE ' . ($p['matrikel_id'] ?? '?');
+                    // Kort-label: BFE er en nødløsning, men mærkes så den ikke
+                    // læses som en adresse.
+                    return $addr ?: __('Adresse ikke hentet') . ' (BFE ' . ($p['matrikel_id'] ?? '?') . ')';
                 });
 
                 // Ejer-kolonne: kun på koncern-stien OG kun når datterselskaber
@@ -124,7 +126,14 @@
                                             @endif
                                         </div>
                                     @elseif($bfe)
-                                        <span class="text-zinc-400 text-xs">BFE {{ $bfe }}</span>
+                                        {{-- BFE er en intern nøgle, ikke en adresse. Vist alene
+                                             i adresse-kolonnen så tre af fire rækker ulæselige ud
+                                             (Frederik i browseren 30/7). Nummeret beholdes som
+                                             reference, men feltet siger nu hvad der mangler. --}}
+                                        <div>
+                                            <span class="text-zinc-500 dark:text-zinc-400">{{ __('Adresse ikke hentet') }}</span>
+                                            <div class="text-zinc-400 text-xs">BFE {{ $bfe }}</div>
+                                        </div>
                                     @else
                                         <span class="text-zinc-400">-</span>
                                     @endif

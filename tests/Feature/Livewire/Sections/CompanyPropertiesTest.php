@@ -65,3 +65,27 @@ it('viser IKKE ejer-kolonne når kilden er EJF (ingen source)', function () {
         ->assertDontSee('vurdering for')                                  // ingen coverage-note uden valuation_coverage
         ->assertDontSee('Hvilket koncern-selskab der ejer ejendommen');   // ejer-kolonne-header fraværende (EJF uændret)
 });
+
+it('says an address is missing instead of showing a raw BFE number', function () {
+    // Frederik i browseren 30/7: tabellen viste "BFE 250959", "BFE 250960",
+    // "BFE 250961" i ADRESSE-kolonnen. Det er interne noegletal praesenteret
+    // som data — tre af fire raekker var ulaeselige for en advokat.
+    //
+    // BFE-nummeret er stadig nyttigt som reference, men det er ikke en adresse.
+    // Kolonnen skal sige at adressen mangler, ikke lade et matrikel-id staa
+    // som om det var svaret.
+    Http::fake(['*property-portfolio*' => Http::response(['data' => ['portfolio' => [
+        'owner_type' => 'company', 'owner_cvr' => '29798486',
+        'total_count' => 1, 'property_count' => 1, 'total_valuation' => 0,
+        'properties' => [[
+            'matrikel_id' => '250959',
+            'address' => null, 'postal_code' => null, 'city' => null,
+            'total_debt' => 0,
+        ]],
+    ]]])]);
+
+    $html = Livewire::test(CompanyProperties::class, ['query' => '29798486'])->html();
+
+    expect($html)->toContain('Adresse ikke hentet')
+        ->and($html)->toContain('250959');   // BFE beholdes som reference
+});
