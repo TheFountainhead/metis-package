@@ -46,13 +46,20 @@
                      Tallet er ikke forkert. Det er ufuldstændigt uden at
                      sige det. Vises kun når der faktisk mangler noget. --}}
                 @php($cov = $treeMeta['coverage'] ?? null)
-                @if($cov && ! ($cov['all_properties_answered'] ?? true) && ($cov['properties_total'] ?? 0) > 0)
+                @if($cov && ! ($cov['all_properties_answered'] ?? true) && (($cov['properties_total'] ?? 0) > 0 || ($cov['ejf_known_total'] ?? 0) > 0))
                     <div class="mb-5 rounded-lg border border-sand-200/60 bg-white px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-900">
                         <p class="text-ink-800 dark:text-zinc-100">
+                            @php($known = max($cov['properties_total'] ?? 0, $cov['ejf_known_total'] ?? 0))
                             {{ __(':answered af :total ejendomme undersøgt.', [
                                 'answered' => $cov['properties_answered'] ?? 0,
-                                'total' => $cov['properties_total'],
+                                'total' => $known,
                             ]) }}
+                            {{-- EJF kender ejendomme vi aldrig har haft. Uden denne linje
+                                 ville teksten sige "2 af 2 undersøgt" om et grundlag hvor
+                                 en fjerdedel manglede — en beroligelse, ikke et forbehold. --}}
+                            @if(($cov['properties_missing_vs_ejf'] ?? 0) > 0)
+                                {{ __(':n ejendomme kender vi slet ikke — de står i EJF, men mangler i vores data.', ['n' => $cov['properties_missing_vs_ejf']]) }}
+                            @endif
                             @if(($cov['properties_blocked'] ?? 0) > 0)
                                 {{ __(':n mangler adressedata og kan ikke slås op.', ['n' => $cov['properties_blocked']]) }}
                             @endif

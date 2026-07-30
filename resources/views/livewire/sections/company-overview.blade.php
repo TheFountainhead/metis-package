@@ -55,13 +55,20 @@
          "Tinglyst gæld —" ser ud som "ingen gæld". For AKACIETORVET var
          sandheden at 3 af 4 ejendomme aldrig var undersøgt og bar 79,9 mio.
          Samme ordlyd som tinglysning-sektionen, så brugeren møder ét sprog. --}}
-    @if($coverage && ! ($coverage['all_properties_answered'] ?? true) && ($coverage['properties_total'] ?? 0) > 0)
+    @if($coverage && ! ($coverage['all_properties_answered'] ?? true) && (($coverage['properties_total'] ?? 0) > 0 || ($coverage['ejf_known_total'] ?? 0) > 0))
         <div class="mt-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm">
             <p class="text-zinc-900">
+                @php($known = max($coverage['properties_total'] ?? 0, $coverage['ejf_known_total'] ?? 0))
                 {{ __(':answered af :total ejendomme undersøgt.', [
                     'answered' => $coverage['properties_answered'] ?? 0,
-                    'total' => $coverage['properties_total'],
+                    'total' => $known,
                 ]) }}
+                {{-- EJF kender ejendomme vi aldrig har haft. Uden denne linje
+                     ville teksten sige "2 af 2 undersøgt" om et grundlag hvor
+                     en fjerdedel manglede — en beroligelse, ikke et forbehold. --}}
+                @if(($coverage['properties_missing_vs_ejf'] ?? 0) > 0)
+                    {{ __(':n ejendomme kender vi slet ikke — de står i EJF, men mangler i vores data.', ['n' => $coverage['properties_missing_vs_ejf']]) }}
+                @endif
                 @if(($coverage['properties_blocked'] ?? 0) > 0)
                     {{ __(':n mangler adressedata og kan ikke slås op.', ['n' => $coverage['properties_blocked']]) }}
                 @endif

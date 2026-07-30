@@ -122,3 +122,39 @@ it('discloses coverage even when the company has no portfolio to show', function
     expect($html)->toContain('0 af 3 ejendomme undersøgt')
         ->and($html)->toContain('3 er endnu ikke hentet');
 });
+
+it('does not say "alt undersøgt" when EJF knows properties we never had', function () {
+    // Frederik 30/7, browser: forbeholdet sagde "2 af 2 ejendomme undersøgt"
+    // mens siden ovenfor viste 4. Det er en NY loegn, ikke en forbedring —
+    // en beroligelse om et grundlag hvor en fjerdedel manglede.
+    //
+    // Aarsagen: coverage baerer BEGGE tal. properties_total=2 (tree-index) og
+    // ejf_known_total=4. Teksten brugte kun det foerste og tav om de to
+    // manglende, selvom properties_missing_vs_ejf=2 laa i svaret.
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'AKACIETORVET ApS']]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => [
+            'owner_type' => 'company', 'owner_cvr' => '29798486',
+            'total_count' => 4, 'total_valuation' => 0,
+            'properties' => [[
+                'matrikel_id' => '2262451', 'address' => 'Akacietorvet 2',
+                'postal_code' => '3520', 'city' => 'Farum', 'total_debt' => 0,
+            ]],
+            'coverage' => [
+                'properties_total' => 2, 'properties_answered' => 2,
+                'properties_pending' => 0, 'properties_blocked' => 0,
+                'all_properties_answered' => false,
+                'oldest_answer_at' => '2026-07-29 16:58:58',
+                'ejf_known_total' => 4, 'properties_missing_vs_ejf' => 2,
+            ],
+        ]]]),
+    ]);
+
+    $html = Livewire::test(CompanyOverview::class, ['query' => '29798486'])->html();
+
+    // Maa ALDRIG staa: det ville berolige om et ufuldstaendigt grundlag
+    expect($html)->not->toContain('2 af 2 ejendomme undersøgt');
+    // Skal sige sandheden: EJF kender fire, vi mangler to
+    expect($html)->toContain('2 af 4 ejendomme undersøgt')
+        ->and($html)->toContain('2 ejendomme kender vi slet ikke');
+});
