@@ -206,3 +206,42 @@ it('Tier-breakdown sheet has one row per tier entry with header', function () {
     expect($sheet->getCell('A2')->getValue())->toBe('Co A');
     expect($sheet->getCell('A3')->getValue())->toBe('Co B');
 });
+
+it('dedupliker paa dokument_identifikator — feltet API-et faktisk sender', function () {
+    // 🚨 De tre tests ovenfor foder fixtures med `tinglysning_right_id`. Det felt
+    // eksponerer MortgageRowResource IKKE, saa i produktion var det ALTID null og
+    // hver raekke faldt tilbage til mortgage_id_<id> — altsaa nul dedup.
+    // Testene var groenne mens eksporten talte alt som unikt.
+    //
+    // Maalt mod prod 31/7 (AKACIETORVET, 18 raekker fra API'et):
+    //   eksportens tal   242.092.298 kr over 18 raekker
+    //   med doc-noeglen   96.092.298 kr over 13 dokumenter
+    //
+    // Raekkerne herunder har praecis den form API'et leverer: dokument_identifikator
+    // er sat, tinglysning_right_id findes slet ikke som noegle.
+    $mortgages = [
+        ['id' => 1, 'dokument_identifikator' => 'doc-delt', 'principal_amount' => 45_000_000_00],
+        ['id' => 2, 'dokument_identifikator' => 'doc-delt', 'principal_amount' => 45_000_000_00],
+        ['id' => 3, 'dokument_identifikator' => 'doc-delt', 'principal_amount' => 45_000_000_00],
+        ['id' => 4, 'dokument_identifikator' => 'doc-egen', 'principal_amount' => 10_000_000_00],
+    ];
+
+    $totals = PortfolioTinglysningExport::computeTotalsFromMortgages($mortgages);
+
+    expect($totals['total_principal_amount_oere'])->toBe(55_000_000_00)
+        ->and($totals['unique_mortgages'])->toBe(2)
+        ->and($totals['sampant_pantebreve'])->toBe(2);
+});
+
+it('raekker helt uden dokument-noegle taelles som unikke', function () {
+    // Pre-2009 pantebreve. De maa aldrig foldes sammen til én raekke.
+    $mortgages = [
+        ['id' => 10, 'principal_amount' => 1_000_000_00],
+        ['id' => 11, 'principal_amount' => 2_000_000_00],
+    ];
+
+    $totals = PortfolioTinglysningExport::computeTotalsFromMortgages($mortgages);
+
+    expect($totals['total_principal_amount_oere'])->toBe(3_000_000_00)
+        ->and($totals['unique_mortgages'])->toBe(2);
+});

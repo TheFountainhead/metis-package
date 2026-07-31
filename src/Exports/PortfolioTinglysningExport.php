@@ -56,12 +56,26 @@ class PortfolioTinglysningExport
         $sampantCount = 0;
 
         foreach ($mortgages as $m) {
-            $uuid = $m['tinglysning_right_id'] ?? null;
+            // 🚨 dokument_identifikator FØRST — det er feltet API'et faktisk sender.
+            //
+            // Før læste denne metode kun `tinglysning_right_id`, som
+            // MortgageRowResource ikke eksponerer. Feltet var derfor ALTID null i
+            // produktion, hver række faldt tilbage til mortgage_id_<id>, og
+            // eksporten dedup'ede ingenting. Målt mod prod 31/7 på AKACIETORVET:
+            // 242.092.298 kr over 18 rækker, hvor skærmen viste 96.092.298 kr over
+            // 13 dokumenter.
+            //
+            // Testene var grønne hele tiden, fordi deres fixtures satte et felt
+            // API'et aldrig leverer.
+            //
+            // rettighed beholdes som fallback: den er den gamle nøgle, og en
+            // konsument der stadig sender den skal ikke pludselig miste sin dedup.
+            $uuid = $m['dokument_identifikator'] ?? $m['tinglysning_right_id'] ?? null;
             $key = $uuid ?: ('mortgage_id_' . ($m['id'] ?? spl_object_hash((object) $m)));
 
             if (isset($seen[$key])) {
                 if ($uuid) {
-                    // Re-encounter of the same UUID = sampant
+                    // Re-encounter of the same key = sampant
                     $sampantCount++;
                 }
                 continue;
