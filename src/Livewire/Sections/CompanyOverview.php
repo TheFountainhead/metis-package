@@ -64,7 +64,20 @@ class CompanyOverview extends MetisSection
         // under-tæller KPI'en store porteføljer (fx JEUDAN: 649 vs. side-500).
         $this->propertyCount = (int) ($portfolio['total_count'] ?? $portfolio['property_count'] ?? count($properties));
         $this->totalValuation = (int) ($portfolio['total_valuation'] ?? 0);
-        $this->totalDebt = (int) collect($properties)->sum(fn ($p) => (int) ($p['total_debt'] ?? 0));
+        // 🚨 Læs API'ets total — genberegn den ALDRIG fra per-ejendoms-tal.
+        //
+        // Samme pantebrev kan hæfte på flere ejendomme. Målt på AKACIETORVET 31/7:
+        // per ejendom 92,2 + 78,0 + 71,8 = 242,1 mio., men kun 96,1 mio. over 13
+        // unikke dokumenter. Hvert enkelt tal er rigtigt; dobbelttællingen opstår
+        // først når man lægger dem sammen, så visningslaget kan ikke selv opdage
+        // den — den ser kun korrekte tal.
+        //
+        // Fallback til summen når feltet mangler (ældre cache-poster, EJF-stien):
+        // et for højt tal er dårligt, men bedre end en bar streg der ser ud som
+        // "ingen gæld".
+        $this->totalDebt = isset($portfolio['total_debt'])
+            ? (int) $portfolio['total_debt']
+            : (int) collect($properties)->sum(fn ($p) => (int) ($p['total_debt'] ?? 0));
         $this->usageDistribution = $this->buildUsageDistribution($properties);
         $this->mapPins = $this->buildMapPins($properties);
     }

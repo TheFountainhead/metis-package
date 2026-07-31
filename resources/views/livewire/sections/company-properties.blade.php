@@ -29,7 +29,14 @@
         @endif
         @if($portfolio && count($portfolio['properties'] ?? []) > 0)
             @php
-                $loadedDebt = collect($portfolio['properties'] ?? [])->sum(fn ($p) => $p['total_debt'] ?? 0);
+                // 🚨 API'ets total_debt er dedup'et på tværs af ejendomme; summen af
+                // per-ejendoms-tal er det IKKE. Målt på AKACIETORVET 31/7: 242,1 mio.
+                // lagt sammen mod 96,1 mio. over 13 unikke dokumenter, fordi de tre
+                // ejerlejligheder deler pantebreve.
+                //
+                // Fallback til summen når feltet mangler (ældre cache-poster, EJF-stien).
+                $dedupedDebt = $portfolio['total_debt'] ?? null;
+                $loadedDebt = $dedupedDebt ?? collect($portfolio['properties'] ?? [])->sum(fn ($p) => $p['total_debt'] ?? 0);
             @endphp
             <div class="mb-3 flex flex-wrap gap-4 text-sm">
                 <span class="text-zinc-500">{{ __('Properties') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ $portfolio['total_count'] ?? $portfolio['property_count'] ?? 0 }}</span></span>
@@ -51,7 +58,11 @@
                     <span class="text-zinc-500" title="{{ __('Sum af alle etagers areal (byg038SamletBygningsareal)') }}">{{ __('Floor area') }}: <span class="font-medium text-zinc-900 dark:text-white">{{ number_format($portfolio['total_building_area'], 0, ',', '.') }} m²</span></span>
                 @endif
                 @if($loadedDebt > 0)
-                    <span class="text-zinc-500" title="{{ __('Sum af tinglyst gæld for de viste ejendomme, yderligere gæld kan være på endnu-ikke-loadede sider') }}">{{ __('Tinglyst gæld') }} ({{ count($portfolio['properties']) }}/{{ $portfolio['total_count'] }}): <span class="font-medium text-red-700 dark:text-red-400">{{ number_format($loadedDebt, 0, ',', '.') }} kr.</span></span>
+                    @if($dedupedDebt !== null)
+                        <span class="text-zinc-500" title="{{ __('Samlet tinglyst gæld for hele porteføljen. Pantebreve der hæfter på flere ejendomme tælles én gang, så totalen er lavere end summen af tallene i tabellen.') }}">{{ __('Tinglyst gæld') }}: <span class="font-medium text-red-700 dark:text-red-400">{{ number_format($loadedDebt, 0, ',', '.') }} kr.</span></span>
+                    @else
+                        <span class="text-zinc-500" title="{{ __('Sum af tinglyst gæld for de viste ejendomme, yderligere gæld kan være på endnu-ikke-loadede sider') }}">{{ __('Tinglyst gæld') }} ({{ count($portfolio['properties']) }}/{{ $portfolio['total_count'] }}): <span class="font-medium text-red-700 dark:text-red-400">{{ number_format($loadedDebt, 0, ',', '.') }} kr.</span></span>
+                    @endif
                 @endif
             </div>
 
