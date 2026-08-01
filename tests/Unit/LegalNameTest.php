@@ -10,8 +10,8 @@ use TheFountainhead\Metis\Services\LegalName;
  * (panthaver-tabellen og ejerstruktur-grafen) tester deres egen brug.
  */
 it('gør et VERSAL-navn læsbart', function () {
-    expect(LegalName::format('RINGKJØBING LANDBOBANK. AKTIESELSKAB'))
-        ->toBe('Ringkjøbing Landbobank. Aktieselskab');
+    expect(LegalName::format('TESTBANKEN. AKTIESELSKAB'))
+        ->toBe('Testbanken. Aktieselskab');
 });
 
 it('bevarer selskabsformen som juridisk betegnelse', function (string $input, string $expected) {
@@ -19,8 +19,8 @@ it('bevarer selskabsformen som juridisk betegnelse', function (string $input, st
     // juridisk betegnelse, ikke et almindeligt ord.
     expect(LegalName::format($input))->toBe($expected);
 })->with([
-    ['OMEGA FINANS APS', 'Omega Finans ApS'],
-    ['DRAUPNIR INVESTMENT ADVISORS A/S', 'Draupnir Investment Advisors A/S'],
+    ['ET SELSKAB APS', 'Et Selskab ApS'],
+    ['ET AKTIESELSKAB A/S', 'Et Aktieselskab A/S'],
     ['SOME PARTNERSHIP I/S', 'Some Partnership I/S'],
     ['ET SELSKAB P/S', 'Et Selskab P/S'],
     ['ET KOMMANDIT K/S', 'Et Kommandit K/S'],
@@ -30,7 +30,7 @@ it('bevarer selskabsformen som juridisk betegnelse', function (string $input, st
 ]);
 
 it('rører ikke et navn der allerede er skrevet rigtigt', function () {
-    expect(LegalName::format('Omega Finans ApS'))->toBe('Omega Finans ApS');
+    expect(LegalName::format('Et Selskab ApS'))->toBe('Et Selskab ApS');
 });
 
 it('retter kun selskabsformen til sidst, ikke midt i et navn', function () {
@@ -40,7 +40,7 @@ it('retter kun selskabsformen til sidst, ikke midt i et navn', function () {
 });
 
 it('lader udenlandske navne med accenter være læsbare', function () {
-    // Målt i prod: 290 mio. hos denne kreditor. Intet CVR, tysk stavemåde.
-    expect(LegalName::format('LANDESBANK HESSEN-THÜRINGEN GIROZENTRALE'))
-        ->toBe('Landesbank Hessen-Thüringen Girozentrale');
+    // Tysk stavemåde med omlyd — reglen må ikke ødelægge ü.
+    expect(LegalName::format('EN TYSK GIROZENTRALE MÜNCHEN'))
+        ->toBe('En Tysk Girozentrale München');
 });

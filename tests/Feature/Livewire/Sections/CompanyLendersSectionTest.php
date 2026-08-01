@@ -29,7 +29,7 @@ beforeEach(function () {
  *
  * 🚨 Underpant arver sampant-faelden: samme pantebrev kan haefte paa flere
  * ejendomme, saa en naiv aggregering taeller laangiveren én gang pr. ejendom.
- * Maalt paa Akacietorvet: Ringkjoebing Landbobank til 135 mio. i stedet for 45.
+ * Maalt i prod: én bank stod til 135 mio. i stedet for 45.
  */
 function tinglysningWithUnderpant(array $mortgages): array
 {
@@ -78,7 +78,7 @@ function mortgageWithLenders(int $id, int $kr, string $address, array $lenders, 
 it('viser de faktiske laangivere, ikke kun kreditor-kolonnen', function () {
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
-            ['name' => 'RINGKJØBING LANDBOBANK. AKTIESELSKAB', 'cvr' => '37536814', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
         ]),
     ]))]);
 
@@ -89,19 +89,19 @@ it('viser de faktiske laangivere, ikke kun kreditor-kolonnen', function () {
     $html = $component->html();
 
     // Kreditor-kolonnen siger selskabet selv; panthaver-sektionen siger banken.
-    expect($html)->toContain('Ringkjøbing Landbobank')
-        ->and($html)->toContain('37536814');
+    expect($html)->toContain('Testbanken')
+        ->and($html)->toContain('10000001');
 });
 
 it('samler samme laangiver paa tvaers af ejendomme — én gang, ikke én pr. ejendom', function () {
     // 🚨 Kernen. Samme pantebrev (doc-delt) haefter paa to ejendomme.
-    // Uden dedup ville Ringkjoebing staa til 90 mio. i stedet for 45.
+    // Uden dedup ville banken staa til 90 mio. i stedet for 45.
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
-            ['name' => 'RINGKJØBING LANDBOBANK. AKTIESELSKAB', 'cvr' => '37536814', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
         ], 'doc-delt'),
         mortgageWithLenders(2, 45_000_000, 'Akacietorvet 2A', [
-            ['name' => 'RINGKJØBING LANDBOBANK. AKTIESELSKAB', 'cvr' => '37536814', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
         ], 'doc-delt'),
     ]))]);
 
@@ -115,10 +115,10 @@ it('laegger FORSKELLIGE pantebreve fra samme laangiver sammen', function () {
     // To selvstaendige dokumenter hos samme bank ER to laan. De skal summeres.
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
-            ['name' => 'RINGKJØBING LANDBOBANK. AKTIESELSKAB', 'cvr' => '37536814', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
         ], 'doc-a'),
         mortgageWithLenders(2, 5_000_000, 'Akacietorvet 2A', [
-            ['name' => 'RINGKJØBING LANDBOBANK. AKTIESELSKAB', 'cvr' => '37536814', 'amount' => 5_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 5_000_000],
         ], 'doc-b'),
     ]))]);
 
@@ -131,17 +131,17 @@ it('laegger FORSKELLIGE pantebreve fra samme laangiver sammen', function () {
 it('sorterer stoerste laangiver oeverst', function () {
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 25_000_000, 'Akacietorvet 2', [
-            ['name' => 'Omega Finans ApS', 'cvr' => '43088483', 'amount' => 25_000_000],
+            ['name' => 'Anden Testbank ApS', 'cvr' => '10000002', 'amount' => 25_000_000],
         ], 'doc-a'),
         mortgageWithLenders(2, 45_000_000, 'Akacietorvet 2A', [
-            ['name' => 'RINGKJØBING LANDBOBANK. AKTIESELSKAB', 'cvr' => '37536814', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
         ], 'doc-b'),
     ]))]);
 
     $lenders = Livewire::test(CompanyTinglysning::class, ['query' => '29798486'])->get('lenders');
 
-    expect($lenders[0]['cvr'])->toBe('37536814')
-        ->and($lenders[1]['cvr'])->toBe('43088483');
+    expect($lenders[0]['cvr'])->toBe('10000001')
+        ->and($lenders[1]['cvr'])->toBe('10000002');
 });
 
 it('udenlandsk laangiver uden CVR faar stadig en raekke', function () {
