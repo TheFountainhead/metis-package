@@ -76,6 +76,12 @@ class OwnershipGraphBuilder
         $propertiesOn = in_array('properties', $layers, true);
         if ($propertiesOn) {
             $this->addProperties($properties['list'] ?? [], $usage, $expandedNodeIds, $caps['properties_per_company'], $query, $nodes, $seen, $edges, $edgeSeen);
+
+            // Långiver-laget hænger UNDER ejendomsnoderne, så det kræver at
+            // ejendomslaget er tændt — ellers ville långiverne stå uden forældre.
+            if (in_array('lenders', $layers, true)) {
+                $this->addLenders($enrichment['lenders'] ?? [], $nodes, $seen, $edges, $edgeSeen);
+            }
         }
         // spec P2-5: when the properties layer is off, finalize() must get an
         // EMPTY property list — not $properties['list'] — otherwise
@@ -963,6 +969,113 @@ class OwnershipGraphBuilder
 
             $this->addSubtreeFully($s['children'] ?? [], $cvr, $depth + 1, $nodes, $seen, $edges, $edgeSeen);
         }
+    }
+
+    /**
+     * Långiver-laget: hvem der har pant i ejendommene.
+     *
+     * 🎯 Grafens fjerde lag, og det konkurrenterne ikke har. Resights' graf
+     * stopper ved ejendommene — hvem der finansierer dem fremgår ikke.
+     * Med dette lag går kæden hele vejen: reel ejer → holding → selskab →
+     * ejendom → bank.
+     *
+     * Datakilden er underpanthavere fra Tinglysningen, offentligt efter
+     * tinglysningslovens § 1 a, stk. 1. Ved ejerpantebreve er selskabet selv
+     * anført som kreditor; den faktiske långiver står i underpantet.
+     *
+     * 🚨 ÉN NODE PR. LÅNGIVER, FLERE KANTER. Samme bank kan have pant i flere
+     * af selskabets ejendomme — målt på Akacietorvet har Ringkjøbing
+     * Landbobank pant i alle tre ejerlejligheder. To noder for samme bank ville
+     * få det til at ligne to långivere. Beløbet hører derfor til KANTEN, ikke
+     * noden: samme bank kan have 45 mio. i én ejendom og 2 mio. i en anden.
+     *
+     * @param  array<string, list<array{name: string, cvr: ?string, amount: int}>>  $lendersByBfe
+     */
+    protected function addLenders(array $lendersByBfe, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
+    {
+        $propertyIds = [];
+        foreach ($nodes as $node) {
+            if ($node['kind'] === 'property') {
+                $propertyIds[$node['id']] = true;
+            }
+        }
+
+        foreach ($lendersByBfe as $bfe => $lenders) {
+            $propertyId = 'bfe:'.$bfe;
+
+            // Ejendommen kan være skåret væk af caps — så er der intet at hænge på.
+            if (! isset($propertyIds[$propertyId])) {
+                continue;
+            }
+
+            foreach ($lenders as $lender) {
+                $name = $lender['name'] ?? null;
+
+                if (! $name) {
+                    continue;
+                }
+
+                $id = self::lenderId($name, $lender['cvr'] ?? null);
+
+                if (! isset($seen[$id])) {
+                    $seen[$id] = true;
+                    $nodes[] = [
+                        'id' => $id,
+                        'label' => $name,
+                        'cvr' => $lender['cvr'] ?? null,
+                        'kind' => 'lender',
+                        'share' => null,
+                        'meta' => ['cvr' => $lender['cvr'] ?? null],
+                        'expand' => null,
+                    ];
+                }
+
+                $edgeKey = $propertyId.'|'.$id;
+
+                if (! isset($edgeSeen[$edgeKey])) {
+                    $edgeSeen[$edgeKey] = true;
+                    $edges[] = [
+                        'from' => $propertyId,
+                        'to' => $id,
+                        'label' => $this->amountLabel((int) ($lender['amount'] ?? 0)),
+                    ];
+                }
+            }
+        }
+    }
+
+    /**
+     * Node-id for en långiver.
+     *
+     * 🪤 CVR ALENE DUER IKKE. Målt i prod: Landesbank Hessen-Thüringen
+     * (290 mio.), Kinnerton Residential III DAC (198 mio.) og SEB (168 mio.)
+     * har intet CVR-nummer — de er ikke danske selskaber. Nøgles der på CVR,
+     * forsvinder præcis de største institutionelle kreditorer.
+     *
+     * Med CVR bruges det (stabilt på tværs af navnestavemåder); uden falder vi
+     * tilbage på et slug af navnet.
+     */
+    protected static function lenderId(string $name, ?string $cvr): string
+    {
+        if ($cvr) {
+            return 'lender:'.$cvr;
+        }
+
+        $slug = mb_strtolower(trim($name));
+        $slug = strtr($slug, ['æ' => 'ae', 'ø' => 'o', 'å' => 'a', 'ü' => 'u', 'ö' => 'o', 'ä' => 'a']);
+        $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+
+        return 'lender:'.trim($slug, '-');
+    }
+
+    /** Beløb i mio. med dansk decimalkomma, som resten af grafens etiketter. */
+    protected function amountLabel(int $amount): string
+    {
+        if ($amount <= 0) {
+            return '';
+        }
+
+        return number_format($amount / 1_000_000, 1, ',', '.').' mio.';
     }
 
     protected function addProperties(array $props, array $usage, array $expandedNodeIds, int $capPerCompany, ?string $searchedAlias, array &$nodes, array &$seen, array &$edges, array &$edgeSeen): void
