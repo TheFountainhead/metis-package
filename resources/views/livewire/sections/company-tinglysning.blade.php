@@ -270,7 +270,25 @@
                                             <span class="text-zinc-300">-</span>
                                         @endif
                                     </td>
-                                    <td class="py-2 pr-4 text-zinc-600 dark:text-zinc-300 text-xs">{{ $m['mortgage_type'] ?? '-' }}</td>
+                                    {{-- 🚨 Afgiftspantebreve misbruger HaeftelseType: den siger 'ejerpantebrev',
+                                         men dokumentet ER et afgiftspantebrev. Tinglysningen markerer det i et
+                                         SEPARAT felt (TinglysningAfgiftOverfoerselIndikator), som API'et allerede
+                                         beregner og sender som is_afgiftspantebrev — visningen brugte det bare aldrig.
+
+                                         Målt i prod på Akacietorvet 2A: 319.660 og 176.638 kr har begge
+                                         HaeftelseType='ejerpantebrev' MEN AfgiftIndikator='true'. Resights viser
+                                         dem korrekt som Afgiftspantebrev.
+
+                                         Det betyder noget, fordi et afgiftspantebrev IKKE er gæld — det overfører
+                                         en betalt tinglysningsafgift til et nyt pant. Vist som ejerpantebrev
+                                         ligner det en gældspost. --}}
+                                    <td class="py-2 pr-4 text-zinc-600 dark:text-zinc-300 text-xs">
+                                        @if($m['is_afgiftspantebrev'] ?? false)
+                                            <span title="{{ __('Overfører en betalt tinglysningsafgift til et nyt pant — ikke gæld i sig selv') }}">{{ __('Afgiftspantebrev') }}</span>
+                                        @else
+                                            {{ $m['mortgage_type'] ?? '-' }}
+                                        @endif
+                                    </td>
                                     <td class="py-2 pr-4 text-zinc-600 dark:text-zinc-300 text-xs">{{ $m['creditor'] ?? '-' }}</td>
                                     <td class="py-2 pr-4 text-center text-zinc-700 dark:text-zinc-200 text-xs font-medium tabular-nums">
                                         @if($m['priority'] ?? null)
