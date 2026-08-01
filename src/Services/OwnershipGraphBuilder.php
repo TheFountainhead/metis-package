@@ -1021,7 +1021,9 @@ class OwnershipGraphBuilder
                     $seen[$id] = true;
                     $nodes[] = [
                         'id' => $id,
-                        'label' => $name,
+                        // VERSAL-navn fra CVR — samme skrivemåde som
+                        // panthaver-tabellen, så banken står ens på siden.
+                        'label' => LegalName::format($name),
                         'cvr' => $lender['cvr'] ?? null,
                         'kind' => 'lender',
                         'share' => null,

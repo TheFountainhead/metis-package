@@ -231,6 +231,52 @@
                 </div>
             @endif
 
+            {{-- panthavere: de faktiske långivere bag ejerpantebrevene --}}
+            @if(count($this->lenders) > 0)
+                <div class="mb-6">
+                    <h3 class="text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-2">{{ __('Panthavere') }}</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-zinc-200 dark:border-zinc-700">
+                                    <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Panthaver') }}</th>
+                                    <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('CVR') }}</th>
+                                    <th class="text-right py-2 font-medium text-zinc-500">{{ __('Beløb') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($this->lenders as $lender)
+                                    <tr class="border-b border-zinc-100 dark:border-zinc-800">
+                                        <td class="py-2 pr-4">{{ $lender['name'] }}</td>
+                                        <td class="py-2 pr-4 text-zinc-500 text-xs">
+                                            @if($lender['cvr'])
+                                                <a href="{{ route('metis.lookup', ['type' => 'company', 'query' => $lender['cvr']]) }}"
+                                                   class="hover:underline">{{ $lender['cvr'] }}</a>
+                                            @else
+                                                <span class="text-zinc-300">-</span>
+                                            @endif
+                                        </td>
+                                        <td class="py-2 text-right">
+                                            @if($lender['amount'] > 0)
+                                                {{ number_format($lender['amount'] / 100, 0, ',', '.') }} kr.
+                                            @else
+                                                <span class="text-zinc-300">-</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    {{-- Forbeholdet brugeren bad om: underpanthaveren kan optræde
+                         på vegne af andre kreditorer, så navnet er den tinglyste
+                         panthaver — ikke nødvendigvis den endelige långiver. --}}
+                    <p class="mt-2 text-xs text-zinc-500">
+                        {{ __('Underpanthavere fra Tinglysningen. En panthaver kan repræsentere andre kreditorer.') }}
+                    </p>
+                </div>
+            @endif
+
             {{-- mortgages flat-list --}}
             @if(count($mortgages) > 0 || $streaming)
                 <h3 class="text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-2">{{ __('Pantebreve') }}</h3>

@@ -130,6 +130,32 @@ it('udenlandske långivere uden CVR får stadig en node', function () {
         ->and($lender['id'])->toBe('lender:landesbank-hessen-thuringen-girozentrale');
 });
 
+it('skriver långiverens navn som resten af platformen, ikke i VERSALER', function () {
+    // 🪤 `LegalUnitName` kommer fra CVR, som gemmer navne i VERSALER — pinnet
+    // som API-kontrakt i registry-api's CompanyTinglysningOverviewTest:492.
+    // Grafen sendte navnet uændret videre, så samme bank stod som
+    // "RINGKJØBING LANDBOBANK. AKTIESELSKAB" i grafen og "Ringkjøbing
+    // Landbobank. Aktieselskab" i panthaver-tabellen på samme side.
+    //
+    // Selskabsformen er en juridisk betegnelse: ApS må ikke blive til Aps.
+    $g = lenderGraph([
+        'properties' => ['list' => [
+            ['matrikel_id' => '250959', 'address' => 'Akacietorvet 2', 'owner_cvr' => '29798486', 'is_matriculated' => true],
+        ], 'usage' => []],
+        'enrichment' => ['lenders' => [
+            '250959' => [
+                ['name' => 'RINGKJØBING LANDBOBANK. AKTIESELSKAB', 'cvr' => '37536814', 'amount' => 45_000_000],
+                ['name' => 'OMEGA FINANS APS', 'cvr' => '43088483', 'amount' => 25_000_000],
+            ],
+        ]],
+    ]);
+
+    $labels = collect($g['nodes'])->where('kind', 'lender')->pluck('label')->all();
+
+    expect($labels)->toContain('Ringkjøbing Landbobank. Aktieselskab')
+        ->and($labels)->toContain('Omega Finans ApS');
+});
+
 it('laget kan slås fra', function () {
     $g = lenderGraph([
         'properties' => ['list' => akaciePropertyList(), 'usage' => []],
