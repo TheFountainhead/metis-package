@@ -1021,7 +1021,9 @@ class OwnershipGraphBuilder
                     $seen[$id] = true;
                     $nodes[] = [
                         'id' => $id,
-                        'label' => $name,
+                        // VERSAL-navn fra CVR — samme skrivemåde som
+                        // panthaver-tabellen, så banken står ens på siden.
+                        'label' => LegalName::format($name),
                         'cvr' => $lender['cvr'] ?? null,
                         'kind' => 'lender',
                         'share' => null,
@@ -1068,7 +1070,18 @@ class OwnershipGraphBuilder
         return 'lender:'.trim($slug, '-');
     }
 
-    /** Beløb i mio. med dansk decimalkomma, som resten af grafens etiketter. */
+    /**
+     * Beløb i mio. med dansk decimalkomma, som resten af grafens etiketter.
+     *
+     * 🪤 FORVENTER KRONER, ikke ører. `underpant.amount` kommer råt fra
+     * Tinglysningens `BeloebVaerdi` (registry-api StreamTinglysningMortgages:379
+     * gennemstiller uden ×100), mens `principal_amount` ER ører. Fodres denne
+     * med ører, bliver etiketten 100× for høj.
+     *
+     * Præcis den forveksling kostede en kundevendt fejl i panthaver-tabellen:
+     * samme pantebrev stod som 45.000.000 kr i én tabel og 450.000 kr i en
+     * anden på samme side.
+     */
     protected function amountLabel(int $amount): string
     {
         if ($amount <= 0) {

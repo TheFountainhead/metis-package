@@ -15,7 +15,7 @@ use TheFountainhead\Metis\Services\OwnershipGraphBuilder;
  *     └─ JAKOB KNUDSEN HOLDING ApS (67-90%)
  *          └─ AKACIETORVET ApS
  *               └─ Akacietorvet 2 (BFE 250959)
- *                    └─ Ringkjøbing Landbobank 45 mio.
+ *                    └─ den finansierende bank
  *
  * Data findes allerede: underpanthavere hentes fra Tinglysningens offentlige
  * felt (§ 1 a, stk. 1) og eksponeres som `underpant` på hver pantebrevs-række.
@@ -48,16 +48,24 @@ function akaciePropertyList(): array
     ];
 }
 
-/** Underpanthavere pr. BFE, som enrichment leverer dem. */
+/**
+ * Underpanthavere pr. BFE, som enrichment leverer dem.
+ *
+ * Opdigtede banker og beløb. Testene handler om grafens MEKANIK — dedup af
+ * samme långiver på tværs af ejendomme, og at beløbet hører til kanten — og
+ * den mekanik er uafhængig af hvem der rent faktisk har pant hvor. Et fixture
+ * der parrer en rigtig bank med et rigtigt beløb på en rigtig ejendom ville
+ * læse som en påstand om virkeligheden uden at teste mere.
+ */
 function akacieLenders(): array
 {
     return [
         '250959' => [
-            ['name' => 'Ringkjøbing Landbobank. Aktieselskab', 'cvr' => '37536814', 'amount' => 45_000_000],
-            ['name' => 'Draupnir Investment Advisors A/S', 'cvr' => '35050027', 'amount' => 25_000_000],
+            ['name' => 'Testbanken A/S', 'cvr' => '10000001', 'amount' => 45_000_000],
+            ['name' => 'Anden Testbank ApS', 'cvr' => '10000002', 'amount' => 25_000_000],
         ],
         '250960' => [
-            ['name' => 'Ringkjøbing Landbobank. Aktieselskab', 'cvr' => '37536814', 'amount' => 45_000_000],
+            ['name' => 'Testbanken A/S', 'cvr' => '10000001', 'amount' => 45_000_000],
         ],
     ];
 }
@@ -72,15 +80,15 @@ it('hænger långivere under den ejendom de har pant i', function () {
 
     expect($lenders)->toHaveCount(2)   // to UNIKKE långivere, ikke tre kanter
         ->and($lenders->pluck('label')->all())
-        ->toContain('Ringkjøbing Landbobank. Aktieselskab', 'Draupnir Investment Advisors A/S');
+        ->toContain('Testbanken A/S', 'Anden Testbank ApS');
 
     // Kanten går fra ejendom til långiver — ikke fra selskabet.
-    $edge = collect($g['edges'])->firstWhere('to', 'lender:37536814');
+    $edge = collect($g['edges'])->firstWhere('to', 'lender:10000001');
     expect($edge['from'])->toStartWith('bfe:');
 });
 
 it('samler samme långiver til ÉN node på tværs af ejendomme', function () {
-    // 🚨 Ringkjøbing har pant i BEGGE ejendomme. Uden dedup ville grafen få to
+    // 🚨 Testbanken har pant i BEGGE ejendomme. Uden dedup ville grafen få to
     // noder for samme bank — og en bruger ville tro der var to långivere.
     // Samme fælde som gældstallet: sampant ser ud som flere forhold.
     $g = lenderGraph([
@@ -88,12 +96,12 @@ it('samler samme långiver til ÉN node på tværs af ejendomme', function () {
         'enrichment' => ['lenders' => akacieLenders()],
     ]);
 
-    $ringkjoebing = collect($g['nodes'])->where('id', 'lender:37536814');
+    $testbanken = collect($g['nodes'])->where('id', 'lender:10000001');
 
-    expect($ringkjoebing)->toHaveCount(1);
+    expect($testbanken)->toHaveCount(1);
 
     // Men TO kanter — én pr. ejendom banken har pant i.
-    $edges = collect($g['edges'])->where('to', 'lender:37536814');
+    $edges = collect($g['edges'])->where('to', 'lender:10000001');
     expect($edges)->toHaveCount(2);
 });
 
@@ -105,29 +113,59 @@ it('viser beløbet på kanten, ikke på noden', function () {
         'enrichment' => ['lenders' => akacieLenders()],
     ]);
 
-    $edge = collect($g['edges'])->first(fn ($e) => $e['from'] === 'bfe:250959' && $e['to'] === 'lender:37536814');
+    $edge = collect($g['edges'])->first(fn ($e) => $e['from'] === 'bfe:250959' && $e['to'] === 'lender:10000001');
 
     expect($edge['label'])->toBe('45,0 mio.');
 });
 
 it('udenlandske långivere uden CVR får stadig en node', function () {
-    // 🪤 Målt i prod: Landesbank Hessen-Thüringen (290 mio.), Kinnerton III DAC
-    // (198 mio.) og SEB (168 mio.) har INTET CVR — de er ikke danske selskaber.
-    // Nøgles der på CVR alene, forsvinder præcis de største kreditorer.
+    // 🪤 Målt i prod: de TRE største institutionelle kreditorer er udenlandske
+    // og har INTET CVR. Nøgles der på CVR alene, forsvinder præcis dem.
+    //
+    // Navnet her er opdigtet, men bærer omlyd med vilje: slug-stien skal
+    // transliterere ü → u. Beløb og adresse er neutrale — de tester intet, og
+    // et rigtigt navn parret med et rigtigt beløb på en rigtig adresse læser
+    // som en påstand om virkeligheden.
     $g = lenderGraph([
         'properties' => ['list' => [
-            ['matrikel_id' => '158906', 'address' => 'Sundkrogsgade 11', 'owner_cvr' => '29798486', 'is_matriculated' => true],
+            ['matrikel_id' => '158906', 'address' => 'Testvej 1', 'owner_cvr' => '29798486', 'is_matriculated' => true],
         ], 'usage' => []],
         'enrichment' => ['lenders' => [
-            '158906' => [['name' => 'Landesbank Hessen-Thüringen Girozentrale', 'cvr' => null, 'amount' => 290_482_500]],
+            '158906' => [['name' => 'Tysk Girozentrale München', 'cvr' => null, 'amount' => 10_000_000]],
         ]],
     ]);
 
     $lender = collect($g['nodes'])->firstWhere('kind', 'lender');
 
     expect($lender)->not->toBeNull()
-        ->and($lender['label'])->toBe('Landesbank Hessen-Thüringen Girozentrale')
-        ->and($lender['id'])->toBe('lender:landesbank-hessen-thuringen-girozentrale');
+        ->and($lender['label'])->toBe('Tysk Girozentrale München')
+        ->and($lender['id'])->toBe('lender:tysk-girozentrale-munchen');
+});
+
+it('skriver långiverens navn som resten af platformen, ikke i VERSALER', function () {
+    // 🪤 `LegalUnitName` kommer fra CVR, som gemmer navne i VERSALER — pinnet
+    // som API-kontrakt i registry-api's CompanyTinglysningOverviewTest:492.
+    // Grafen sendte navnet uændret videre, så samme bank stod i VERSALER i
+    // grafen og i normal skrift i panthaver-tabellen — på samme side.
+    //
+    // Selskabsformen er en juridisk betegnelse: ApS må ikke blive til Aps.
+    // Opdigtede navne — det er skrivemåden der testes, ikke hvem der låner ud.
+    $g = lenderGraph([
+        'properties' => ['list' => [
+            ['matrikel_id' => '250959', 'address' => 'Akacietorvet 2', 'owner_cvr' => '29798486', 'is_matriculated' => true],
+        ], 'usage' => []],
+        'enrichment' => ['lenders' => [
+            '250959' => [
+                ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
+                ['name' => 'ANDEN TESTBANK APS', 'cvr' => '10000002', 'amount' => 25_000_000],
+            ],
+        ]],
+    ]);
+
+    $labels = collect($g['nodes'])->where('kind', 'lender')->pluck('label')->all();
+
+    expect($labels)->toContain('Testbanken. Aktieselskab')
+        ->and($labels)->toContain('Anden Testbank ApS');
 });
 
 it('laget kan slås fra', function () {

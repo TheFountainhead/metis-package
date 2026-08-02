@@ -4,6 +4,7 @@ namespace TheFountainhead\Metis\Livewire\Sections;
 
 use Livewire\Attributes\Url;
 use TheFountainhead\Metis\Exports\PortfolioTinglysningExport;
+use TheFountainhead\Metis\Services\LegalName;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 class CompanyTinglysning extends MetisSection
@@ -218,6 +219,75 @@ class CompanyTinglysning extends MetisSection
         }
 
         return null;
+    }
+
+    /**
+     * Panthavere — de faktiske långivere bag pantebrevene.
+     *
+     * Ved et ejerpantebrev står selskabet selv anført som kreditor; långiveren
+     * fremgår af underpantet, som er offentligt efter tinglysningslovens
+     * § 1 a, stk. 1. API'et har sendt feltet på hver række hele tiden
+     * (MortgageRowResource:47) — visningen læste det bare aldrig.
+     *
+     * 🚨 Underpant arver sampant-fælden: ét pantebrev kan hæfte på flere
+     * ejendomme og kommer derfor igen som flere rækker. Aggregeres der uden
+     * dedup, står långiveren til beløbet gange antallet af ejendomme. Målt på
+     * Akacietorvet: Ringkjøbing Landbobank til 135 mio. i stedet for 45.
+     *
+     * Beregnet frem for gemt: tallet udledes af $mortgages, og en public
+     * property ville blive serialiseret ind i DOM'en ved hver poll.
+     *
+     * @return array<int, array{name: string, cvr: ?string, amount: int}>
+     */
+    public function getLendersProperty(): array
+    {
+        $seenDocuments = [];
+        $byName = [];
+
+        foreach ($this->mortgages as $mortgage) {
+            // Dedup FØR aggregering. Nøglen er dokumentet, ikke rækkens id:
+            // sampant giver samme dokument flere id'er.
+            $document = $mortgage['dokument_identifikator'] ?? null;
+
+            if ($document !== null && isset($seenDocuments[$document])) {
+                continue;
+            }
+
+            if ($document !== null) {
+                $seenDocuments[$document] = true;
+            }
+
+            foreach ($mortgage['underpant'] ?? [] as $lender) {
+                $name = $lender['name'] ?? null;
+
+                if (! $name) {
+                    continue;
+                }
+
+                // ⚠️ Grupperet på NAVN, ikke CVR. Udenlandske långivere har
+                // intet CVR — målt i prod: Landesbank Hessen-Thüringen
+                // (290 mio.), Kinnerton Residential III DAC (198 mio.) og SEB
+                // (168 mio.). Nøgles der på CVR, forsvinder præcis de største
+                // institutionelle kreditorer.
+                $byName[$name] ??= [
+                    'name' => LegalName::format($name),
+                    'cvr' => null,
+                    'amount' => 0,
+                ];
+
+                // Foerste IKKE-NULL CVR vinder. Saettes det ved oprettelsen,
+                // afhaenger CVR'et af raekkefoelgen: samme laangiver kan optraede
+                // baade med og uden CVR (personregistreret eller udenlandsk
+                // panthaver giver null), og saa tabtes linket vilkaarligt.
+                $byName[$name]['cvr'] ??= $lender['cvr'] ?? null;
+
+                // Beloebet er KRONER — ikke oerer som principal_amount. Kommer
+                // raat fra BeloebVaerdi (StreamTinglysningMortgages:379).
+                $byName[$name]['amount'] += (int) ($lender['amount'] ?? 0);
+            }
+        }
+
+        return collect($byName)->sortByDesc('amount')->values()->all();
     }
 
     protected function fetch(): void
