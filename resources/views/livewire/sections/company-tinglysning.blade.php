@@ -231,8 +231,12 @@
                 </div>
             @endif
 
-            {{-- panthavere: de faktiske långivere bag ejerpantebrevene --}}
-            @if(count($this->lenders) > 0)
+            {{-- panthavere: de faktiske långivere bag ejerpantebrevene.
+                 Vises FØRST når streamingen er færdig: en delvist hentet
+                 portefølje giver et for lavt beløb pr. panthaver, og til
+                 forskel fra pantebrevs-tabellen (der har spinner + skeleton)
+                 ville tallet her se afsluttet ud mens det stadig voksede. --}}
+            @if(! $streaming && count($this->lenders) > 0)
                 <div class="mb-6">
                     <h3 class="text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-2">{{ __('Panthavere') }}</h3>
                     <div class="overflow-x-auto">
@@ -250,15 +254,21 @@
                                         <td class="py-2 pr-4">{{ $lender['name'] }}</td>
                                         <td class="py-2 pr-4 text-zinc-500 text-xs">
                                             @if($lender['cvr'])
-                                                <a href="{{ route('metis.lookup', ['type' => 'company', 'query' => $lender['cvr']]) }}"
+                                                {{-- type=cvr, ikke 'company': lookup-viewet brancher
+                                                     kun paa cvr|cpr|person|address. 'company' matcher
+                                                     ingen gren og gav en tom side uden fejl. --}}
+                                                <a href="{{ route('metis.lookup', ['type' => 'cvr', 'query' => $lender['cvr']]) }}"
                                                    class="hover:underline">{{ $lender['cvr'] }}</a>
                                             @else
                                                 <span class="text-zinc-300">-</span>
                                             @endif
                                         </td>
+                                        {{-- 🚨 INGEN ÷100. `underpant.amount` er KRONER, mens
+                                             `principal_amount` er ØRER. To felter, to enheder —
+                                             se registry-api StreamTinglysningMortgages:379. --}}
                                         <td class="py-2 text-right">
                                             @if($lender['amount'] > 0)
-                                                {{ number_format($lender['amount'] / 100, 0, ',', '.') }} kr.
+                                                {{ number_format($lender['amount'], 0, ',', '.') }} kr.
                                             @else
                                                 <span class="text-zinc-300">-</span>
                                             @endif

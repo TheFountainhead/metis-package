@@ -78,7 +78,7 @@ function mortgageWithLenders(int $id, int $kr, string $address, array $lenders, 
 it('viser de faktiske laangivere, ikke kun kreditor-kolonnen', function () {
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
-            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '45000000'],
         ]),
     ]))]);
 
@@ -98,10 +98,10 @@ it('samler samme laangiver paa tvaers af ejendomme — én gang, ikke én pr. ej
     // Uden dedup ville banken staa til 90 mio. i stedet for 45.
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
-            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '45000000'],
         ], 'doc-delt'),
         mortgageWithLenders(2, 45_000_000, 'Akacietorvet 2A', [
-            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '45000000'],
         ], 'doc-delt'),
     ]))]);
 
@@ -115,10 +115,10 @@ it('laegger FORSKELLIGE pantebreve fra samme laangiver sammen', function () {
     // To selvstaendige dokumenter hos samme bank ER to laan. De skal summeres.
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
-            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '45000000'],
         ], 'doc-a'),
         mortgageWithLenders(2, 5_000_000, 'Akacietorvet 2A', [
-            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 5_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '5000000'],
         ], 'doc-b'),
     ]))]);
 
@@ -131,10 +131,10 @@ it('laegger FORSKELLIGE pantebreve fra samme laangiver sammen', function () {
 it('sorterer stoerste laangiver oeverst', function () {
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 25_000_000, 'Akacietorvet 2', [
-            ['name' => 'Anden Testbank ApS', 'cvr' => '10000002', 'amount' => 25_000_000],
+            ['name' => 'Anden Testbank ApS', 'cvr' => '10000002', 'amount' => '25000000'],
         ], 'doc-a'),
         mortgageWithLenders(2, 45_000_000, 'Akacietorvet 2A', [
-            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => 45_000_000],
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '45000000'],
         ], 'doc-b'),
     ]))]);
 
@@ -150,7 +150,7 @@ it('udenlandsk laangiver uden CVR faar stadig en raekke', function () {
     // institutionelle kreditorer.
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
         mortgageWithLenders(1, 290_482_500, 'Traneholmvej 2', [
-            ['name' => 'Landesbank Hessen-Thüringen Girozentrale', 'cvr' => null, 'amount' => 290_482_500],
+            ['name' => 'Landesbank Hessen-Thüringen Girozentrale', 'cvr' => null, 'amount' => '290482500'],
         ]),
     ]))]);
 
@@ -173,5 +173,93 @@ it('viser ingen sektion naar der ikke er underpant', function () {
     $component = Livewire::test(CompanyTinglysning::class, ['query' => '29798486']);
 
     expect($component->get('lenders'))->toBe([])
+        ->and($component->html())->not->toContain('Panthavere');
+});
+
+it('viser samme beloeb som pantebrevs-tabellen — ikke 100x for lavt', function () {
+    // 🚨 BLOKERENDE FEJL FANGET I REVIEW 2/8. Bladen dividerede med 100.
+    //
+    // De to felter har FORSKELLIG enhed, og det er pinnet i registry-api:
+    //   principal_amount  = OERER  (Mortgage.php:15 — "BeloebVaerdi × 100")
+    //   underpant.amount  = KRONER (StreamTinglysningMortgages.php:379 — raa
+    //                       gennemstilling af BeloebVaerdi, ingen ×100)
+    // API-kontrakten er pinnet i CompanyTinglysningOverviewTest:494:
+    // et 45 mio. pantebrev giver underpant[0]['amount'] === '45000000'.
+    //
+    // Skaden var kundevendt og synlig: SAMME pantebrev stod som 45.000.000 kr
+    // i Pantebreve-tabellen og 450.000 kr i Panthavere-tabellen paa samme side.
+    //
+    // 🪤 Testene var groenne fordi fixturen indkodede samme forveksling som
+    // koden: 'principal_amount' => $kr * 100 men 'amount' => $kr. Fixture og
+    // implementering bekraeftede hinanden. Derfor asserter denne test det
+    // RENDEREDE tal, ikke det beregnede.
+    Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
+        mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '45000000'],
+        ]),
+    ]))]);
+
+    $html = Livewire::test(CompanyTinglysning::class, ['query' => '29798486'])->html();
+
+    expect($html)->toContain('45.000.000')
+        ->and($html)->not->toContain('450.000 kr');
+});
+
+it('CVR-linket peger paa en type lookup-viewet faktisk kender', function () {
+    // 🚨 FANGET I REVIEW 2/8: linket brugte type=company. lookup.blade.php
+    // brancher kun paa cvr|cpr|person|address, saa 'company' ramte ingen gren
+    // og gav en TOM side uden fejlbesked. Stub-ruten i beforeEach beviste kun
+    // at route() ikke kastede.
+    Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
+        mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '45000000'],
+        ]),
+    ]))]);
+
+    $html = Livewire::test(CompanyTinglysning::class, ['query' => '29798486'])->html();
+
+    expect($html)->toContain('/lookup/cvr/10000001')
+        ->and($html)->not->toContain('/lookup/company/');
+});
+
+it('foerste IKKE-NULL CVR vinder, uanset raekkefoelge', function () {
+    // Samme laangiver kan optraede baade med og uden CVR — en personregistreret
+    // eller udenlandsk panthaver giver null. Blev CVR'et sat ved oprettelsen,
+    // afhang linket af hvilken raekke der kom foerst.
+    Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
+        mortgageWithLenders(1, 20_000_000, 'Akacietorvet 2', [
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => null, 'amount' => '20000000'],
+        ], 'doc-a'),
+        mortgageWithLenders(2, 25_000_000, 'Akacietorvet 2A', [
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '25000000'],
+        ], 'doc-b'),
+    ]))]);
+
+    $lenders = Livewire::test(CompanyTinglysning::class, ['query' => '29798486'])->get('lenders');
+
+    expect($lenders)->toHaveCount(1)
+        ->and($lenders[0]['cvr'])->toBe('10000001')
+        ->and($lenders[0]['amount'])->toBe(45_000_000);
+});
+
+it('skjuler sektionen mens streamingen loeber — et halvt tal ser afsluttet ud', function () {
+    // Pantebrevs-tabellen har spinner + skeleton-raekker; panthaver-tabellen
+    // havde ingen af delene. Paa en portefoelje over stream_page_size ville en
+    // bruger se et for lavt beloeb pr. panthaver uden nogen indikation af at
+    // det stadig voksede.
+    $body = tinglysningWithUnderpant([
+        mortgageWithLenders(1, 45_000_000, 'Akacietorvet 2', [
+            ['name' => 'TESTBANKEN. AKTIESELSKAB', 'cvr' => '10000001', 'amount' => '45000000'],
+        ]),
+    ]);
+    $body['streaming'] = ['complete' => false, 'cursor' => 'næste', 'total_expected' => 120, 'delivered_so_far' => 1];
+
+    Http::fake(['*tinglysning-overview*' => Http::response($body)]);
+
+    $component = Livewire::test(CompanyTinglysning::class, ['query' => '29798486']);
+
+    // Dataen ER der — den vises bare ikke foer den er komplet.
+    expect($component->get('lenders'))->toHaveCount(1)
+        ->and($component->get('streaming'))->toBeTrue()
         ->and($component->html())->not->toContain('Panthavere');
 });

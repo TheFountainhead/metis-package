@@ -271,10 +271,18 @@ class CompanyTinglysning extends MetisSection
                 // institutionelle kreditorer.
                 $byName[$name] ??= [
                     'name' => LegalName::format($name),
-                    'cvr' => $lender['cvr'] ?? null,
+                    'cvr' => null,
                     'amount' => 0,
                 ];
 
+                // Foerste IKKE-NULL CVR vinder. Saettes det ved oprettelsen,
+                // afhaenger CVR'et af raekkefoelgen: samme laangiver kan optraede
+                // baade med og uden CVR (personregistreret eller udenlandsk
+                // panthaver giver null), og saa tabtes linket vilkaarligt.
+                $byName[$name]['cvr'] ??= $lender['cvr'] ?? null;
+
+                // Beloebet er KRONER — ikke oerer som principal_amount. Kommer
+                // raat fra BeloebVaerdi (StreamTinglysningMortgages:379).
                 $byName[$name]['amount'] += (int) ($lender['amount'] ?? 0);
             }
         }
