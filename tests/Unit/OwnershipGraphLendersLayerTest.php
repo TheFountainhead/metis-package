@@ -119,23 +119,27 @@ it('viser beløbet på kanten, ikke på noden', function () {
 });
 
 it('udenlandske långivere uden CVR får stadig en node', function () {
-    // 🪤 Målt i prod: Landesbank Hessen-Thüringen (290 mio.), Kinnerton III DAC
-    // (198 mio.) og SEB (168 mio.) har INTET CVR — de er ikke danske selskaber.
-    // Nøgles der på CVR alene, forsvinder præcis de største kreditorer.
+    // 🪤 Målt i prod: de TRE største institutionelle kreditorer er udenlandske
+    // og har INTET CVR. Nøgles der på CVR alene, forsvinder præcis dem.
+    //
+    // Navnet her er opdigtet, men bærer omlyd med vilje: slug-stien skal
+    // transliterere ü → u. Beløb og adresse er neutrale — de tester intet, og
+    // et rigtigt navn parret med et rigtigt beløb på en rigtig adresse læser
+    // som en påstand om virkeligheden.
     $g = lenderGraph([
         'properties' => ['list' => [
-            ['matrikel_id' => '158906', 'address' => 'Sundkrogsgade 11', 'owner_cvr' => '29798486', 'is_matriculated' => true],
+            ['matrikel_id' => '158906', 'address' => 'Testvej 1', 'owner_cvr' => '29798486', 'is_matriculated' => true],
         ], 'usage' => []],
         'enrichment' => ['lenders' => [
-            '158906' => [['name' => 'Landesbank Hessen-Thüringen Girozentrale', 'cvr' => null, 'amount' => 290_482_500]],
+            '158906' => [['name' => 'Tysk Girozentrale München', 'cvr' => null, 'amount' => 10_000_000]],
         ]],
     ]);
 
     $lender = collect($g['nodes'])->firstWhere('kind', 'lender');
 
     expect($lender)->not->toBeNull()
-        ->and($lender['label'])->toBe('Landesbank Hessen-Thüringen Girozentrale')
-        ->and($lender['id'])->toBe('lender:landesbank-hessen-thuringen-girozentrale');
+        ->and($lender['label'])->toBe('Tysk Girozentrale München')
+        ->and($lender['id'])->toBe('lender:tysk-girozentrale-munchen');
 });
 
 it('skriver långiverens navn som resten af platformen, ikke i VERSALER', function () {

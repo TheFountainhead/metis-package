@@ -145,12 +145,14 @@ it('sorterer stoerste laangiver oeverst', function () {
 });
 
 it('udenlandsk laangiver uden CVR faar stadig en raekke', function () {
-    // 🪤 Maalt i prod: Landesbank Hessen-Thueringen (290 mio.), Kinnerton III DAC
-    // og SEB har intet CVR. Noegles der paa CVR, forsvinder de stoerste
-    // institutionelle kreditorer.
+    // 🪤 Maalt i prod: de tre stoerste institutionelle kreditorer er
+    // udenlandske og har intet CVR. Noegles der paa CVR, forsvinder praecis
+    // dem. Navnet her er opdigtet — beloeb og adresse tester intet, og et
+    // rigtigt navn parret med et rigtigt beloeb paa en rigtig adresse laeser
+    // som en paastand om virkeligheden.
     Http::fake(['*tinglysning-overview*' => Http::response(tinglysningWithUnderpant([
-        mortgageWithLenders(1, 290_482_500, 'Traneholmvej 2', [
-            ['name' => 'Landesbank Hessen-Thüringen Girozentrale', 'cvr' => null, 'amount' => '290482500'],
+        mortgageWithLenders(1, 10_000_000, 'Testvej 1', [
+            ['name' => 'Tysk Girozentrale München', 'cvr' => null, 'amount' => '10000000'],
         ]),
     ]))]);
 
@@ -158,9 +160,9 @@ it('udenlandsk laangiver uden CVR faar stadig en raekke', function () {
     $lenders = $component->get('lenders');
 
     expect($lenders)->toHaveCount(1)
-        ->and($lenders[0]['name'])->toBe('Landesbank Hessen-Thüringen Girozentrale')
+        ->and($lenders[0]['name'])->toBe('Tysk Girozentrale München')
         ->and($lenders[0]['cvr'])->toBeNull()
-        ->and($component->html())->toContain('Landesbank Hessen-Thüringen');
+        ->and($component->html())->toContain('Tysk Girozentrale München');
 });
 
 it('viser ingen sektion naar der ikke er underpant', function () {
