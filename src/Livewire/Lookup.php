@@ -58,7 +58,17 @@ class Lookup extends Component
 
         // Redirect FOER historikken skrives: ellers lander CPR'et i
         // search_term under den forkerte type.
-        if ($type === 'cvr' && (new SearchDetector)->detect(trim($query)) === 'cpr') {
+        // 🪤 Normalisér mellemrum FOER detektion. SearchDetectors regex er
+        // `^\d{6}-?\d{4}$` — separator maa vaere bindestreg eller intet. Maalt
+        // gennem rigtige HTTP-requests slap den tredje form forbi:
+        //
+        //   /lookup/cvr/1234567890   -> 302   ✅
+        //   /lookup/cvr/123456-7890  -> 302   ✅
+        //   /lookup/cvr/123456 7890  -> 200, CPR GEMT i historikken   🚨
+        //
+        // Mellemrums-formen er ikke exotisk: det er hvad man faar ved copy-paste
+        // fra Word/PDF og fra iOS-autokorrektur.
+        if ($type === 'cvr' && (new SearchDetector)->detect(preg_replace('/\s+/', '', $query)) === 'cpr') {
             $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => $query]), navigate: true);
 
             return;

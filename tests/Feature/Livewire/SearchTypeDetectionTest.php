@@ -81,22 +81,39 @@ it('en adresse i person-mode genkendes som adresse', function () {
         ->assertNotSet('resultType', 'name');
 });
 
-it('et firmanavn genkendes ens MED og UDEN mode', function () {
-    // Den baerende egenskab efter rettelsen: mode maa ikke laengere aendre
-    // hvad der soeges efter. Samme input skal give samme udfald.
+it('🚨 REVIEW-FUND: mode aendrer ikke HVILKE endpoints der rammes', function () {
+    // 🚨 Den foerste udgave af denne test sammenlignede kun resultType og
+    // error — begge null/false i begge koersler. Den bestod derfor mens en
+    // ANDEN mode-bypass i performSearch() stadig var live og kastede det
+    // beregnede $type vaek.
     //
-    // 🪤 `company_name` saetter ikke resultType (den gaar ad
-    // suggestion-/redirect-vejen, ikke inline-render som cvr/address). Vi
-    // sammenligner derfor de to koersler med hinanden frem for at gaette en
-    // konkret vaerdi — det er ligheden der er paastanden.
-    Http::fake(['*' => Http::response(['data' => ['companies' => []]])]);
+    // Maalt med optagne udgaaende kald FOER rettelsen:
+    //   'Lars Larsen' i company-mode -> KUN search-by-name
+    //   'Lars Larsen' uden mode      -> search-by-name + person-roles
+    //
+    // En person soegt i company-mode spurgte altsaa aldrig person-roles.
+    // Brugeren fik at vide at personen ingen roller har — hvor sandheden er
+    // at vi aldrig spurgte.
+    //
+    // Testen asserter derfor paa ENDPOINTS, ikke paa to null-skalarer.
+    $ramt = function (string $mode): array {
+        $urls = [];
+        Http::fake(function ($request) use (&$urls) {
+            $urls[] = parse_url($request->url(), PHP_URL_PATH);
 
-    $uden = Livewire::test(Search::class)
-        ->set('searchMode', '')->set('query', 'Jeudan A/S')->call('search');
+            return Http::response(['data' => []]);
+        });
 
-    $med = Livewire::test(Search::class)
-        ->set('searchMode', 'person')->set('query', 'Jeudan A/S')->call('search');
+        Livewire::test(Search::class)
+            ->set('searchMode', $mode)
+            ->set('query', 'Lars Larsen')
+            ->call('search');
 
-    expect($med->get('resultType'))->toBe($uden->get('resultType'))
-        ->and($med->get('error'))->toBe($uden->get('error'));
+        sort($urls);
+
+        return array_unique($urls);
+    };
+
+    expect($ramt('company'))->toBe($ramt(''))
+        ->and($ramt('person'))->toBe($ramt(''));
 });

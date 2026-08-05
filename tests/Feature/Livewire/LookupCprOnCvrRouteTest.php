@@ -63,7 +63,9 @@ it('🚨 REVIEW-FUND: fanger ogsaa CPR MED bindestreg og mellemrum', function ()
     //
     // Kodebasen havde ALLEREDE tre detektorer der accepterer bindestreg
     // (SearchDetector:26, Search:127, Search:263). Nu delegeres der til dem.
-    foreach (['123456-7890', ' 1234567890 '] as $q) {
+    // 🚨 Mellemrums-formen slap forbi indtil 5/8 — copy-paste fra Word/PDF
+    // og iOS-autokorrektur producerer den.
+    foreach (['123456-7890', ' 1234567890 ', '123456 7890'] as $q) {
         Livewire::test(Lookup::class, ['type' => 'cvr', 'query' => $q])
             ->assertRedirect(route('metis.lookup', ['type' => 'cpr', 'query' => $q]));
 

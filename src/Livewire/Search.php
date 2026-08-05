@@ -564,30 +564,30 @@ class Search extends Component
     {
         $api = app(RegistryApi::class);
 
-        // Type-first lock: when user picked a mode, only search that type.
-        // Eliminates 'name'-fallback that returns BOTH persons + companies.
-        if ($this->searchMode === 'person') {
-            $result = ['persons' => $api->searchPersonByName($query)];
-        } elseif ($this->searchMode === 'company') {
-            // 8-cifret CVR → direkte lookup via fetchCompany. Ellers navne-søgning.
-            // Uden detection routes 'Selskab + 28963610' til searchByName(), der kun
-            // matcher firmanavn, så ingen-resultater for valid CVR-input.
-            if (preg_match('/^\d{8}$/', trim($query))) {
-                $result = $api->fetchCompany($query);
-            } else {
-                $result = ['companies' => $api->searchByName($query)];
-            }
-        } elseif ($this->searchMode === 'address') {
-            $result = $api->fetchPropertyByAddress($query);
-        } else {
-            $result = match ($type) {
-                'cvr' => $api->fetchCompany($query),
-                'company_name' => ['companies' => $api->searchByName($query)],
-                'name' => ['persons' => $api->searchPersonByName($query), 'companies' => $api->searchByName($query)],
-                'address' => $api->fetchPropertyByAddress($query),
-                default => null,
-            };
-        }
+        // 🚨 REVIEW-FUND 5/8: her laa den ANDEN mode-bypass. #146 fjernede kun
+        // den i search(); denne overskrev stadig det beregnede $type og gjorde
+        // PR'ens egen paastand ("SearchDetector bestemmer ALTID typen") falsk.
+        //
+        // Maalt med Http::fake og optagne udgaaende kald:
+        //   'Lars Larsen' i company-mode -> KUN search-by-name
+        //   'Lars Larsen' uden mode      -> search-by-name + person-roles
+        //
+        // Praecis den fejlklasse #146 skulle lukke: en person soegt i
+        // company-mode spoerger aldrig person-roles, saa brugeren faar at vide
+        // at personen ingen roller har — hvor sandheden er at vi aldrig spurgte.
+        //
+        // 🪤 Adresse-tilfaeldet konvergerede tilfaeldigvis (begge veje gav
+        // 'address'), saa bypasset var PARTIELT og dermed svaerere at faa oeje
+        // paa. Og #146's egen test sammenlignede kun resultType og error —
+        // begge null/false i begge koersler — saa den bestod mens fejlen var
+        // live. Testene her asserter derfor paa hvilke ENDPOINTS der rammes.
+        $result = match ($type) {
+            'cvr' => $api->fetchCompany($query),
+            'company_name' => ['companies' => $api->searchByName($query)],
+            'name' => ['persons' => $api->searchPersonByName($query), 'companies' => $api->searchByName($query)],
+            'address' => $api->fetchPropertyByAddress($query),
+            default => null,
+        };
 
         if ($result === null || isset($result['error'])) {
             $this->error = true;

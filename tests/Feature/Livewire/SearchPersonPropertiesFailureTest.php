@@ -46,6 +46,10 @@ function searchForPerson(array $fakes): \Livewire\Features\SupportTesting\Testab
         '*person-roles*' => Http::response(personNameResult()),
         // searchPersonByName() slaar property_count op pr. selskab.
         '*company/*property-portfolio*' => Http::response(['data' => ['portfolio' => ['total_count' => 4]]]),
+        // 🚨 5/8: mode-bypasset i performSearch() er fjernet, saa et NAVN nu
+        // rammer BEGGE endpoints — ogsaa i person-mode. Foer spurgte vi kun
+        // person-roles og fandt derfor aldrig selskaber med samme navn.
+        '*/v1/cvr/search-by-name' => Http::response(['data' => ['companies' => []]]),
     ]));
 
     return Livewire::test(Search::class)
