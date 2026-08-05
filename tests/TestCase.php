@@ -25,6 +25,18 @@ abstract class TestCase extends BaseTestCase
         ];
     }
 
+    /**
+     * Pakkens egne ruter.
+     *
+     * Testbench loader dem ikke af sig selv, saa `route('metis.lookup')` kaster
+     * RouteNotFoundException i tests — selv om ruten findes i prod. Uden dette
+     * kan en redirect mellem pakkens egne sider ikke testes overhovedet.
+     */
+    protected function defineRoutes($router): void
+    {
+        require __DIR__.'/../routes/web.php';
+    }
+
     protected function defineEnvironment($app): void
     {
         $app['config']->set('app.key', 'base64:'.base64_encode(str_repeat('a', 32)));
