@@ -105,7 +105,23 @@ class LenderExposure extends Component
         $byAddress = [];
 
         foreach ($rows as $row) {
-            $key = ($row['bfe'] ?? '').'|'.($row['address'] ?? '');
+            // 🚨 REVIEW-FUND 5/8: noeglen var `bfe|address` UDEN postnummer.
+            // To FORSKELLIGE ejendomme paa samme vejnavn i hver sin by (4000
+            // vs. 9000), begge uden BFE, foldede derfor til ÉN raekke med
+            // beloebene lagt sammen. Verificeret: 2 raekker ind -> 1 ud med
+            // 20.000.000 kr.
+            //
+            // I en kreditvurdering er det en forkert paastand om hvilken
+            // sikkerhed der findes. postal_code laa allerede i payloaden og
+            // var udeladt uden grund.
+            //
+            // 🪤 Uden BFE er adresse+postnummer det bedste vi har, men det er
+            // stadig en tilnaermelse — to ejendomme paa samme adresse uden BFE
+            // kan ikke skelnes. Derfor foldes de KUN naar en BFE findes;
+            // ellers staar hver raekke for sig og bevarer sit dokument-id.
+            $key = ($row['bfe'] ?? null) !== null
+                ? 'bfe:'.$row['bfe']
+                : 'doc:'.($row['document'] ?? '').'|'.($row['address'] ?? '').'|'.($row['postal_code'] ?? '');
 
             $byAddress[$key] ??= [
                 'address' => $row['address'] ?? null,

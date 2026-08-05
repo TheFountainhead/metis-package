@@ -150,3 +150,95 @@ it('oplyser at listen er afkortet, saa totalen ikke ser forkert ud', function ()
         ->call('search')
         ->assertSee('Listen er afkortet');
 });
+
+it('🚨 REVIEW-FUND: folder IKKE forskellige ejendomme sammen naar BFE mangler', function () {
+    // 🚨 Noeglen var `bfe|address` UDEN postnummer. To FORSKELLIGE ejendomme
+    // paa samme vejnavn i hver sin by, begge uden BFE, foldede til ÉN raekke
+    // med beloebene lagt sammen. Verificeret foer rettelsen: 2 ind -> 1 ud
+    // med 20.000.000 kr.
+    //
+    // I en kreditvurdering er det en forkert paastand om hvilken sikkerhed
+    // der findes.
+    Http::fake(['*/v1/lender-exposure/*' => Http::response([
+        'data' => [
+            'lender_name' => 'Test A/S', 'cvr' => '35050027',
+            'documents' => 2, 'properties' => 2, 'total_kr' => 20_000_000, 'truncated' => false,
+            'rows' => [
+                ['address' => 'Hovedgaden 1', 'postal_code' => '4000', 'bfe' => null,
+                    'amount_kr' => 10_000_000, 'document' => 'doc-a'],
+                ['address' => 'Hovedgaden 1', 'postal_code' => '9000', 'bfe' => null,
+                    'amount_kr' => 10_000_000, 'document' => 'doc-b'],
+            ],
+        ],
+        'meta' => ['disclaimer' => 'x', 'source' => 'y'],
+    ])]);
+
+    $rows = Livewire::test(LenderExposure::class)
+        ->set('cvr', '35050027')->call('search')
+        ->instance()->byProperty;
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows[0]['amount_kr'])->toBe(10_000_000)
+        ->and($rows[1]['amount_kr'])->toBe(10_000_000);
+});
+
+it('🚨 REVIEW-FUND: forbeholdet vises OGSAA naar backenden udelader meta', function () {
+    // 🚨 Forbeholdet var betinget af `meta.disclaimer`. Uden den rendrede
+    // beloebet og hele KPI-blokken UDEN forbehold. Klassens docblock kalder
+    // det en invariant — men den var afhaengig af at en anden tjeneste
+    // samarbejdede, og backendens form er endnu ikke frosset.
+    Http::fake(['*/v1/lender-exposure/*' => Http::response([
+        'data' => [
+            'lender_name' => 'Test A/S', 'cvr' => '35050027',
+            'documents' => 1, 'properties' => 1, 'total_kr' => 5_000_000, 'truncated' => false,
+            'rows' => [['address' => 'Vej 1', 'postal_code' => '4000', 'bfe' => '900100',
+                'amount_kr' => 5_000_000, 'document' => 'doc-a']],
+        ],
+        // INGEN meta.
+    ])]);
+
+    Livewire::test(LenderExposure::class)
+        ->set('cvr', '35050027')->call('search')
+        ->assertSee('5.000.000')
+        ->assertSee('på vegne af andre kreditorer');
+});
+
+it('🚨 REVIEW-FUND: wire:key er indholds-baseret, ikke positionel', function () {
+    // 🚨 Noeglen var `exposure-{{ bfe ?? loop->index }}`, altsaa POSITIONEL
+    // naar BFE mangler. To problemer:
+    //
+    //   1. Kollision: en raekke UDEN bfe paa plads 0 fik `exposure-0`; en
+    //      raekke MED bfe='0' ville faa det samme.
+    //      (🪤 Reviewet paastod at bfe='0' ALENE kolliderede. Det er forkert:
+    //      `??` reagerer paa null, ikke falsy, saa '0' bruges som noegle.
+    //      Verificeret. Kollisionen kraever at bfe er NULL paa plads 0.)
+    //   2. Vaerre — den var IDENTISK paa tvaers af soegninger: laangiver A og
+    //      B gav begge [exposure-0, exposure-1] for helt forskellige
+    //      ejendomme, saa morph genbrugte DOM-raekkerne.
+    //
+    // Livewire::test() koerer ingen morph, saa vi asserter paa den renderede
+    // HTML: noeglerne skal vaere unikke OG afhaenge af indholdet.
+    Http::fake(['*/v1/lender-exposure/*' => Http::response([
+        'data' => [
+            'lender_name' => 'Test A/S', 'cvr' => '35050027',
+            'documents' => 2, 'properties' => 2, 'total_kr' => 2_000_000, 'truncated' => false,
+            'rows' => [
+                // Uden bfe paa plads 0 => gammel noegle blev 'exposure-0'.
+                ['address' => 'Nulvej 1', 'postal_code' => '4000', 'bfe' => null,
+                    'amount_kr' => 1_000_000, 'document' => 'doc-a'],
+                // ...og denne har bfe='0' => ogsaa 'exposure-0'. Kollision.
+                ['address' => 'Etvej 2', 'postal_code' => '5000', 'bfe' => '0',
+                    'amount_kr' => 1_000_000, 'document' => 'doc-b'],
+            ],
+        ],
+        'meta' => ['disclaimer' => 'x', 'source' => 'y'],
+    ])]);
+
+    $html = Livewire::test(LenderExposure::class)
+        ->set('cvr', '35050027')->call('search')->html();
+
+    preg_match_all('/wire:key="(exposure-[^"]+)"/', $html, $m);
+
+    expect($m[1])->toHaveCount(2)
+        ->and(array_unique($m[1]))->toHaveCount(2);
+});
