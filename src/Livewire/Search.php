@@ -153,30 +153,19 @@ class Search extends Component
             return;
         }
 
-        // Type-first mode: locked autocomplete behaviour
-        if ($this->searchMode === 'address') {
-            $this->suggestionType = 'address';
-            $this->suggestions = rescue(fn () => app(RegistryApi::class)->addressAutocomplete($q, 5), []) ?? [];
-            return;
-        }
-
-        if ($this->searchMode === 'company' && strlen($q) >= 4) {
-            $results = rescue(fn () => app(RegistryApi::class)->searchByName($q), []) ?? [];
-            if (! empty($results)) {
-                $this->suggestionType = 'company';
-                $this->suggestions = collect($results)->take(5)->map(fn ($c) => [
-                    'tekst' => ($c['name'] ?? '').' · CVR '.($c['cvr'] ?? ''),
-                    'cvr' => $c['cvr'] ?? '',
-                    'name' => $c['name'] ?? '',
-                ])->all();
-            }
-            return;
-        }
-
-        if ($this->searchMode === 'person') {
-            // No person-autocomplete API. User types full name + presses Enter.
-            return;
-        }
+        // 🚨 REVIEW-FUND 5/8: her laa den TREDJE mode-bypass. #146 og #147
+        // fjernede to; denne styrede stadig autocomplete.
+        //
+        // Docblocken paastod at searchMode "bevares KUN som et hint til
+        // autocomplete, hvor et forkert gaet blot giver faerre forslag — ikke
+        // et forkert svar". Maalt var det ikke sandt for person-mode:
+        // grenen returnerede med suggestions = [] UANSET input. En adresse i
+        // person-mode gav NUL forslag, ikke faerre. Og company-mode sprang
+        // adresse-grenen helt over.
+        //
+        // Detektoren nedenfor haandterer alle typer korrekt, saa mode-grenene
+        // var en dublet der kun kunne goere det vaerre. searchMode paavirker
+        // nu udelukkende placeholder-teksten i bladen.
 
         // Free-text mode (no locked type) — use detector
         $detector = new SearchDetector;
@@ -264,8 +253,10 @@ class Search extends Component
         // skriver hvad de har, og typen fremgaar af resultatet. Det er
         // Resights' model (Fund 1) — ét felt, ingen modes.
         //
-        // `searchMode` bevares KUN som et hint til autocomplete nedenfor, hvor
-        // et forkert gaet blot giver faerre forslag — ikke et forkert svar.
+        // `searchMode` paavirker efter 5/8 KUN placeholder-teksten i bladen.
+        // Den styrede oprindeligt baade type-valget her, resultat-hentningen i
+        // performSearch() og autocomplete i updatedQuery() — tre bypass, hver
+        // fundet i sit eget review. Alle tre er fjernet.
         $type = (new SearchDetector)->detect($query);
 
         if ($type === 'cpr') {

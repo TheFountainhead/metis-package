@@ -117,3 +117,24 @@ it('🚨 REVIEW-FUND: mode aendrer ikke HVILKE endpoints der rammes', function (
     expect($ramt('company'))->toBe($ramt(''))
         ->and($ramt('person'))->toBe($ramt(''));
 });
+
+it('🚨 REVIEW-FUND: mode styrer heller ikke AUTOCOMPLETE', function () {
+    // 🚨 Den TREDJE bypass. updatedQuery() forgrenede paa searchMode og
+    // returnerede tidligt. Docblocken paastod at mode "blot giver faerre
+    // forslag" — men person-grenen returnerede med suggestions = [] UANSET
+    // input. En adresse i person-mode gav NUL forslag, ikke faerre.
+    Http::fake(['*' => Http::response(['data' => ['adresser' => [
+        ['tekst' => 'Bredgade 40, 1260 København'],
+    ]]])]);
+
+    $forslag = function (string $mode): int {
+        return count(Livewire::test(Search::class)
+            ->set('searchMode', $mode)
+            ->set('query', 'Bredgade 40')
+            ->get('suggestions'));
+    };
+
+    // Samme input skal give samme antal forslag uanset mode.
+    expect($forslag('person'))->toBe($forslag(''))
+        ->and($forslag('company'))->toBe($forslag(''));
+});

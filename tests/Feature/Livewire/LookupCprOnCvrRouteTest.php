@@ -103,3 +103,48 @@ it('🚨 verificeret gennem en RIGTIG HTTP-request, ikke kun Livewire::test', fu
     // teste testmiljoeet frem for komponenten.
     expect($this->get('/lookup/cvr/35050027')->isRedirect())->toBeFalse();
 });
+
+it('🚨 REVIEW-FUND: ALLE ruter er lukket, ikke kun /lookup/cvr/', function () {
+    // 🚨 Guarden gated kun `cvr`. Maalt gennem rigtige HTTP-requests gemte de
+    // oevrige ruter CPR'et uden videre:
+    //   /lookup/person/123456-7890  -> search_type=person, CPR gemt
+    //   /lookup/address/123456-7890 -> search_type=address, CPR gemt
+    //   /lookup/name/123456-7890    -> search_type=name, CPR gemt
+    //
+    // `{type}` har ingen rute-begraensning, saa enhver vaerdi naar mount().
+    foreach (['person', 'address', 'name', 'company'] as $type) {
+        $this->get("/lookup/{$type}/123456-7890")
+            ->assertRedirect('/lookup/cpr/123456-7890');
+    }
+
+    expect(MetisLookup::where('search_term', '123456-7890')->exists())->toBeFalse();
+});
+
+it('🚨 REVIEW-FUND: guarden er case-INsensitiv', function () {
+    // 🚨 `$type === 'cvr'` er case-sensitiv. /lookup/CVR/... omgik guarden med
+    // ét bogstavs aendring og gemte CPR'et med search_type='CVR'.
+    $this->get('/lookup/CVR/123456-7890')->assertRedirect('/lookup/cpr/123456-7890');
+
+    expect(MetisLookup::where('search_term', '123456-7890')->exists())->toBeFalse();
+});
+
+it('🚨 REVIEW-FUND: CPR gemmes ALDRIG — heller ikke paa CPR-siden selv', function () {
+    // 🚨 Redirecten flyttede bare nummeret: CPR-siden havde INGEN guard og
+    // faldt lige igennem til MetisLookup::create(). Testen FOELGER derfor
+    // redirecten frem for at stoppe ved 302 — det var praecis derfor den
+    // tidligere test bestod mens hullet var aabent.
+    $this->get('/lookup/cvr/1234567890')->assertRedirect('/lookup/cpr/1234567890');
+    $this->get('/lookup/cpr/1234567890');          // foelg redirecten
+    $this->get('/lookup/cpr/123456-7890');         // og den anden form
+    $this->get('/lookup/cpr/123456 7890');         // og mellemrums-formen
+
+    expect(MetisLookup::whereIn('search_term',
+        ['1234567890', '123456-7890', '123456 7890'])->exists())->toBeFalse();
+});
+
+it('gemmer stadig LOVLIGE opslag i historikken', function () {
+    // Guarden maa ikke slaa logningen fra for alle.
+    $this->get('/lookup/cvr/35050027');
+
+    expect(MetisLookup::where('search_term', '35050027')->exists())->toBeTrue();
+});

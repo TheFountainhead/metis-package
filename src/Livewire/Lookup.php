@@ -56,19 +56,28 @@ class Lookup extends Component
         $this->type = $type;
         $this->query = $query;
 
-        // Redirect FOER historikken skrives: ellers lander CPR'et i
-        // search_term under den forkerte type.
-        // 🪤 Normalisér mellemrum FOER detektion. SearchDetectors regex er
-        // `^\d{6}-?\d{4}$` — separator maa vaere bindestreg eller intet. Maalt
-        // gennem rigtige HTTP-requests slap den tredje form forbi:
+        // 🚨 REVIEW-FUND 5/8: guarden var utilstraekkelig paa TRE maader.
+        // Maalt gennem rigtige HTTP-requests:
         //
-        //   /lookup/cvr/1234567890   -> 302   ✅
-        //   /lookup/cvr/123456-7890  -> 302   ✅
-        //   /lookup/cvr/123456 7890  -> 200, CPR GEMT i historikken   🚨
+        //   /lookup/person/123456-7890  -> CPR GEMT (search_type=person)  🚨
+        //   /lookup/address/123456-7890 -> CPR GEMT                       🚨
+        //   /lookup/name/123456-7890    -> CPR GEMT                       🚨
+        //   /lookup/CVR/123456-7890     -> CPR GEMT (case-sensitiv guard) 🚨
+        //   /lookup/cvr/123456 7890     -> redirect, men CPR gemt paa
+        //                                  CPR-SIDEN bagefter             🚨
         //
-        // Mellemrums-formen er ikke exotisk: det er hvad man faar ved copy-paste
-        // fra Word/PDF og fra iOS-autokorrektur.
-        if ($type === 'cvr' && (new SearchDetector)->detect(preg_replace('/\s+/', '', $query)) === 'cpr') {
+        // Kun `cvr`-doeren var lukket, og kun i smaa bogstaver. `{type}` har
+        // ingen rute-begraensning, saa enhver vaerdi naar mount().
+        //
+        // Rettelsen har to dele:
+        //   1. CPR-tjekket gaelder ALLE typer, case-insensitivt.
+        //   2. Et CPR skrives ALDRIG til historikken — heller ikke paa
+        //      CPR-siden selv, hvor det foer faldt lige igennem til
+        //      MetisLookup::create(). Flare censurerer i sit UI; vores egen
+        //      tabel gjorde ikke.
+        $erCpr = (new SearchDetector)->detect(preg_replace('/\s+/', '', $query)) === 'cpr';
+
+        if ($erCpr && strtolower($type) !== 'cpr') {
             $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => $query]), navigate: true);
 
             return;
@@ -89,7 +98,11 @@ class Lookup extends Component
             $data['email'] = session('metis_verified_email');
         }
 
-        rescue(fn () => MetisLookup::create($data));
+        // 🚨 Et CPR gemmes ALDRIG. Foer faldt CPR-siden lige igennem hertil,
+        // saa redirecten flyttede bare nummeret fra én raekke til en anden.
+        if (! $erCpr) {
+            rescue(fn () => MetisLookup::create($data));
+        }
     }
 
     public function render()
