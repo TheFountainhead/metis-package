@@ -249,6 +249,41 @@ class RegistryApi
         return $this->get('/v1/map/autocomplete', ['q' => $query, 'limit' => $limit]) ?? [];
     }
 
+    /**
+     * Baglaens laangiver-opslag: hvor er DENNE laangiver eksponeret?
+     *
+     * 🚨 Kan IKKE erstattes af en kreditor-soegning. Ved et ejerpantebrev er
+     * selskabet SELV anfoert som kreditor — maalt paa Akacietorvet staar der
+     * `AKACIETORVET ApS` paa begge, mens de faktiske laangivere (Ringkjoebing
+     * Landbobank, Draupnir, Omega) kun findes i `UnderpantrettighedSamling`.
+     * Feltet er offentligt efter tinglysningslovens § 1 a, stk. 1.
+     *
+     * ⚠️ Svarets `meta.disclaimer` SKAL vises sammen med beloebet. Summen er
+     * hvad laangiveren staar ANFOERT for i registret; en panthaver kan
+     * optraede paa vegne af andre kreditorer, saa det er ikke noedvendigvis
+     * egen finansiering. Uden forbeholdet laeses tallet som en paastand om
+     * deres balance.
+     *
+     * @return array{
+     *   lender_name: ?string, cvr: string, documents: int, properties: int,
+     *   total_kr: int, rows: array<int, array<string, mixed>>, truncated: bool,
+     *   meta?: array<string, string>
+     * }|null
+     */
+    public function fetchLenderExposure(string $cvr): ?array
+    {
+        // 🪤 `get()` returnerer `json('data')`, saa forbeholdet i `meta` ville
+        // gaa tabt. Det maa ikke kunne ske ved et uheld — derfor hentes hele
+        // svaret og `meta` foldes ind i det returnerede array.
+        $response = $this->getEnvelope("/v1/lender-exposure/{$cvr}");
+
+        if ($response === null || isset($response['error'])) {
+            return $response;
+        }
+
+        return ($response['data'] ?? []) + ['meta' => $response['meta'] ?? []];
+    }
+
     public function getMapLayers(): array
     {
         return $this->get('/v1/map/layers') ?? [];
@@ -1071,6 +1106,33 @@ class RegistryApi
                 ->get($endpoint, $query)
                 ->throw()
                 ->json('data');
+        } catch (RequestException $e) {
+            return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
+        }
+    }
+
+    /**
+     * Som `get()`, men returnerer HELE svaret — ikke kun `data`.
+     *
+     * Findes fordi nogle endpoints baerer noget i `meta` der ikke maa falde paa
+     * gulvet. Konkret: laangiver-eksponeringens forbehold om at beloebet er
+     * hvad panthaveren staar ANFOERT for, ikke noedvendigvis egen finansiering.
+     * Med `get()` ville `meta` vaere kasseret uden at nogen bemaerkede det.
+     *
+     * Samme fejlhaandtering som `get()` — bevidst, ikke kopieret ved et uheld:
+     * en ConnectionException er en Exception, ikke en HttpClientException, og
+     * gik derfor lige igennem helperne og ramte 15 kaldsteder som uhaandteret
+     * exception (Flare 9097433). Den fejl skal ikke genindfoeres her.
+     */
+    protected function getEnvelope(string $endpoint, array $query = []): ?array
+    {
+        try {
+            return $this->client()
+                ->get($endpoint, $query)
+                ->throw()
+                ->json();
         } catch (RequestException $e) {
             return $this->errorFrom($e);
         } catch (ConnectionException $e) {
