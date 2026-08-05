@@ -138,3 +138,20 @@ it('🚨 REVIEW-FUND: mode styrer heller ikke AUTOCOMPLETE', function () {
     expect($forslag('person'))->toBe($forslag(''))
         ->and($forslag('company'))->toBe($forslag(''));
 });
+
+it('🚨 REVIEW-FUND: ?q= med CPR og MELLEMRUM blokeres ogsaa', function () {
+    // 🚨 Search:127 bar en FEMTE kopi af CPR-regexen, og den normaliserede
+    // ikke mellemrum — saa `?q=123456 7890` slap forbi og blev sat som query.
+    // Alle fem kopier er nu samlet i SearchDetector::isCpr().
+    foreach (['1234567890', '123456-7890', '123456 7890'] as $q) {
+        Livewire::withQueryParams(['q' => $q])
+            ->test(Search::class)
+            ->assertRedirect('/');
+    }
+
+    // Og et lovligt CVR maa stadig saettes.
+    Livewire::withQueryParams(['q' => '35050027'])
+        ->test(Search::class)
+        ->assertNoRedirect()
+        ->assertSet('query', '35050027');
+});

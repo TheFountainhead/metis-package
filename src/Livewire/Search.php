@@ -123,8 +123,12 @@ class Search extends Component
         }
 
         // Handle ?q= on page load — guard against CPR in URL
+        //
+        // 🚨 REVIEW-FUND 5/8: her stod en FEMTE kopi af CPR-regexen, og den
+        // normaliserede ikke mellemrum — saa `?q=123456 7890` slap forbi.
+        // Delegerer nu til SearchDetector, hvor normaliseringen bor.
         if ($q = request()->query('q')) {
-            if (preg_match('/^\d{6}-?\d{4}$/', trim($q))) {
+            if ((new SearchDetector)->isCpr($q)) {
                 $this->redirect('/');
 
                 return;

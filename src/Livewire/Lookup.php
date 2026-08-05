@@ -75,7 +75,7 @@ class Lookup extends Component
         //      CPR-siden selv, hvor det foer faldt lige igennem til
         //      MetisLookup::create(). Flare censurerer i sit UI; vores egen
         //      tabel gjorde ikke.
-        $erCpr = (new SearchDetector)->detect(preg_replace('/\s+/', '', $query)) === 'cpr';
+        $erCpr = (new SearchDetector)->isCpr($query);
 
         if ($erCpr && strtolower($type) !== 'cpr') {
             $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => $query]), navigate: true);
