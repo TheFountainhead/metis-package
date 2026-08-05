@@ -241,32 +241,32 @@ class Search extends Component
             return;
         }
 
-        // Type-first mode: bypass SearchDetector
-        if ($this->searchMode !== '') {
-            $type = match ($this->searchMode) {
-                'person' => 'name',
-                'company' => 'company_name',
-                'address' => 'address',
-                default => 'name',
-            };
-            // Upgrade til 'cvr' når company-mode-input er 8 cifre — så inline-render
-            // pathen (linje 261) fyrer og navigerer til CVR-detail-siden i stedet for
-            // at vise tomt company_name-resultat-liste.
-            if ($this->searchMode === 'company' && preg_match('/^\d{8}$/', $query)) {
-                $type = 'cvr';
-            }
-
-            // Samme opgradering for person-mode: uden den mapper 'person' hårdt til
-            // 'name', CPR-tjekket nedenfor nås aldrig, og et CPR-nummer bliver søgt
-            // som et PERSONNAVN — brugeren får "Ingen resultater", altså en påstand
-            // om at personen ikke findes, hvor sandheden er at vi aldrig søgte.
-            if ($this->searchMode === 'person' && preg_match('/^\d{6}-?\d{4}$/', $query)) {
-                $type = 'cpr';
-            }
-        } else {
-            $detector = new SearchDetector;
-            $type = $detector->detect($query);
-        }
+        // 🚨 SearchDetector bestemmer ALTID typen — ogsaa naar en mode er valgt.
+        //
+        // Foer bypassede mode-valget detektoren og mappede haardt:
+        //   person -> 'name', company -> 'company_name', address -> 'address'
+        //
+        // Det har kostet TRE prod-fejl paa under to maaneder, hver gang fordi
+        // brugerens input ikke passede til den valgte mode:
+        //   1. CVR i company-mode  -> soegt som firmanavn   (lap tilfoejet)
+        //   2. CPR i person-mode   -> soegt som personnavn  (lap tilfoejet)
+        //   3. CPR paa /lookup/cvr/ -> 8 sektioner, alle 422 (metis #145)
+        //
+        // De to foerste blev lappet med praecis de `if`-saetninger der stod
+        // her. Kommentaren ved lap 2 sagde "Samme opgradering for person-mode"
+        // — altsaa skrevet med bevidsthed om at det var anden gang.
+        //
+        // 🔑 Og loesningen fandtes ALLEREDE: SearchDetector genkender CPR, CVR,
+        // adresse, firmanavn og personnavn ud fra inputtets FORM. Den var bare
+        // gjort til fallback for den forkerte vej. Nu er den den eneste vej.
+        //
+        // ⇒ Disambiguering flyttes fra FOER soegningen til EFTER: brugeren
+        // skriver hvad de har, og typen fremgaar af resultatet. Det er
+        // Resights' model (Fund 1) — ét felt, ingen modes.
+        //
+        // `searchMode` bevares KUN som et hint til autocomplete nedenfor, hvor
+        // et forkert gaet blot giver faerre forslag — ikke et forkert svar.
+        $type = (new SearchDetector)->detect($query);
 
         if ($type === 'cpr') {
             $this->cprBlocked = true;
