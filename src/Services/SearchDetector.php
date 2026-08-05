@@ -19,11 +19,29 @@ class SearchDetector
      */
     private const COMPANY_WORD_PATTERN = '/\b(Holding|Invest|Fond|Fonden|Forening|Fund|FMBA|SMBA|SE|SCE)\b/i';
 
+    /**
+     * Er inputtet et CPR-nummer?
+     *
+     * 🚨 SAMLET HER 5/8. Regexen fandtes i FEM kopier: her, Search:127,
+     * Search:263 (fjernet), Lookup (fjernet) og en fjerde jeg selv tilfoejede
+     * foer jeg opdagede de andre. Hver kopi normaliserede forskelligt, saa
+     * `123456 7890` slap forbi nogle af dem.
+     *
+     * Normaliseringen hoerer i detektoren, ikke hos hver kalder — ellers
+     * gentager naeste kalder fejlen.
+     */
+    public function isCpr(string $input): bool
+    {
+        return preg_match('/^\d{6}-?\d{4}$/', preg_replace('/\s+/', '', $input)) === 1;
+    }
+
     public function detect(string $input): string
     {
         $input = trim($input);
 
-        if (preg_match('/^\d{6}-?\d{4}$/', $input)) {
+        // Mellemrums-formen (copy-paste fra Word/PDF, iOS-autokorrektur)
+        // genkendes ogsaa — se isCpr().
+        if ($this->isCpr($input)) {
             return 'cpr';
         }
 

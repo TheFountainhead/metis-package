@@ -27,6 +27,11 @@ it('routes non-CVR query to searchByName when searchMode=company', function () {
             'data' => ['companies' => [['cvr' => '12345678', 'name' => 'Mimo Holding ApS']]],
         ], 200),
         '*/v1/cvr/company/*' => Http::response(['data' => []], 404), // should NOT be hit for non-CVR
+        // 🚨 5/8: mode-bypasset i performSearch() er fjernet, saa et NAVN
+        // rammer nu BEGGE endpoints — ogsaa i company-mode. Det er hele
+        // pointen: foer spurgte vi aldrig person-roles og paastod derfor at
+        // personen ingen roller havde, hvor vi bare aldrig havde spurgt.
+        '*/v1/cvr/person-roles' => Http::response(['data' => []], 200),
     ]);
 
     Livewire::test(Search::class)

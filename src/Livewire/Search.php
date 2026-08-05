@@ -123,8 +123,12 @@ class Search extends Component
         }
 
         // Handle ?q= on page load — guard against CPR in URL
+        //
+        // 🚨 REVIEW-FUND 5/8: her stod en FEMTE kopi af CPR-regexen, og den
+        // normaliserede ikke mellemrum — saa `?q=123456 7890` slap forbi.
+        // Delegerer nu til SearchDetector, hvor normaliseringen bor.
         if ($q = request()->query('q')) {
-            if (preg_match('/^\d{6}-?\d{4}$/', trim($q))) {
+            if ((new SearchDetector)->isCpr($q)) {
                 $this->redirect('/');
 
                 return;
@@ -153,30 +157,19 @@ class Search extends Component
             return;
         }
 
-        // Type-first mode: locked autocomplete behaviour
-        if ($this->searchMode === 'address') {
-            $this->suggestionType = 'address';
-            $this->suggestions = rescue(fn () => app(RegistryApi::class)->addressAutocomplete($q, 5), []) ?? [];
-            return;
-        }
-
-        if ($this->searchMode === 'company' && strlen($q) >= 4) {
-            $results = rescue(fn () => app(RegistryApi::class)->searchByName($q), []) ?? [];
-            if (! empty($results)) {
-                $this->suggestionType = 'company';
-                $this->suggestions = collect($results)->take(5)->map(fn ($c) => [
-                    'tekst' => ($c['name'] ?? '').' · CVR '.($c['cvr'] ?? ''),
-                    'cvr' => $c['cvr'] ?? '',
-                    'name' => $c['name'] ?? '',
-                ])->all();
-            }
-            return;
-        }
-
-        if ($this->searchMode === 'person') {
-            // No person-autocomplete API. User types full name + presses Enter.
-            return;
-        }
+        // 🚨 REVIEW-FUND 5/8: her laa den TREDJE mode-bypass. #146 og #147
+        // fjernede to; denne styrede stadig autocomplete.
+        //
+        // Docblocken paastod at searchMode "bevares KUN som et hint til
+        // autocomplete, hvor et forkert gaet blot giver faerre forslag — ikke
+        // et forkert svar". Maalt var det ikke sandt for person-mode:
+        // grenen returnerede med suggestions = [] UANSET input. En adresse i
+        // person-mode gav NUL forslag, ikke faerre. Og company-mode sprang
+        // adresse-grenen helt over.
+        //
+        // Detektoren nedenfor haandterer alle typer korrekt, saa mode-grenene
+        // var en dublet der kun kunne goere det vaerre. searchMode paavirker
+        // nu udelukkende placeholder-teksten i bladen.
 
         // Free-text mode (no locked type) — use detector
         $detector = new SearchDetector;
@@ -264,8 +257,10 @@ class Search extends Component
         // skriver hvad de har, og typen fremgaar af resultatet. Det er
         // Resights' model (Fund 1) — ét felt, ingen modes.
         //
-        // `searchMode` bevares KUN som et hint til autocomplete nedenfor, hvor
-        // et forkert gaet blot giver faerre forslag — ikke et forkert svar.
+        // `searchMode` paavirker efter 5/8 KUN placeholder-teksten i bladen.
+        // Den styrede oprindeligt baade type-valget her, resultat-hentningen i
+        // performSearch() og autocomplete i updatedQuery() — tre bypass, hver
+        // fundet i sit eget review. Alle tre er fjernet.
         $type = (new SearchDetector)->detect($query);
 
         if ($type === 'cpr') {
@@ -564,30 +559,30 @@ class Search extends Component
     {
         $api = app(RegistryApi::class);
 
-        // Type-first lock: when user picked a mode, only search that type.
-        // Eliminates 'name'-fallback that returns BOTH persons + companies.
-        if ($this->searchMode === 'person') {
-            $result = ['persons' => $api->searchPersonByName($query)];
-        } elseif ($this->searchMode === 'company') {
-            // 8-cifret CVR → direkte lookup via fetchCompany. Ellers navne-søgning.
-            // Uden detection routes 'Selskab + 28963610' til searchByName(), der kun
-            // matcher firmanavn, så ingen-resultater for valid CVR-input.
-            if (preg_match('/^\d{8}$/', trim($query))) {
-                $result = $api->fetchCompany($query);
-            } else {
-                $result = ['companies' => $api->searchByName($query)];
-            }
-        } elseif ($this->searchMode === 'address') {
-            $result = $api->fetchPropertyByAddress($query);
-        } else {
-            $result = match ($type) {
-                'cvr' => $api->fetchCompany($query),
-                'company_name' => ['companies' => $api->searchByName($query)],
-                'name' => ['persons' => $api->searchPersonByName($query), 'companies' => $api->searchByName($query)],
-                'address' => $api->fetchPropertyByAddress($query),
-                default => null,
-            };
-        }
+        // 🚨 REVIEW-FUND 5/8: her laa den ANDEN mode-bypass. #146 fjernede kun
+        // den i search(); denne overskrev stadig det beregnede $type og gjorde
+        // PR'ens egen paastand ("SearchDetector bestemmer ALTID typen") falsk.
+        //
+        // Maalt med Http::fake og optagne udgaaende kald:
+        //   'Lars Larsen' i company-mode -> KUN search-by-name
+        //   'Lars Larsen' uden mode      -> search-by-name + person-roles
+        //
+        // Praecis den fejlklasse #146 skulle lukke: en person soegt i
+        // company-mode spoerger aldrig person-roles, saa brugeren faar at vide
+        // at personen ingen roller har — hvor sandheden er at vi aldrig spurgte.
+        //
+        // 🪤 Adresse-tilfaeldet konvergerede tilfaeldigvis (begge veje gav
+        // 'address'), saa bypasset var PARTIELT og dermed svaerere at faa oeje
+        // paa. Og #146's egen test sammenlignede kun resultType og error —
+        // begge null/false i begge koersler — saa den bestod mens fejlen var
+        // live. Testene her asserter derfor paa hvilke ENDPOINTS der rammes.
+        $result = match ($type) {
+            'cvr' => $api->fetchCompany($query),
+            'company_name' => ['companies' => $api->searchByName($query)],
+            'name' => ['persons' => $api->searchPersonByName($query), 'companies' => $api->searchByName($query)],
+            'address' => $api->fetchPropertyByAddress($query),
+            default => null,
+        };
 
         if ($result === null || isset($result['error'])) {
             $this->error = true;

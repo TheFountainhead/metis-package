@@ -56,9 +56,28 @@ class Lookup extends Component
         $this->type = $type;
         $this->query = $query;
 
-        // Redirect FOER historikken skrives: ellers lander CPR'et i
-        // search_term under den forkerte type.
-        if ($type === 'cvr' && (new SearchDetector)->detect(trim($query)) === 'cpr') {
+        // 🚨 REVIEW-FUND 5/8: guarden var utilstraekkelig paa TRE maader.
+        // Maalt gennem rigtige HTTP-requests:
+        //
+        //   /lookup/person/123456-7890  -> CPR GEMT (search_type=person)  🚨
+        //   /lookup/address/123456-7890 -> CPR GEMT                       🚨
+        //   /lookup/name/123456-7890    -> CPR GEMT                       🚨
+        //   /lookup/CVR/123456-7890     -> CPR GEMT (case-sensitiv guard) 🚨
+        //   /lookup/cvr/123456 7890     -> redirect, men CPR gemt paa
+        //                                  CPR-SIDEN bagefter             🚨
+        //
+        // Kun `cvr`-doeren var lukket, og kun i smaa bogstaver. `{type}` har
+        // ingen rute-begraensning, saa enhver vaerdi naar mount().
+        //
+        // Rettelsen har to dele:
+        //   1. CPR-tjekket gaelder ALLE typer, case-insensitivt.
+        //   2. Et CPR skrives ALDRIG til historikken — heller ikke paa
+        //      CPR-siden selv, hvor det foer faldt lige igennem til
+        //      MetisLookup::create(). Flare censurerer i sit UI; vores egen
+        //      tabel gjorde ikke.
+        $erCpr = (new SearchDetector)->isCpr($query);
+
+        if ($erCpr && strtolower($type) !== 'cpr') {
             $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => $query]), navigate: true);
 
             return;
@@ -79,7 +98,11 @@ class Lookup extends Component
             $data['email'] = session('metis_verified_email');
         }
 
-        rescue(fn () => MetisLookup::create($data));
+        // 🚨 Et CPR gemmes ALDRIG. Foer faldt CPR-siden lige igennem hertil,
+        // saa redirecten flyttede bare nummeret fra én raekke til en anden.
+        if (! $erCpr) {
+            rescue(fn () => MetisLookup::create($data));
+        }
     }
 
     public function render()
