@@ -60,3 +60,19 @@ it('enhver query-parameter udloeser noindex, ikke kun de kendte navne', function
         $this->get($url)->assertSee('noindex', false);
     }
 });
+
+it('🚨 robots.txt fra pakken daekker BAADE admin og soegeresultater', function () {
+    // 🚨 Der er TO robots.txt. Denne rute gav kun `Disallow: /admin`, mens
+    // host-appens statiske `public/robots.txt` havde `Disallow: /*?q=`.
+    // nginx serverer statiske filer FOER PHP, saa filen vandt i prod og
+    // ruten vandt i tests — en test af opslags-beskyttelsen saa altsaa den
+    // SVAGESTE af de to.
+    //
+    // 🪤 Forsvandt host-filen i et deploy, ville beskyttelsen gaa lydloest
+    // tabt OG testen stadig vaere groen. Pakken baerer nu selv det fulde
+    // saet.
+    $body = $this->get('/robots.txt')->assertOk()->getContent();
+
+    expect($body)->toContain('Disallow: /admin')
+        ->and($body)->toContain('Disallow: /*?q=');
+});
