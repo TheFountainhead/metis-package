@@ -13,7 +13,6 @@ it('upgrades type=company_name to type=cvr when input is 8-digit (regression)', 
     // path fires (resultType=cvr) + update-url dispatched → returns early before
     // performSearch. Actual CVR-data is fetched by /lookup/cvr/{cvr} sections.
     Livewire::test(Search::class)
-        ->set('searchMode', 'company')
         ->set('query', '28963610')
         ->call('search')
         ->assertSet('resultType', 'cvr')
@@ -35,7 +34,6 @@ it('routes non-CVR query to searchByName when searchMode=company', function () {
     ]);
 
     Livewire::test(Search::class)
-        ->set('searchMode', 'company')
         ->set('query', 'Mimo')
         ->call('search')
         ->assertSet('error', false);

@@ -25,7 +25,11 @@ uses(RefreshDatabase::class);
  * firmanavn og personnavn ud fra inputtets FORM. Den var bare gjort til
  * fallback for den forkerte vej.
  *
- * Testene her daekker at hver af de tre fejl nu er UMULIG — uanset mode.
+ * 🎯 6/8: mode-konceptet er FJERNET helt — ét soegefelt, ingen type-valg
+ * (Resights-modellen). Testene her daekker derfor ikke laengere "uanset
+ * mode", men at detektoren traeffer det rigtige valg paa inputtet alene.
+ * De titler der naevner "company-mode"/"person-mode" er bevaret, fordi de
+ * navngiver de PROD-FEJL testene stammer fra.
  */
 beforeEach(function () {
     Http::preventStrayRequests();
@@ -40,7 +44,6 @@ it('🚨 FEJL 1: et CVR i company-mode soeges som CVR, ikke som firmanavn', func
     ]]])]);
 
     Livewire::test(Search::class)
-        ->set('searchMode', 'company')
         ->set('query', '35050027')
         ->call('search')
         ->assertSet('resultType', 'cvr');
@@ -54,7 +57,6 @@ it('🚨 FEJL 2: et CPR i person-mode genkendes som CPR, ikke som navn', functio
     // CPR er blokeret i UI'et, saa det korrekte udfald er cprBlocked — ikke
     // en navnesoegning.
     Livewire::test(Search::class)
-        ->set('searchMode', 'person')
         ->set('query', '1234567890')
         ->call('search')
         ->assertSet('cprBlocked', true);
@@ -64,7 +66,6 @@ it('🚨 FEJL 2b: samme gaelder CPR MED bindestreg', function () {
     // Danske CPR skrives konventionelt DDMMYY-XXXX. SearchDetector accepterer
     // begge former; en snaever regex ville misse den mest almindelige.
     Livewire::test(Search::class)
-        ->set('searchMode', 'person')
         ->set('query', '123456-7890')
         ->call('search')
         ->assertSet('cprBlocked', true);
@@ -75,68 +76,59 @@ it('en adresse i person-mode genkendes som adresse', function () {
     Http::fake(['*' => Http::response(['data' => []])]);
 
     Livewire::test(Search::class)
-        ->set('searchMode', 'person')
         ->set('query', 'Bredgade 40')
         ->call('search')
         ->assertNotSet('resultType', 'name');
 });
 
-it('🚨 REVIEW-FUND: mode aendrer ikke HVILKE endpoints der rammes', function () {
-    // 🚨 Den foerste udgave af denne test sammenlignede kun resultType og
-    // error — begge null/false i begge koersler. Den bestod derfor mens en
-    // ANDEN mode-bypass i performSearch() stadig var live og kastede det
-    // beregnede $type vaek.
+it('🚨 en person-soegning spoerger BAADE navn og roller', function () {
+    // 🚨 Denne test sammenlignede tidligere to modes med hinanden:
+    //   $ramt('company') === $ramt('')
+    // Da mode-konceptet blev fjernet 6/8 blev den sammenligningen af noget
+    // med sig selv — en tautologi der ikke kan fejle. Den asserter nu paa
+    // det den hele tiden beskyttede: at BEGGE endpoints faktisk rammes.
     //
-    // Maalt med optagne udgaaende kald FOER rettelsen:
+    // Maalt med optagne udgaaende kald FOER mode-bypasset blev fjernet:
     //   'Lars Larsen' i company-mode -> KUN search-by-name
     //   'Lars Larsen' uden mode      -> search-by-name + person-roles
     //
     // En person soegt i company-mode spurgte altsaa aldrig person-roles.
     // Brugeren fik at vide at personen ingen roller har — hvor sandheden er
-    // at vi aldrig spurgte.
-    //
-    // Testen asserter derfor paa ENDPOINTS, ikke paa to null-skalarer.
-    $ramt = function (string $mode): array {
-        $urls = [];
-        Http::fake(function ($request) use (&$urls) {
-            $urls[] = parse_url($request->url(), PHP_URL_PATH);
+    // at vi aldrig spurgte. Det er en falsk autoritativ benaegtelse.
+    $urls = [];
+    Http::fake(function ($request) use (&$urls) {
+        $urls[] = parse_url($request->url(), PHP_URL_PATH);
 
-            return Http::response(['data' => []]);
-        });
+        return Http::response(['data' => []]);
+    });
 
-        Livewire::test(Search::class)
-            ->set('searchMode', $mode)
-            ->set('query', 'Lars Larsen')
-            ->call('search');
+    Livewire::test(Search::class)
+        ->set('query', 'Lars Larsen')
+        ->call('search');
 
-        sort($urls);
+    $samlet = implode(' ', $urls);
 
-        return array_unique($urls);
-    };
-
-    expect($ramt('company'))->toBe($ramt(''))
-        ->and($ramt('person'))->toBe($ramt(''));
+    expect($samlet)->toContain('search-by-name')
+        ->and($samlet)->toContain('person-roles');
 });
 
-it('🚨 REVIEW-FUND: mode styrer heller ikke AUTOCOMPLETE', function () {
+it('🚨 autocomplete paa en adresse giver forslag', function () {
     // 🚨 Den TREDJE bypass. updatedQuery() forgrenede paa searchMode og
     // returnerede tidligt. Docblocken paastod at mode "blot giver faerre
     // forslag" — men person-grenen returnerede med suggestions = [] UANSET
     // input. En adresse i person-mode gav NUL forslag, ikke faerre.
+    //
+    // Samme omskrivning som ovenfor: en mode-mod-mode-sammenligning kan ikke
+    // fejle naar der kun findes én vej. Vi asserter paa antallet direkte.
     Http::fake(['*' => Http::response(['data' => ['adresser' => [
         ['tekst' => 'Bredgade 40, 1260 København'],
     ]]])]);
 
-    $forslag = function (string $mode): int {
-        return count(Livewire::test(Search::class)
-            ->set('searchMode', $mode)
-            ->set('query', 'Bredgade 40')
-            ->get('suggestions'));
-    };
+    $forslag = Livewire::test(Search::class)
+        ->set('query', 'Bredgade 40')
+        ->get('suggestions');
 
-    // Samme input skal give samme antal forslag uanset mode.
-    expect($forslag('person'))->toBe($forslag(''))
-        ->and($forslag('company'))->toBe($forslag(''));
+    expect($forslag)->not->toBeEmpty();
 });
 
 it('🚨 REVIEW-FUND: ?q= med CPR og MELLEMRUM blokeres ogsaa', function () {

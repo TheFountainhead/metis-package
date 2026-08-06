@@ -53,7 +53,6 @@ function searchForPerson(array $fakes): \Livewire\Features\SupportTesting\Testab
     ]));
 
     return Livewire::test(Search::class)
-        ->set('searchMode', 'person')
         ->set('query', 'Test Person')
         ->call('search');
 }
@@ -194,11 +193,16 @@ it('clears the portfolio when the user cross-references to another entity', func
         ->and($test->get('personProperties'))->toBeNull();
 });
 
-it('clears the portfolio when the user switches search type', function () {
-    // Sjette nulstillings-sti. setSearchMode() rydder query og result, men
-    // lod feltparret staa: skiftede brugeren fra Person til Selskab efter et
-    // portefoelje-opslag, blev den forrige persons ejendomsliste og dens
-    // besked staaende paa en ellers tom skaerm.
+it('clears the portfolio when the user starts a new search', function () {
+    // Sjette nulstillings-sti. Den udloestes tidligere af setSearchMode() —
+    // et skift fra Person til Selskab — men rydningen lod feltparret staa,
+    // saa den forrige persons ejendomsliste og dens besked blev staaende paa
+    // en ellers tom skaerm.
+    //
+    // 🪤 6/8: mode-konceptet er fjernet (ét soegefelt), saa den UDLOESER
+    // findes ikke laengere. STIEN goer: clearSearch() er nu den vej brugeren
+    // forlader et resultat, og den skal rydde det samme. Testen foelger
+    // stien til dens nye indgang frem for at blive slettet med knappen.
     //
     // Seks stier, alle seks fundet ved tilfaelde eller fejlrapport frem for
     // systematisk laesning — se klassekommentaren og #128.
@@ -208,7 +212,7 @@ it('clears the portfolio when the user switches search type', function () {
 
     expect($test->get('personPropertiesStatus'))->toBe('not_found');
 
-    $test->call('setSearchMode', 'company');
+    $test->call('clearSearch');
 
     expect($test->get('personPropertiesStatus'))->toBe('pending')
         ->and($test->get('personProperties'))->toBeNull();

@@ -19,7 +19,6 @@ it('shows address suggestions instead of empty sections when postnr is missing',
     ]);
 
     Livewire::test(Search::class)
-        ->set('searchMode', 'address')
         ->set('query', 'travervænget 3')
         ->call('search')
         ->assertSet('error', true)
@@ -33,7 +32,6 @@ it('shows address suggestions instead of empty sections when postnr is missing',
 
 it('renders address sections when postnr is present', function () {
     Livewire::test(Search::class)
-        ->set('searchMode', 'address')
         ->set('query', 'Travervænget 3, 2920')
         ->call('search')
         ->assertSet('resultType', 'address')
