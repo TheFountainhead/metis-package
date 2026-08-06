@@ -12,14 +12,6 @@
                 ['route' => 'metis.alerts', 'label' => __('Mine alerts'), 'icon' => 'bell', 'requires_token' => true],
             ],
         ],
-        [
-            'label' => __('Søg efter type'),
-            'items' => [
-                ['route' => 'metis.home', 'label' => __('Person'), 'icon' => 'user', 'query' => ['mode' => 'person']],
-                ['route' => 'metis.home', 'label' => __('Selskab'), 'icon' => 'building', 'query' => ['mode' => 'company']],
-                ['route' => 'metis.home', 'label' => __('Ejendom'), 'icon' => 'map-pin', 'query' => ['mode' => 'address']],
-            ],
-        ],
     ];
 @endphp
 
@@ -51,9 +43,7 @@
                 <ul class="space-y-0.5">
                     @foreach($section['items'] as $item)
                         @php
-                            $isCurrent = $currentRoute === $item['route']
-                                && empty($item['query'])
-                                && ! ($section['label'] === __('Søg efter type'));
+                            $isCurrent = $currentRoute === $item['route'];
                             $needsToken = $item['requires_token'] ?? false;
                             $isDisabled = $needsToken && ! $hasUserToken;
                             $href = Route::has($item['route'])

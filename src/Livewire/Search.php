@@ -43,13 +43,6 @@ class Search extends Component
     public array $suggestions = [];
 
     /**
-     * Type-first search mode. When set, search is locked to that type
-     * (no SearchDetector ambiguity). Empty = show type-selection screen.
-     * Values: '', 'person', 'company', 'address'.
-     */
-    public string $searchMode = '';
-
-    /**
      * Aggregated property portfolio for a person, joined across all owning
      * companies. Loaded on demand via loadPersonProperties() so the initial
      * person search stays fast.
@@ -78,17 +71,6 @@ class Search extends Component
     /** Loft på "Prøv igen", spejler $retryCount-mønstret for hovedsøgningen. */
     public int $personPropertiesRetries = 0;
 
-    public function setSearchMode(string $mode): void
-    {
-        if (! in_array($mode, ['', 'person', 'company', 'address'], true)) {
-            return;
-        }
-        $this->searchMode = $mode;
-        $this->query = '';
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'suggestions', 'cprBlocked', 'rateLimited']);
-        $this->resetPersonProperties();
-    }
-
     public function mount(): void
     {
         $allChips = [
@@ -114,13 +96,9 @@ class Search extends Component
 
         $this->chips = collect($allChips)->random(4)->values()->all();
 
-        // Handle ?mode= on page load (type-first navigation from sidebar).
-        // Accept legacy ?hint= for back-compat with older sidebar URLs that
-        // may still live in browser history / bookmarks.
-        $mode = request()->query('mode') ?: request()->query('hint');
-        if (in_array($mode, ['person', 'company', 'address'], true)) {
-            $this->searchMode = $mode;
-        }
+        // 🪤 `?mode=` og `?hint=` accepteres stadig i URL'er fra gamle bogmaerker
+        // og sidebar-links, men IGNORERES. De laaste tidligere soegningen til
+        // én type; det koncept findes ikke laengere. Se search.blade.php.
 
         // Handle ?q= on page load — guard against CPR in URL
         //
