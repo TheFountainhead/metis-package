@@ -5,6 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Metis</title>
     <meta name="description" content="Ejendomme, virksomheder og personer.">
+
+    {{-- 🚨 Resultatsider maa ikke indekseres.
+
+         Metis viser navngivne personers roller, selskabers ejerstruktur og
+         laangiveres kreditrisiko med adresser og beloeb. Kilderne er
+         offentlige, men et Google-indeks er en ny udgivelse: det goer et
+         opslag man skal foretage til noget der dukker op af sig selv.
+
+         🪤 MAALT PAA PROD 6/8: `robots.txt` havde `Disallow: /*?q=`, saa
+         soegeresultater var daekket. Men laangiver-siden bruger `?cvr=` og
+         var daekket af HVERKEN robots.txt ELLER et meta-tag.
+
+         🪤 Host-appen har et `noindex` i sin egen layout.blade.php — men
+         `grep` finder NUL konsumenter af den fil. Det er doed kode. Den
+         layout der faktisk serverer prod er DENNE, og den manglede tagget.
+         Beskyttelsen laa altsaa ét sted hvor den ikke virkede.
+
+         Enhver query-parameter betyder "der vises et opslag" — derfor
+         `request()->query()` frem for en liste af navne der skal holdes
+         synkron med hver ny side. --}}
+    @if(! empty(request()->query()))
+        <meta name="robots" content="noindex, nofollow">
+    @endif
     <link rel="icon" href="/favicon.ico" sizes="32x32">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
