@@ -60,3 +60,26 @@ it('en soegning virker uden at der er valgt en type', function () {
         ->call('search')
         ->assertSet('resultType', 'cvr');
 });
+
+it('🚨 REVIEW-FUND: eksempel-chips renderes OG udloeser en soegning', function () {
+    // Chips laa foer paa den type-laaste skaerm, som naesten ingen naaede.
+    // Nu er de forsidens primaere indgang for en foerstegangsbruger, saa
+    // baade renderingen og klik-stien skal daekkes — de var udaekkede da de
+    // var begravet.
+    //
+    // 🪤 `selectSuggestion()` forgrener paa $suggestionType === 'company' og
+    // slaar chip-teksten op i $suggestions. En chip er IKKE et suggestion,
+    // saa opslaget rammer ingenting; den maa falde igennem til at saette
+    // query og soege. Det er den gren testen sikrer.
+    Http::fake(['*/v1/cvr/company/*' => Http::response(['data' => ['company' => [
+        'name' => 'Test A/S', 'cvr' => '56811913',
+    ]]])]);
+
+    $test = Livewire::test(Search::class);
+
+    expect($test->get('chips'))->toHaveCount(4);
+
+    $test->call('selectSuggestion', '56811913')
+        ->assertSet('query', '56811913')
+        ->assertSet('resultType', 'cvr');
+});
