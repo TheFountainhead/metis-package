@@ -23,7 +23,28 @@ Route::get('/udforsk', PropertyExplore::class)->name('metis.property-explore')->
 Route::get('/laangiver', LenderExposure::class)->name('metis.lender-exposure')->middleware('throttle:20,1');
 Route::get('/alerts', AlertsInbox::class)->name('metis.alerts')->middleware('throttle:60,1');
 Route::get('/alerts/{id}', AlertDetail::class)->name('metis.alert.detail')->middleware('throttle:60,1')->whereNumber('id');
-Route::get('/robots.txt', fn () => response("User-agent: *\nDisallow: /admin\n", 200, ['Content-Type' => 'text/plain']));
+/*
+ * 🚨 DER ER TO robots.txt, og de var IKKE enige.
+ *
+ * Denne rute gav kun `Disallow: /admin`. Host-appen har desuden en STATISK
+ * `public/robots.txt` med `Disallow: /*?q=` — og nginx serverer statiske
+ * filer FOER PHP, saa filen vinder i prod mens denne rute vinder i tests.
+ *
+ * 🪤 Konsekvensen: en test af opslags-beskyttelsen saa den SVAGESTE af de to.
+ * Forsvandt `public/robots.txt` i et deploy, ville `?q=`-beskyttelsen gaa
+ * lydloest tabt og testen stadig vaere groen. Samme fejlklasse som noindex,
+ * der laa i en layout med nul konsumenter (#149): beskyttelsen findes to
+ * steder, den svageste vinder dér hvor vi kigger.
+ *
+ * Ruten baerer nu det fulde saet, saa pakken er sikker uden host-filen.
+ * `?cvr=` og oevrige opslags-parametre daekkes af meta-robots i
+ * standalone-layoutet — robots.txt kan ikke moenstermatche dem alle.
+ */
+Route::get('/robots.txt', fn () => response(
+    "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /*?q=\n",
+    200,
+    ['Content-Type' => 'text/plain']
+));
 
 // Admin routes
 Route::prefix('admin')->group(function () {
