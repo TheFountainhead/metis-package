@@ -965,7 +965,7 @@ it('retries exactly once on ConnectionException and succeeds on the second attem
         ->and($result['companies'][0]['cvr'])->toBe('1');
 });
 
-it('does not retry on a received 5xx — a response is an answer, not transport noise', function () {
+it('does not retry on a received 500 — a response is an answer, not transport noise', function () {
     $calls = 0;
     Http::fake(function () use (&$calls) {
         $calls++;
@@ -977,6 +977,71 @@ it('does not retry on a received 5xx — a response is an answer, not transport 
 
     expect($calls)->toBe(1)
         ->and($result['error'])->toBe('upstream_error');
+});
+
+// 503 er undtagelsen fra reglen ovenfor: registry-api quick-deployer ved
+// merge, og deploy-scriptet svarer 503 (maintenance) mens migrate koerer.
+// Den status er "proev igen om lidt", ikke et svar — se client()-kommentaren.
+
+it('retries on 503 and succeeds once the deploy maintenance window clears', function () {
+    \Illuminate\Support\Sleep::fake();
+
+    $calls = 0;
+    Http::fake(function () use (&$calls) {
+        $calls++;
+
+        return $calls === 1
+            ? Http::response(['message' => 'Service Unavailable'], 503)
+            : Http::response(['data' => ['companies' => [['cvr' => '1']]]]);
+    });
+
+    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+
+    expect($calls)->toBe(2)
+        ->and($result['companies'][0]['cvr'])->toBe('1');
+});
+
+it('gives up on a persistent 503 after three attempts and falls back to the error shape', function () {
+    \Illuminate\Support\Sleep::fake();
+
+    $calls = 0;
+    Http::fake(function () use (&$calls) {
+        $calls++;
+
+        return Http::response(['message' => 'Service Unavailable'], 503);
+    });
+
+    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+
+    expect($calls)->toBe(3)
+        ->and($result['error'])->toBe('upstream_error')
+        ->and($result['status'])->toBe(503);
+});
+
+it('fails fast on later 503s once a maintenance window is observed on the instance', function () {
+    // Foerste kald aeder alle tre forsoeg; naar 503'en har overlevet begge
+    // retries, er vinduet konstateret langt (fx 4-min indeksbygningen 7/8-26)
+    // og EFTERFOELGENDE kald paa samme instans maa ikke betale 7s sleep pr.
+    // kald — de skal straks til deres fallback. Vigtigt for stier med mange
+    // kald i traek (searchPersonByName's per-person property-counts).
+    \Illuminate\Support\Sleep::fake();
+
+    $calls = 0;
+    Http::fake(function () use (&$calls) {
+        $calls++;
+
+        return Http::response(['message' => 'Service Unavailable'], 503);
+    });
+
+    $api = app(RegistryApi::class);
+
+    $api->fetchCompaniesByCpr('0101011234');
+    expect($calls)->toBe(3);
+
+    $second = $api->fetchCompaniesByCpr('0101011234');
+
+    expect($calls)->toBe(4)
+        ->and($second['error'])->toBe('upstream_error');
 });
 
 it('never leaks the curl message (varying ms) into the returned error value', function () {

@@ -25,6 +25,22 @@ class RegistryApi
      */
     protected const STRUCTURE_POOL_CONCURRENCY = 3;
 
+    /**
+     * Sat naar en 503 har overlevet begge retries i client()'s when-callback:
+     * saa er registry-api i et laengere maintenance-vindue (minutter, ikke
+     * sekunder), og yderligere retries koeber kun ventetid. Efterfoelgende
+     * 503'er paa SAMME instans fejler straks — vigtigt for de stier der laver
+     * mange kald i traek (searchPersonByName's per-person property-counts),
+     * som ellers ville betale op til 7s sleep PR. DELKALD gennem hele vinduet.
+     *
+     * Instans-state, ikke cache: hver Livewire-lazy-section er sit eget
+     * HTTP-request med sin egen service-instans, saa flaget doer med
+     * requestet. Under FPM er det praecis den oenskede levetid; koerer appen
+     * en dag under Octane, maa flaget IKKE flyttes til en singleton uden
+     * reset-mekanisme.
+     */
+    protected bool $maintenanceObserved = false;
+
     protected function client()
     {
         // F1 pilot — if user has set personal token in session (via /alerts
@@ -39,7 +55,8 @@ class RegistryApi
         // Mønstret her er propageret fra m2softs RegistryApiService (bevist
         // mod SAMME backend): 60s budget, 10s connect, én retry KUN på
         // transport-fejl (ConnectionException) — aldrig på modtaget 4xx/5xx,
-        // som er svar, ikke transportstøj. NB retry($times) er TOTALE forsøg,
+        // som er svar, ikke transportstøj (eneste undtagelse: 503, se næste
+        // blok). NB retry($times) er TOTALE forsøg,
         // ikke antal retries — retry(1) er en no-op (empirisk verificeret;
         // m2softs retry(1, ...) har samme fælde). retry(throw: true) er
         // bevidst: throw:false gør IKKE kaldet kaste-frit for
@@ -51,11 +68,44 @@ class RegistryApi
         // (ingen Response at returnere ved exhaustion) — hvilket her er
         // præcis den ønskede asymmetri: status-fejl opfører sig som før,
         // transport-fejl når stadig get()/post()'s catch.
+        // 503-undtagelsen fra "aldrig retry paa modtaget status" (7/8-26):
+        // registry-api quick-deployer ved merge, og deploy-scriptet svarer 503
+        // (maintenance) mens migrate koerer — typisk sekunder. Den 503 er ikke
+        // et svar paa SPOERGSMAALET, det er "proev igen om lidt" — 56 Flare-
+        // rescue-rapporter paa 9 dage, hver = en sektion der loej "ingen data"
+        // for brugeren. To retries (2s+5s) rider et normalt deploy af;
+        // overlever 503'en begge, er det et langt vindue (fx indeks-bygning
+        // 7/8: ~4 min) — saa saetter vi maintenanceObserved og alle videre
+        // kald paa instansen fejler straks til de eksisterende fallbacks,
+        // praecis som foer denne aendring. Transport-retryen er UAENDRET
+        // (1 retry, 2s): tael-logikken i callbacken holder de to fejlklasser
+        // adskilt, selv om retry-arrayet nu tillader op til 3 forsoeg.
+        $transportRetries = 0;
+        $maintenanceRetries = 0;
+
         return Http::withToken($token)
             ->acceptJson()
             ->timeout(60)
             ->connectTimeout(10)
-            ->retry(2, 2000, fn (\Exception $e) => $e instanceof ConnectionException, throw: false)
+            ->retry([2000, 5000], 0, function (\Exception $e) use (&$transportRetries, &$maintenanceRetries) {
+                if ($e instanceof ConnectionException) {
+                    return ++$transportRetries <= 1;
+                }
+
+                if ($e instanceof RequestException && $e->response->status() === 503) {
+                    if ($this->maintenanceObserved) {
+                        return false;
+                    }
+
+                    if (++$maintenanceRetries >= 2) {
+                        $this->maintenanceObserved = true;
+                    }
+
+                    return $maintenanceRetries <= 2;
+                }
+
+                return false;
+            }, throw: false)
             ->baseUrl(config('metis.registry_api.url'));
     }
 
