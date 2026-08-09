@@ -3,14 +3,30 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\GatesLookups;
 use TheFountainhead\Metis\Models\MetisLookup;
 use TheFountainhead\Metis\Services\SearchDetector;
 
 class Lookup extends Component
 {
+    use GatesLookups;
+
     public string $type;
 
     public string $query;
+
+    /**
+     * Er dette opslag stoppet af kvote-gaten?
+     *
+     * 🚨 MAALT PAA PROD 9/8: gaten fandtes KUN i `Search::performSearch()`.
+     * `/lookup/{type}/{query}` er en anden doer ind i samme produkt, og den
+     * havde ingen. Verificeret udefra: fem opslag i samme session gav fem
+     * gange HTTP 200 med syv datasektioner der loadede.
+     *
+     * Prod samme dag: 8.259 raekker i `metis_lookups`, 0 brugere, 0 raekker i
+     * kvote-taelleren. Produktet blev udleveret gratis og anonymt.
+     */
+    public bool $gated = false;
 
     /**
      * Et 10-cifret tal paa /lookup/cvr/ er et CPR, ikke et CVR.
@@ -83,6 +99,26 @@ class Lookup extends Component
             return;
         }
 
+        // 🚨 KVOTE-GATEN. Maalt paa prod 9/8: den fandtes KUN i
+        // `Search::performSearch()`, saa et direkte kald til
+        // `/lookup/cvr/12345678` omgik den fuldstaendigt.
+        //
+        // 🪤 EFTER CPR-redirecten, FOER historik-skrivningen. Rammes gaten,
+        // skal opslaget hverken taelles eller logges — ellers ville et blokeret
+        // opslag bruge af brugerens egen kvote, og `metis_lookups` ville
+        // registrere et opslag der aldrig blev vist.
+        //
+        // 🔑 Logikken deles med `Search` via `GatesLookups` frem for at blive
+        // skrevet igen. Kodebasen har allerede betalt for den fejl med FIRE
+        // CPR-detektorer, hvor den fjerde accepterede et format de tre andre
+        // afviste.
+        if ($this->skalGates()) {
+            $this->gated = true;
+            $this->dispatch('show-email-gate');
+
+            return;
+        }
+
         // Save to history — in embedded mode use auth user, in standalone mode use session
         $data = [
             'search_type' => $type,
@@ -102,6 +138,19 @@ class Lookup extends Component
         // saa redirecten flyttede bare nummeret fra én raekke til en anden.
         if (! $erCpr) {
             rescue(fn () => MetisLookup::create($data));
+        }
+
+        // 🚨 TAEL OGSAA CPR-OPSLAG. Logning og kvote er to forskellige
+        // spoergsmaal: nummeret maa ikke gemmes, men opslaget skal koste. Uden
+        // denne linje uden for `if (! $erCpr)` ville netop CPR-ruten — den der
+        // baerer persondata — vaere gratis og ubegraenset.
+        //
+        // 🪤 Samme sessionsnoegler som `Search::logLookup()`, ikke nye. To
+        // taellere ville drive fra hinanden, og gaten laeser kun den ene.
+        session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
+
+        if (! session('metis_lookup_window_start')) {
+            session(['metis_lookup_window_start' => now()->timestamp]);
         }
     }
 

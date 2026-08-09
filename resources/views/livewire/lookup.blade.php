@@ -13,6 +13,20 @@
         </a>
     </div>
 
+    @if($gated)
+        {{-- 🚨 Kvote-gaten ramte. Sektionerne maa IKKE renderes: de er `lazy`,
+             saa hver af dem ville selv hente sine data via en Livewire-POST og
+             udlevere praecis det indhold gaten skal beskytte. Et skjult
+             `<div hidden>` var ikke nok — kaldene ville stadig ske.
+
+             Selve gate-dialogen ligger i standalone-layoutet
+             (`<livewire:metis-email-gate />`) og aabnes af `show-email-gate`,
+             som `mount()` udsender. --}}
+        <div class="max-w-2xl mx-auto text-center py-16">
+            <h2 class="text-lg font-bold text-ink-800 mb-2">{{ __('Du har brugt dine gratis opslag') }}</h2>
+            <p class="text-sm text-ink-600">{{ __('Indtast din mail for at fortsætte.') }}</p>
+        </div>
+    @else
     <livewire:metis-lookup-title :type="$type" :query="$query" lazy />
 
     {{-- Graf-sektionerne (company-/person-structure) renderes UDEN FOR
@@ -64,4 +78,5 @@
             <livewire:metis-address-heritage :query="$query" lazy />
         @endif
     </div>
+    @endif
 </div>
