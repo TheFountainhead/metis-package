@@ -22,12 +22,32 @@
          layout der faktisk serverer prod er DENNE, og den manglede tagget.
          Beskyttelsen laa altsaa ét sted hvor den ikke virkede.
 
-         Enhver query-parameter betyder "der vises et opslag" — derfor
-         `request()->query()` frem for en liste af navne der skal holdes
-         synkron med hver ny side. --}}
-    @if(! empty(request()->query()))
+         🚨 MAALT PAA PROD 9/8 — TREDJE gang samme beskyttelse rammer ved
+         siden af. Betingelsen var `! empty(request()->query())`, altsaa "har
+         URL'en en query-streng?". Men `/lookup/cpr/4006033395` baerer
+         opslaget i STIEN, ikke efter `?`. Betingelsen var falsk, tagget blev
+         udeladt, og CPR-siden var indekserbar. Verificeret ved at tilfoeje
+         `?x=1` til samme URL: da dukkede tagget op.
+
+         Googlebot havde hentet 35 unikke CPR-URL'er, 269 requests, alle 200.
+
+         🔑 DERFOR ER DEFAULTEN VENDT OM. Foer skulle en side kvalificere sig
+         til beskyttelse; nu skal den kvalificere sig til at UNDVAERE den.
+         Enhver ny rute er daekket fra foedslen, og den der vil indeksere en
+         side skal skrive den paa listen bevidst. En glemt rute fejler nu mod
+         beskyttelse i stedet for mod eksponering.
+
+         🪤 Listen er RUTENAVNE, ikke stier. En sti-liste ville skulle holdes
+         synkron med hver URL-aendring; rutenavne foelger med ruten. --}}
+    @php
+        // Kun disse sider er rent indhold uden persondata. Alt andet: noindex.
+        $indekserbar = in_array(request()->route()?->getName(), [
+            'metis.home',
+        ], true) && empty(request()->query());
+    @endphp
+    @unless($indekserbar)
         <meta name="robots" content="noindex, nofollow">
-    @endif
+    @endunless
     <link rel="icon" href="/favicon.ico" sizes="32x32">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">

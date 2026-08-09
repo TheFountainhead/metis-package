@@ -38,6 +38,12 @@ class MetisServiceProvider extends ServiceProvider
         $this->registerCriiptoDriver();
     }
 
+    /**
+     * 🪤 `NoIndex` staar IKKE her, men paa rutegruppen inde i rutefilerne.
+     * `tests/TestCase.php` inkluderer rutefilerne direkte og springer denne
+     * provider over — middleware registreret her ville koere i prod og ikke i
+     * test. Se kommentaren i `routes/web.php`.
+     */
     public static function standaloneRoutes(): void
     {
         $routesPath = __DIR__.'/../routes/web.php';

@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use TheFountainhead\Metis\Http\Controllers\MetisPdfController;
+use TheFountainhead\Metis\Http\Middleware\NoIndex;
 use TheFountainhead\Metis\Livewire\AlertDetail;
 use TheFountainhead\Metis\Livewire\AlertsInbox;
 use TheFountainhead\Metis\Livewire\DebtSearch;
@@ -9,7 +10,14 @@ use TheFountainhead\Metis\Livewire\Index;
 use TheFountainhead\Metis\Livewire\Lookup;
 use TheFountainhead\Metis\Livewire\PropertyExplore;
 
-Route::prefix('metis')->middleware('auth')->group(function () {
+/*
+ * 🪤 Disse ruter er bag `auth` og var aldrig offentligt eksponerede — men de
+ * viser de samme opslag, og `NoIndex` koster intet. Uden den ville en
+ * fremtidig aendring af auth-opsaetningen kunne aabne dem uden at nogen
+ * opdager at beskyttelsen manglede. Samme grund som i `web.php`: default til
+ * beskyttelse, ikke til eksponering.
+ */
+Route::prefix('metis')->middleware(['auth', NoIndex::class])->group(function () {
     Route::get('/', Index::class)->name('metis.index');
     Route::get('/soeg', DebtSearch::class)->name('metis.debt-search');
     Route::get('/udforsk', PropertyExplore::class)->name('metis.property-explore');
