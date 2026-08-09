@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Livewire\Concerns\GatesLookups;
 use TheFountainhead\Metis\Models\MetisLookup;
@@ -152,6 +153,33 @@ class Lookup extends Component
         if (! session('metis_lookup_window_start')) {
             session(['metis_lookup_window_start' => now()->timestamp]);
         }
+    }
+
+    /**
+     * 🚨 REVIEW-FUND 9/8: uden denne lytter var gaten en BLINDGYDE.
+     *
+     * `EmailGate` udsender `email-verified` (EmailGate.php:186), og `Search`
+     * lytter (Search.php:470). `Lookup` gjorde ikke. En bruger paa
+     * `/lookup/cvr/123` ramte gaten, indtastede sin mail, verificerede — og
+     * blev siddende paa "Du har brugt dine gratis opslag" uden vej videre.
+     * De havde gjort praecis hvad vi bad om, og intet skete.
+     *
+     * 🪤 Testen der bestod, saaede `metis_verified_email` i sessionen FOER
+     * requestet og sprang dermed selve overgangen over — den beviste at en
+     * allerede-verificeret bruger slipper ind, ikke at man KAN blive det.
+     */
+    #[On('email-verified')]
+    public function onEmailVerified(string $email): void
+    {
+        session(['metis_verified_email' => $email]);
+
+        // Genindlaes ruten, saa sektionerne mountes paa ny med kvoten aabnet.
+        // Uden redirect ville `$gated = false` alene ikke hjaelpe: sektionerne
+        // er `lazy` og blev aldrig mountet i den gatede render.
+        $this->redirect(
+            route('metis.lookup', ['type' => $this->type, 'query' => $this->query]),
+            navigate: true
+        );
     }
 
     public function render()

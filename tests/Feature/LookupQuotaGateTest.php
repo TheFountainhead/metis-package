@@ -111,3 +111,64 @@ it('🪤 et gatet opslag bruger ikke af kvoten', function () {
 
     expect(session('metis_lookup_count'))->toBe(1);
 });
+
+/**
+ * 🚨 REVIEW-FUND 9/8: gaten sad paa SIDEN, ikke paa DATAENE.
+ *
+ * Hver sektion er en selvstaendig `lazy` Livewire-komponent med sin egen
+ * adresse. At bladen ikke renderer dem stopper kun vejen gennem `Lookup` —
+ * de kan mountes direkte over `/livewire/update`.
+ *
+ * Verificeret foer rettelsen: `Livewire::test('metis-company-info', ...)` med
+ * `metis_lookup_count = 999` returnerede fuld selskabsdata.
+ */
+it('🚨 EXPLOIT LUKKET: sektion kaldt direkte henter INTET med opbrugt kvote', function () {
+    // 🪤 ASSERTÉR PAA KALDET, ikke paa svaret. `Http::fake` i beforeEach svarer
+    // med tom `data`, saa `company` er null UANSET gaten — en assertion paa
+    // `->get('company')` kunne aldrig fejle. Detektions-tjekket fangede det:
+    // med gaten fjernet fra `client()` bestod testen stadig.
+    $this->withSession(['metis_lookup_count' => 999]);
+
+    \Livewire\Livewire::test('metis-company-info', ['query' => '37792594']);
+
+    Http::assertNothingSent();
+});
+
+it('sektionen virker stadig naar kvoten IKKE er opbrugt', function () {
+    // 🪤 Modstykket. Uden denne ville "bloker alt" bestaa testen ovenfor.
+    //
+    // 🪤 `Http::fake()` i beforeEach svarer med tom `data`, saa sektionen ville
+    // se tom ud UANSET gaten. Testen maa derfor bevise at KALDET sker — ikke at
+    // svaret er fyldt. `assertSent` er den rigtige assertion her.
+    $this->withSession(['metis_lookup_count' => 0]);
+
+    \Livewire\Livewire::test('metis-company-info', ['query' => '37792594']);
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), '37792594'));
+});
+
+it('🪤 baggrundsjob uden session rammes ikke af gaten', function () {
+    // `kvoteOpbrugt()` returnerer false naar der ingen session er — ellers
+    // ville kommandoer og koe-jobs blive blokeret, og undtagelsen for dem
+    // ville blive den nye bypass.
+    Http::fake(['*' => Http::response(['data' => ['company' => ['name' => 'TEST A/S']]])]);
+
+    $api = app(\TheFountainhead\Metis\Services\RegistryApi::class);
+
+    expect(fn () => $api->fetchCompanyInfo('37792594'))->not->toThrow(\Throwable::class);
+});
+
+it('🚨 email-verifikation er ikke en blindgyde', function () {
+    // Foer rettelsen lyttede `Lookup` ikke paa `email-verified`. Brugeren
+    // verificerede sin mail og blev siddende paa gate-siden.
+    $this->withSession(['metis_lookup_count' => 999]);
+
+    $c = \Livewire\Livewire::test(\TheFountainhead\Metis\Livewire\Lookup::class, [
+        'type' => 'cvr', 'query' => '37792594',
+    ]);
+
+    $c->dispatch('email-verified', email: 'test@frankston.io');
+
+    expect(session('metis_verified_email'))->toBe('test@frankston.io');
+    $c->assertRedirect();
+});

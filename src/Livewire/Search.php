@@ -6,12 +6,15 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Livewire\Attributes\On;
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\GatesLookups;
 use TheFountainhead\Metis\Models\MetisLookup;
 use TheFountainhead\Metis\Services\RegistryApi;
 use TheFountainhead\Metis\Services\SearchDetector;
 
 class Search extends Component
 {
+    use GatesLookups;
+
     public string $query = '';
 
     public ?array $result = null;
@@ -247,26 +250,30 @@ class Search extends Component
             return;
         }
 
-        // Check email gate (lookup 2+) before rate limit — skip when gating disabled
-        // (embedded mode) eller når en pilot-token er aktiv (Rasmus-piloten skal
-        // ikke rammes af den offentlige betas gate/kvoter).
-        if (config('metis.gating.enabled', true) && ! session('metis_user_token')) {
-            $lookupCount = session('metis_lookup_count', 0);
-            $hasVerifiedEmail = session('metis_verified_email');
+        // Email-gaten (opslag 2+) FOER rate limit — begge springes over naar
+        // gating er slaaet fra (embedded mode) eller en pilot-token er aktiv
+        // (Rasmus-piloten skal ikke rammes af den offentlige betas kvoter).
+        //
+        // 🚨 REVIEW-FUND 9/8: betingelsen stod tidligere inline HER, mens
+        // `Lookup` fik sin egen kopi via `GatesLookups`. To implementeringer
+        // af samme regel — praecis den fejlklasse traiten blev lavet for at
+        // undgaa, begaaet i selve rettelsen. De var allerede drevet fra
+        // hinanden: traiten behandlede `metis_verified_email` som selvstaendig
+        // early-return, denne kobling laeste den sammen med taellingen.
+        if ($this->skalGates()) {
+            $this->dispatch('show-email-gate');
 
-            $freeLookups = config('metis.gating.free_lookups', 1);
-            if ($lookupCount >= $freeLookups && ! $hasVerifiedEmail) {
-                $this->dispatch('show-email-gate');
+            return;
+        }
 
-                return;
-            }
+        // 🪤 Rate limit er IKKE en del af traiten: den gaelder EFTER
+        // email-verifikation og har sin egen graense pr. bruger, mens gaten er
+        // et engangsspoergsmaal om adgang. `Lookup` har ingen tilsvarende —
+        // ruten baerer allerede `throttle:20,1`.
+        if (config('metis.gating.enabled', true) && ! session('metis_user_token') && $this->isRateLimited()) {
+            $this->rateLimited = true;
 
-            // Check rate limit (applies after email verification)
-            if ($this->isRateLimited()) {
-                $this->rateLimited = true;
-
-                return;
-            }
+            return;
         }
 
         // En adresse uden postnummer kan ikke opløses til en unik matrikel
