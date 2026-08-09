@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use TheFountainhead\Metis\Services\SearchDetector;
 
 /**
  * Fjern personnumre fra soegehistorikken.
@@ -62,14 +63,44 @@ return new class extends Migration
         // virker paa ét af to udviklingsmiljoeer er ikke testbar — og en
         // utestbar oprydning af persondata er praecis den slags man opdager er
         // forkert bagefter.
+        // 🚨 REVIEW-FUND 9/8: foerste udkast matchede mod RAAVAERDIEN. Men
+        // `SearchDetector::isCpr()` strimler whitespace FOERST — og
+        // mellemrums-formen er praecis den der historisk slap forbi
+        // (`Search.php:105-107`: "her stod en FEMTE kopi af CPR-regexen, og
+        // den normaliserede ikke mellemrum"). Migrationen var dermed en SJETTE
+        // detektor med sin egen semantik, og den ryddede ikke det op som
+        // guarden faktisk lukkede for. Maalt:
+        //
+        //   '311278 1234'   isCpr()=TRUE   migration=beholdt  🚨
+        //   ' 311278-1234'  isCpr()=TRUE   migration=beholdt  🚨
+        //
+        // 🔑 Genbruger nu `SearchDetector` og laegger datovalideringen OVENPAA
+        // som ekstra filter — ikke som erstatning. Detektoren afgoer "ligner
+        // det et CPR?", datotjekket afviser 10-cifrede enhedsnumre som
+        // `4006033395` (dag "40" findes ikke), der ellers ville faa legitim
+        // soegehistorik slettet.
+        $detector = new SearchDetector;
+
         $kandidater = DB::table('metis_lookups')
             ->where('search_term', '!=', self::MASKE)
             ->select('id', 'search_term')
             ->get()
-            ->filter(fn ($r) => preg_match(
-                '/^(0[1-9]|[12][0-9]|3[01])(0[1-9]|1[0-2])[0-9]{2}-?[0-9]{4}$/',
-                (string) $r->search_term
-            ))
+            ->filter(function ($r) use ($detector) {
+                $term = (string) $r->search_term;
+
+                if (! $detector->isCpr($term)) {
+                    return false;
+                }
+
+                // Datodelen paa den NORMALISEREDE vaerdi — samme normalisering
+                // som detektoren brugte, ellers ville de to lag vaere uenige.
+                $normaliseret = preg_replace('/\s+/', '', $term);
+
+                return preg_match(
+                    '/^(0[1-9]|[12][0-9]|3[01])(0[1-9]|1[0-2])[0-9]{2}-?[0-9]{4}$/',
+                    $normaliseret
+                ) === 1;
+            })
             ->pluck('id');
 
         $m = $kandidater->isEmpty() ? 0 : DB::table('metis_lookups')

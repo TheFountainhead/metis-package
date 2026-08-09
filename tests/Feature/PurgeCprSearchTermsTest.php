@@ -109,3 +109,45 @@ it('haandterer CPR uden bindestreg', function () {
 
     expect(DB::table('metis_lookups')->where('id', $id)->value('search_term'))->toBe('[fjernet: personnummer]');
 });
+
+/**
+ * 🚨 REVIEW-FUND 9/8: mellemrums-formen slap forbi.
+ *
+ * `SearchDetector::isCpr()` strimler whitespace FOER match; migrationens
+ * foerste udkast gjorde ikke. Mellemrums-CPR er praecis den form kodebasen
+ * selv har dokumenteret som den der slap igennem (copy-paste fra Word/PDF,
+ * iOS-autokorrektur) — se `Search.php:105-107`.
+ */
+it('🚨 fjerner et CPR med MELLEMRUM', function () {
+    $id = indsætLookup('cpr', '311278 1234');
+
+    koerPurge();
+
+    expect(DB::table('metis_lookups')->where('id', $id)->value('search_term'))
+        ->toBe('[fjernet: personnummer]');
+});
+
+it('🚨 fjerner et CPR med foranstillet mellemrum', function () {
+    $id = indsætLookup('person', ' 311278-1234');
+
+    koerPurge();
+
+    expect(DB::table('metis_lookups')->where('id', $id)->value('search_term'))
+        ->toBe('[fjernet: personnummer]');
+});
+
+it('🔑 lagene er ENIGE: alt isCpr() kalder CPR med gyldig dato maskeres', function () {
+    // Uden fælles normalisering kunne detektoren sige CPR mens migrationen
+    // sagde nej — to lag uenige om samme værdi.
+    $detector = new \TheFountainhead\Metis\Services\SearchDetector;
+
+    foreach (['311278-1234', '3112781234', '311278 1234', ' 311278-1234'] as $form) {
+        expect($detector->isCpr($form))->toBeTrue("detektor afviste {$form}");
+
+        $id = indsætLookup('cpr', $form);
+        koerPurge();
+
+        expect(DB::table('metis_lookups')->where('id', $id)->value('search_term'))
+            ->toBe('[fjernet: personnummer]', "migration beholdt {$form}");
+    }
+});
