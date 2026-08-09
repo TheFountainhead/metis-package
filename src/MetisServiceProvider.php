@@ -36,6 +36,34 @@ class MetisServiceProvider extends ServiceProvider
         $this->registerPublishing();
         $this->registerLivewireComponents();
         $this->registerCriiptoDriver();
+        $this->registerCommands();
+    }
+
+    /**
+     * 🪤 BAADE registrering OG planlaegning. En kommando der kun registreres,
+     * skal koeres i haanden — og en opbevaringsgraense ingen husker at koere er
+     * ingen opbevaringsgraense. `metis_lookups` voksede uroert fra 25. marts
+     * til 9. august (8.265 raekker, alle med IP) netop fordi oprydningen ikke
+     * fandtes.
+     */
+    protected function registerCommands(): void
+    {
+        if (! $this->app->runningInConsole()) {
+            return;
+        }
+
+        $this->commands([
+            \TheFountainhead\Metis\Console\Commands\PruneMetisLookups::class,
+        ]);
+
+        $this->app->booted(function () {
+            $schedule = $this->app->make(\Illuminate\Console\Scheduling\Schedule::class);
+
+            $schedule->command('metis:prune-lookups')
+                ->dailyAt('03:30')
+                ->onOneServer()
+                ->withoutOverlapping();
+        });
     }
 
     /**
