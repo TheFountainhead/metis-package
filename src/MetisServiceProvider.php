@@ -55,6 +55,7 @@ class MetisServiceProvider extends ServiceProvider
         $this->commands([
             \TheFountainhead\Metis\Console\Commands\PruneMetisLookups::class,
             \TheFountainhead\Metis\Console\Commands\GrantLookupQuota::class,
+            \TheFountainhead\Metis\Console\Commands\ReportAbandonedVerifications::class,
         ]);
 
         $this->app->booted(function () {
@@ -62,6 +63,14 @@ class MetisServiceProvider extends ServiceProvider
 
             $schedule->command('metis:prune-lookups')
                 ->dailyAt('03:30')
+                ->onOneServer()
+                ->withoutOverlapping();
+
+            // 🪤 Kl. 08 frem for om natten: rapporten er noget Frederik skal
+            // HANDLE paa, og en mail kl. 03:30 er laest og glemt inden
+            // arbejdsdagen. Kommandoen sender kun naar der ER frafaldne.
+            $schedule->command('metis:report-abandoned')
+                ->dailyAt('08:00')
                 ->onOneServer()
                 ->withoutOverlapping();
         });
