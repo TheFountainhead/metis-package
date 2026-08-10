@@ -41,6 +41,19 @@
                 </table>
             </div>
             <p class="text-xs text-zinc-400 mt-3">{{ __('Registered principal is not the same as current outstanding debt.') }}</p>
+        @elseif(! $erUndersoegt)
+            {{-- 🚨 "Ingen pantebreve fundet" ville være en FALSK PÅSTAND OM
+                 FRAVÆR her: vi har ikke kigget endnu. Målt 10/8 blev 1.105.049
+                 ejendomme crawl-klare på én gang efter adresse-backfillen, og
+                 crawlen tager ~60 døgn fordi Tinglysningen rate-limiter til
+                 12,3 opslag/min. I hele den periode ville u-crawlede ejendomme
+                 se gældfri ud — det værste en kreditvurdering kan bygge på. --}}
+            <p class="text-sm text-zinc-500">
+                {{ __('Gældsoplysninger er ikke hentet for denne ejendom endnu.') }}
+            </p>
+            <p class="text-xs text-zinc-400 mt-2">
+                {{ __('Det betyder ikke at ejendommen er gældfri — vi har blot ikke undersøgt den.') }}
+            </p>
         @else
             <p class="text-sm text-zinc-500">{{ __('No mortgages found.') }}</p>
         @endif
