@@ -54,6 +54,12 @@
                    class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
                     Søg gæld
                 </a>
+                {{-- 🔑 Uden en indgang her ville "spørg om noget" være usynlig:
+                     ruten findes, men ingen ville finde den. --}}
+                <a href="{{ Route::has('metis.analytics') ? route('metis.analytics') : '/spoerg' }}"
+                   class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
+                    Spørg om markedet
+                </a>
                 @if(! empty(session('metis_user_token')))
                     <a href="{{ Route::has('metis.alerts') ? route('metis.alerts') : '/alerts' }}"
                        class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
