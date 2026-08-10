@@ -41,8 +41,64 @@ class RegistryApi
      */
     protected bool $maintenanceObserved = false;
 
+    /**
+     * Er kvoten opbrugt for den aktuelle session?
+     *
+     * 🚨 REVIEW-FUND 9/8, VERIFICERET MED EN KOERENDE EXPLOIT. Kvote-gaten sad
+     * foerst kun i `Lookup::mount()` og skjulte sektionerne i bladen. Men hver
+     * sektion er en SELVSTAENDIG `lazy` Livewire-komponent med sin egen
+     * adresse — den kan mountes direkte over `/livewire/update` uden
+     * nogensinde at roere `Lookup`:
+     *
+     *     session(['metis_lookup_count' => 999]);          // kvote opbrugt
+     *     Livewire::test('metis-company-info', ['query' => '37792594']);
+     *     -> {"name":"HEMMELIG A/S","cvr":"37792594", ...}
+     *
+     * Endnu vaerre i praksis: ét gratis opslag giver browseren gyldige,
+     * korrekt-checksummede `__lazyLoad`-payloads. Replay af dem EFTER kvoten
+     * er brugt op svarer 200 med data — ingen cookie-rydning, ingen
+     * forfalskning, for checksummen kom fra vores eget svar.
+     *
+     * 🔑 DERFOR HER OG IKKE I KOMPONENTERNE. To forsoeg i `MetisSection`
+     * fejlede maalt: `booted()` koerer EFTER `mount()`, og et flag stopper
+     * ingen hentning. Alle 28 sektioner gaar gennem `client()` — det er dér
+     * alle veje moedes. En guard pr. `mount()` ville vaere samme fejl ét
+     * niveau nede: den 29. sektion ville mangle den.
+     *
+     * 🪤 BAGGRUNDSJOB RAMMES IKKE. De koerer uden session, saa
+     * `metis_lookup_count` er fravaerende og gaten inaktiv. Ingen undtagelse
+     * noedvendig — og dermed ingen undtagelse der kan blive den nye bypass.
+     */
+    protected function kvoteOpbrugt(): bool
+    {
+        if (! config('metis.gating.enabled', true)) {
+            return false;
+        }
+
+        if (! app()->bound('session') || ! session()->isStarted()) {
+            return false;
+        }
+
+        if (session('metis_user_token') || session('metis_verified_email')) {
+            return false;
+        }
+
+        return session('metis_lookup_count', 0) > config('metis.gating.free_lookups', 1);
+    }
+
     protected function client()
     {
+        // 🚨 KVOTE-GATEN SIDDER HER, ikke i `get()`. Maalt 9/8: FIRE kaldsteder
+        // gaar uden om `get()`/`getEnvelope()` — to `Http::pool()`-fan-outs og
+        // to direkte `$this->client()`-kald. En gate i `get()` alene ville
+        // altsaa lade netop de tunge, pooled opslag slippe igennem.
+        //
+        // `client()` er det ENESTE punkt alle kald deler, ogsaa fremtidige.
+        // Se `kvoteOpbrugt()` for den maalte exploit.
+        if ($this->kvoteOpbrugt()) {
+            throw new QuotaExceededException;
+        }
+
         // F1 pilot — if user has set personal token in session (via /alerts
         // token-input form), use it. Otherwise fall back to shared tenant key.
         // Session token enables per-user data (watchlists, alerts) on a
@@ -1178,6 +1234,7 @@ class RegistryApi
      */
     protected function getEnvelope(string $endpoint, array $query = []): ?array
     {
+
         try {
             return $this->client()
                 ->get($endpoint, $query)
