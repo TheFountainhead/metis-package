@@ -40,10 +40,21 @@
             },
 
             initMap() {
-                // lazy-komponent + wire:ignore kan køre init() to gange på SAMME
-                // DOM-element; Leaflet kaster "Map container is already initialized"
-                // på anden L.map(). Fjern den tidligere instans (rydder _leaflet_id
-                // og event-handlers) i stedet for at crashe.
+                // 🚨 INGEN DOBBELTE ANFOERSELSTEGN I DENNE BLOK — heller ikke i
+                // kommentarer. Hele objektet ligger inde i x-data-attributten,
+                // saa ét enkelt lukker den for tidligt.
+                //
+                // Maalt 10/8: en kommentar der citerede Leaflets
+                // 'Map container is already initialized' knaekkede parsingen.
+                // Alpine kastede en syntaksfejl, komponenten initialiserede
+                // ALDRIG, kortet forsvandt, og den raa JS blev vist som synlig
+                // tekst oeverst paa adresse-siden.
+                //
+                // lazy-komponent + wire:ignore kan koere init() to gange paa
+                // SAMME DOM-element; Leaflet kaster da en 'already
+                // initialized'-fejl paa anden L.map(). Fjern den tidligere
+                // instans (rydder _leaflet_id og event-handlers) i stedet for
+                // at crashe.
                 if (this.$refs.map._metisLeafletMap) {
                     this.$refs.map._metisLeafletMap.remove();
                 }
