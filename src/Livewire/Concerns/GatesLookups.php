@@ -45,14 +45,87 @@ trait GatesLookups
             return false;
         }
 
+        // Pilot-token = fuld adgang, ingen kvote. Rasmus-piloten maa ikke
+        // rammes af den offentlige betas graenser.
         if (session('metis_user_token')) {
             return false;
         }
 
-        if (session('metis_verified_email')) {
-            return false;
+        // 🔑 VERIFICERET EMAIL GIVER EN KVOTE, IKKE FRI ADGANG (Frederik 10/8).
+        // Foer denne aendring var verifikation en doer der aabnede helt: har du
+        // givet din mail, kunne du soege ubegraenset. Modellen er nu at hver
+        // testbruger faar et antal opslag og kan ANMODE om flere — saa Frederik
+        // ser hvem der rent faktisk bruger produktet, foer der traeffes
+        // beslutning om betaling.
+        if ($email = session('metis_verified_email')) {
+            return $this->kvoteOpbrugtForEmail($email);
         }
 
         return session('metis_lookup_count', 0) >= config('metis.gating.free_lookups', 1);
+    }
+
+    /**
+     * Har den verificerede bruger brugt sin tildelte kvote?
+     *
+     * 🪤 Taeller paa LEAD'ET, ikke i sessionen. En sessionstaeller nulstilles
+     * ved cookie-rydning, og hele pointen er at kvoten foelger PERSONEN saa
+     * Frederik kan se det reelle forbrug. `lookup_count` opdateres allerede af
+     * `EmailGate` ved hver verifikation og af opslagene selv.
+     *
+     * 🪤 Ukendt email gates IKKE. Lead'et oprettes af `EmailGate` ved
+     * verifikation, saa en session med `metis_verified_email` men uden lead er
+     * en inkonsistens (fx ryddet database) — og at gate der ville laase en
+     * bruger ude uden vej videre, hvor det sikre svar er at lade dem passere.
+     */
+    protected function kvoteOpbrugtForEmail(string $email): bool
+    {
+        // 🪤 Fejler opslaget, lukkes der IGENNEM. At laase alle brugere ude
+        // fordi en query fejlede ville goere en hikke til et nedbrud.
+        $lead = rescue(
+            fn () => \TheFountainhead\Metis\Models\MetisLead::where('email', $email)->first(),
+            null,
+            false
+        );
+
+        if (! $lead) {
+            return false;
+        }
+
+        return $lead->lookup_count >= $lead->lookup_quota;
+    }
+
+    /**
+     * Tael et gennemfoert opslag paa BAADE sessionen og lead'et.
+     *
+     * 🚨 MAALT 10/8: `lookup_count` paa lead'et blev ALDRIG taalt op ved et
+     * opslag — kun ved verifikation. En kvote der laeser et felt ingen skriver
+     * til, ville aldrig blive opbrugt, og gaten ville se ud til at virke mens
+     * den slap alt igennem. Samme fejlklasse som `lookups`-tabellen der laa
+     * ubrugt siden marts.
+     *
+     * 🪤 `increment()` frem for laes-og-gem: to samtidige opslag (sektionerne
+     * loader parallelt) ville ellers begge laese samme vaerdi og skrive n+1,
+     * saa det ene forsvandt. Databasen skal lave optaellingen.
+     *
+     * 🪤 Sessionstaelleren beholdes ved siden af: den gater ANONYME brugere,
+     * hvor der ikke findes et lead at taelle paa.
+     */
+    protected function taelOpslag(): void
+    {
+        session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
+
+        if (! session('metis_lookup_window_start')) {
+            session(['metis_lookup_window_start' => now()->timestamp]);
+        }
+
+        // 🪤 `rescue()`: en fejlet optaelling maa ikke koste brugeren opslaget.
+        // Sessionstaelleren ovenfor er allerede sat, saa gaten virker uanset.
+        if ($email = session('metis_verified_email')) {
+            rescue(fn () => \TheFountainhead\Metis\Models\MetisLead::where('email', $email)
+                ->update([
+                    'lookup_count' => \Illuminate\Support\Facades\DB::raw('lookup_count + 1'),
+                    'last_active_at' => now(),
+                ]), null, false);
+        }
     }
 }

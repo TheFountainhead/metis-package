@@ -23,12 +23,16 @@ class MetisLead extends Model
         'first_search_type',
         'first_search_term',
         'lookup_count',
+        'lookup_quota',
+        'quota_requested_at',
         'last_active_at',
     ];
 
     protected $casts = [
         'last_active_at' => 'datetime',
         'lookup_count' => 'integer',
+        'lookup_quota' => 'integer',
+        'quota_requested_at' => 'datetime',
     ];
 
     public function lookups(): HasMany

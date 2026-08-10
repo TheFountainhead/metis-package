@@ -146,13 +146,10 @@ class Lookup extends Component
         // denne linje uden for `if (! $erCpr)` ville netop CPR-ruten — den der
         // baerer persondata — vaere gratis og ubegraenset.
         //
-        // 🪤 Samme sessionsnoegler som `Search::logLookup()`, ikke nye. To
-        // taellere ville drive fra hinanden, og gaten laeser kun den ene.
-        session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
-
-        if (! session('metis_lookup_window_start')) {
-            session(['metis_lookup_window_start' => now()->timestamp]);
-        }
+        // 🪤 Samme taeller som `Search`, via traiten. To implementeringer ville
+        // drive fra hinanden, og gaten laeser kun den ene — praecis den fejl
+        // review-runden 9/8 fandt i selve gate-logikken.
+        $this->taelOpslag();
     }
 
     /**
