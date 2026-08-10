@@ -9,6 +9,7 @@ use TheFountainhead\Metis\Livewire\Admin\Dashboard;
 use TheFountainhead\Metis\Livewire\Admin\Leads;
 use TheFountainhead\Metis\Livewire\Admin\Logs;
 use TheFountainhead\Metis\Livewire\AlertDetail;
+use TheFountainhead\Metis\Livewire\Analytics;
 use TheFountainhead\Metis\Livewire\AlertsInbox;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 use TheFountainhead\Metis\Livewire\LenderExposure;
@@ -33,6 +34,12 @@ Route::middleware(NoIndex::class)->group(function () {
     Route::get('/soeg', DebtSearch::class)->name('metis.debt-search')->middleware('throttle:20,1');
     Route::get('/udforsk', PropertyExplore::class)->name('metis.property-explore')->middleware('throttle:20,1');
     Route::get('/laangiver', LenderExposure::class)->name('metis.lender-exposure')->middleware('throttle:20,1');
+
+    // 🔑 "Spoerg om noget" — aggregerede spoergsmaal om en POPULATION.
+    // Soegefeltet finder én ting man kender navnet paa; det her afgraenser en
+    // maengde og taeller. Samme kvote-gate som opslagene: et analyse-svar kan
+    // afdaekke en hel population og maa ikke vaere vejen udenom betalingen.
+    Route::get('/spoerg', Analytics::class)->name('metis.analytics')->middleware('throttle:20,1');
     Route::get('/alerts', AlertsInbox::class)->name('metis.alerts')->middleware('throttle:60,1');
     Route::get('/alerts/{id}', AlertDetail::class)->name('metis.alert.detail')->middleware('throttle:60,1')->whereNumber('id');
 });

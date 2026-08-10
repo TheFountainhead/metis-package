@@ -282,6 +282,29 @@ class RegistryApi
         ]];
     }
 
+    /**
+     * Stil et aggregeret spoergsmaal om en POPULATION af ejendomme.
+     *
+     * 🔑 Et ANDET produkt end opslaget: soegning finder én ting man kender
+     * navnet paa; det her afgraenser en maengde og taeller. Frederiks idé 9/8.
+     *
+     * 🚨 SVARET BAERER SIN DAEKNING i `meta.daekning` — maalt paa prod 10/8:
+     * kun ~70 % af pantebrevene i et typisk postnummer har en kendt rentesats,
+     * og resten er `variabel`/`kontantlaan`, som HAR en rente vi ikke kender.
+     * Et praecist tal uden det forbehold kan foere til en forkert
+     * kreditbeslutning. UI'et SKAL vise `daekning`.
+     *
+     * @return array{data?: array<string,mixed>, meta?: array<string,mixed>, error?: mixed}
+     */
+    public function askAnalytics(string $spoergsmaal): array
+    {
+        // 🪤 `postEnvelope`, ikke `post`: svaret baerer sin daekning i `meta`,
+        // og `post()` kasserer alt uden for `data`. Praecis den fejlklasse
+        // `getEnvelope()` blev lavet for at undgaa paa laangiver-siden.
+        return $this->postEnvelope('/v1/analytics/ask', ['spoergsmaal' => $spoergsmaal])
+            ?? ['error' => 'no_response'];
+    }
+
     public function fetchPropertyByAddress(string $address): array
     {
         $parsed = $this->parseAddress($address);
@@ -1241,6 +1264,42 @@ class RegistryApi
                 ->throw()
                 ->json();
         } catch (RequestException $e) {
+            return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
+        }
+    }
+
+    /**
+     * Som `post()`, men returnerer HELE svaret — ikke kun `data`.
+     *
+     * 🚨 Findes fordi analyse-svar baerer deres DAEKNING i `meta`: hvor stor en
+     * del af populationen spoergsmaalet faktisk kunne se. `post()` kasserer
+     * det, og et praecist tal uden sit forbehold kan foere til en forkert
+     * kreditbeslutning. Samme grund som `getEnvelope()` blev lavet til
+     * laangiver-siden.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>|null
+     */
+    protected function postEnvelope(string $endpoint, array $data): ?array
+    {
+        try {
+            return $this->client()
+                ->post($endpoint, $data)
+                ->throw()
+                ->json();
+        } catch (RequestException $e) {
+            // 🚨 ET 422 ER ET SVAR, IKKE EN FEJL. Analyse-endpointet bruger
+            // 422 til at sige "jeg forstod ikke spoergsmaalet" og sender sin
+            // EGEN forklaring med — fx "angiv et postnummer". `errorFrom()`
+            // kasserer den og returnerer `upstream_error`, saa brugeren ville
+            // se "der opstod en fejl" i stedet for at faa at vide hvad de
+            // skulle rette. Samme fejlklasse som `get()` der kasserer `meta`.
+            if ($e->response->status() === 422) {
+                return $e->response->json();
+            }
+
             return $this->errorFrom($e);
         } catch (ConnectionException $e) {
             return $this->transportErrorFrom($e);
