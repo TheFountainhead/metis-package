@@ -54,6 +54,7 @@ class MetisServiceProvider extends ServiceProvider
 
         $this->commands([
             \TheFountainhead\Metis\Console\Commands\PruneMetisLookups::class,
+            \TheFountainhead\Metis\Console\Commands\GrantLookupQuota::class,
         ]);
 
         $this->app->booted(function () {

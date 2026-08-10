@@ -33,10 +33,67 @@ class EmailGate extends Component
 
     public bool $show = false;
 
+    /**
+     * Har brugeren allerede anmodet om flere opslag?
+     *
+     * 🪤 Vises som tilstand, saa knappen ikke kan trykkes igen og igen. Uden
+     * den ville et utaalmodigt klik sende Frederik fem ens mails.
+     */
+    public bool $kvoteAnmodet = false;
+
     #[On('show-email-gate')]
     public function showGate(): void
     {
         $this->show = true;
+
+        // 🔑 EN ALLEREDE VERIFICERET BRUGER SKAL IKKE BEDES OM SIN MAIL IGEN.
+        // Rammer de gaten, er det fordi kvoten er brugt op — og saa er svaret
+        // en ANMODNINGS-knap, ikke en formular de allerede har udfyldt.
+        // Frederiks model 10/8: han vil se hvem der reelt bruger produktet,
+        // foer der traeffes beslutning om betaling.
+        if ($email = session('metis_verified_email')) {
+            $this->email = $email;
+            $this->step = 'quota';
+
+            $lead = MetisLead::where('email', $email)->first();
+            $this->kvoteAnmodet = (bool) $lead?->quota_requested_at;
+        }
+    }
+
+    /**
+     * "Bed om flere opslag" — sender Frederik en besked.
+     *
+     * 🪤 Idempotent paa TIDSSTEMPLET, ikke paa en session-variabel. En bruger
+     * der rydder cookies og trykker igen ville ellers sende en ny mail hver
+     * gang; her ser vi at anmodningen allerede staar i databasen.
+     */
+    public function anmodOmFlereOpslag(): void
+    {
+        $email = session('metis_verified_email');
+
+        if (! $email) {
+            return;
+        }
+
+        $lead = MetisLead::where('email', $email)->first();
+
+        if (! $lead || $lead->quota_requested_at) {
+            $this->kvoteAnmodet = true;
+
+            return;
+        }
+
+        $lead->update(['quota_requested_at' => now()]);
+        $this->kvoteAnmodet = true;
+
+        // 🪤 `rescue()`: en mailfejl maa ikke koste brugeren deres anmodning.
+        // Tidsstemplet er allerede gemt, saa Frederik kan se den i databasen
+        // selv om beskeden ikke naaede frem.
+        rescue(function () use ($lead) {
+            if ($til = config('metis.admin.notify_email')) {
+                Mail::to($til)->send(new \TheFountainhead\Metis\Mail\QuotaRequestNotification($lead));
+            }
+        });
     }
 
     // Firma-data resolves i baggrunden fra mail-domænet og gemmes på leaden.

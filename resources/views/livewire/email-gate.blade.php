@@ -77,6 +77,37 @@
                 Fik du ikke koden?
                 <button wire:click="resendCode" class="text-warm-500 underline hover:text-warm-600">Send igen</button>
             </p>
+        @elseif($step === 'quota')
+            {{-- 🔑 En allerede verificeret bruger der har brugt sin kvote.
+                 De skal ikke bedes om deres mail igen — de skal kunne SPØRGE.
+                 Frederiks model 10/8: han åbner manuelt og ser dermed hvem
+                 der reelt bruger Metis, før betaling besluttes. --}}
+            @if($kvoteAnmodet)
+                <h2 id="email-gate-title" class="text-lg font-bold text-ink-800 text-center mb-2">
+                    Din anmodning er sendt
+                </h2>
+                <p class="text-ink-700/60 text-sm text-center">
+                    Vi åbner for flere opslag hurtigst muligt og skriver til {{ $email }}.
+                </p>
+            @else
+                <h2 id="email-gate-title" class="text-lg font-bold text-ink-800 text-center mb-2">
+                    Du har brugt dine opslag
+                </h2>
+                <p class="text-ink-700/60 text-sm text-center mb-6">
+                    Metis er i åben beta. Bed om flere opslag, så åbner vi for din adgang.
+                </p>
+                <button
+                    wire:click="anmodOmFlereOpslag"
+                    wire:loading.attr="disabled"
+                    class="w-full bg-warm-500 text-white rounded-lg py-3 min-h-[44px] text-sm font-semibold hover:bg-warm-600 transition disabled:opacity-60"
+                >
+                    <span wire:loading.remove wire:target="anmodOmFlereOpslag">Bed om flere opslag</span>
+                    <span wire:loading wire:target="anmodOmFlereOpslag">Sender…</span>
+                </button>
+                <p class="text-center text-sand-300 text-xs mt-4">
+                    Du er logget ind som {{ $email }}
+                </p>
+            @endif
         @endif
     </div>
 </div>
