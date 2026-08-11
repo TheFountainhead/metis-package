@@ -36,18 +36,24 @@ class QuotaRequestNotification extends Mailable
 
     public function content(): Content
     {
-        return new Content(view: 'metis::mail.quota-request-notification', with: [
-            // 🔑 Ét klik frem for en SSH-session. Linket signeres, saa det kan
-            // aabnes uden login — signaturen daekker hele URL'en inkl. tallet,
-            // saa kvoten ikke kan skrues op bagefter.
-            //
-            // 🪤 7 dages gyldighed: en anmodning der ligger over en ferie skal
-            // stadig kunne godkendes, men et link i en indbakke skal ikke
-            // vaere evigt gyldigt.
-            'godkendUrl' => URL::temporarySignedRoute('metis.grant-quota', now()->addDays(7), [
-                'lead' => $this->lead->id,
-                'quota' => 25,
-            ]),
-        ]);
+        return new Content(
+            view: 'metis::mail.quota-request-notification',
+            // 🪤 Tekst-udgaven er ikke pynt: en plaintext-klient viser ingen
+            // knap, og uden URL'en dér ville mailen vaere ubrugelig.
+            text: 'metis::mail.quota-request-notification-text',
+            with: [
+                // 🔑 Ét klik frem for en SSH-session. Linket signeres, saa det
+                // kan aabnes uden login — signaturen daekker hele URL'en inkl.
+                // tallet, saa kvoten ikke kan skrues op bagefter.
+                //
+                // 🪤 7 dages gyldighed: en anmodning der ligger over en ferie
+                // skal stadig kunne godkendes, men et link i en indbakke skal
+                // ikke vaere evigt gyldigt.
+                'godkendUrl' => URL::temporarySignedRoute('metis.grant-quota', now()->addDays(7), [
+                    'lead' => $this->lead->id,
+                    'quota' => 25,
+                ]),
+            ],
+        );
     }
 }

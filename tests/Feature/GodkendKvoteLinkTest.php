@@ -122,3 +122,33 @@ it('🪤 rydder quota_requested_at saa knappen kan bruges igen senere', function
 
     expect($lead->fresh()->quota_requested_at)->toBeNull();
 });
+
+it('🚨 SAENKER ALDRIG en kvote der allerede er hoejere', function () {
+    // 🚨 MAALT 11/8: Frederiks kvote var sat til 500 manuelt. Et aeldre link
+    // med fast quota=25 SAENKEDE den til 25 — og kvitteringen kaldte det
+    // "haevet fra 500 til 25". Et godkendelses-link maa aldrig fjerne adgang.
+    $lead = MetisLead::create([
+        'email' => 'hoej@eksempel.dk',
+        'lookup_count' => 7,
+        'lookup_quota' => 500,
+    ]);
+
+    $this->get(URL::signedRoute('metis.grant-quota', ['lead' => $lead->id, 'quota' => 25]))
+        ->assertOk();
+
+    expect($lead->fresh()->lookup_quota)->toBe(500);
+});
+
+it('🪤 siger "uaendret" frem for "haevet" naar kvoten ikke blev roert', function () {
+    // Teksten paastod "haevet" uanset retning. En kvittering der modsiger sig
+    // selv ("haevet fra 500 til 25") faar brugeren til at tvivle paa systemet.
+    $lead = MetisLead::create([
+        'email' => 'hoej2@eksempel.dk',
+        'lookup_count' => 7,
+        'lookup_quota' => 500,
+    ]);
+
+    $this->get(URL::signedRoute('metis.grant-quota', ['lead' => $lead->id, 'quota' => 25]))
+        ->assertSee('uændret')
+        ->assertDontSee('Kvote hævet fra');
+});

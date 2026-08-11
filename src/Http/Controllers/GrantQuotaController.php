@@ -36,24 +36,39 @@ class GrantQuotaController
 
         $foer = $model->lookup_quota;
 
+        // 🚨 MAALT 11/8: et link baerer et FAST tal (25). Var kvoten imens sat
+        // hoejere manuelt, SAENKEDE linket den — og kvitteringen kaldte det
+        // "haevet fra 500 til 25". Et godkendelses-link maa aldrig fjerne
+        // adgang; det er kun en aabning.
+        $nyKvote = max($foer, $quota);
+
         $model->update([
-            'lookup_quota' => $quota,
+            'lookup_quota' => $nyKvote,
             // 🪤 Nulstilles, saa brugeren kan anmode IGEN naar de nye opslag er
             // brugt. Ellers ville "din anmodning er sendt" staa permanent.
             'quota_requested_at' => null,
         ]);
 
+        $aendret = $nyKvote !== $foer;
+
         Log::info('metis.quota.granted', [
-            'lead_id' => $model->id, 'foer' => $foer, 'efter' => $quota,
+            'lead_id' => $model->id, 'foer' => $foer, 'efter' => $nyKvote,
+            'link_bad_om' => $quota, 'aendret' => $aendret,
         ]);
 
         // 🪤 `rescue()`: en mailfejl maa ikke rulle godkendelsen tilbage.
         // Kvoten ER haevet, og det er det vigtigste for brugeren.
-        rescue(fn () => Mail::to($model->email)->send(new QuotaGrantedNotification($model)));
+        //
+        // 🪤 Kun naar der FAKTISK blev aabnet. Ellers ville et gentaget klik
+        // paa samme link sende brugeren en "der er aabnet"-mail hver gang.
+        if ($aendret) {
+            rescue(fn () => Mail::to($model->email)->send(new QuotaGrantedNotification($model)));
+        }
 
         return response()->view('metis::quota-granted', [
             'lead' => $model,
             'foer' => $foer,
+            'aendret' => $aendret,
         ]);
     }
 }
