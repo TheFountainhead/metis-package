@@ -37,45 +37,49 @@
     <div class="space-y-6">
         @if($type === 'cvr')
             <div class="max-w-7xl space-y-6">
-                <livewire:metis-company-overview :query="$query" lazy />
-                <livewire:metis-company-info :query="$query" lazy />
-                <livewire:metis-company-funding :query="$query" lazy />
-                <livewire:metis-company-roles :query="$query" lazy />
+                <livewire:metis-company-overview :query="$query" lazy="on-load" />
+                <livewire:metis-company-info :query="$query" lazy="on-load" />
+                <livewire:metis-company-funding :query="$query" lazy="on-load" />
+                <livewire:metis-company-roles :query="$query" lazy="on-load" />
             </div>
-            <livewire:metis-company-structure :query="$query" lazy />
+            <livewire:metis-company-structure :query="$query" lazy="on-load" />
             <div class="max-w-7xl space-y-6">
-                <livewire:metis-company-relations :query="$query" lazy />
-                <livewire:metis-company-properties :query="$query" lazy />
-                <livewire:metis-company-tinglysning :query="$query" lazy />
+                <livewire:metis-company-relations :query="$query" lazy="on-load" />
+                <livewire:metis-company-properties :query="$query" lazy="on-load" />
+                <livewire:metis-company-tinglysning :query="$query" lazy="on-load" />
             </div>
         @elseif($type === 'cpr')
             <div class="max-w-7xl space-y-6">
-                <livewire:metis-person-summary :query="$query" lazy />
+                <livewire:metis-person-summary :query="$query" lazy="on-load" />
             </div>
-            <livewire:metis-person-structure :query="$query" lazy />
+            <livewire:metis-person-structure :query="$query" lazy="on-load" />
             <div class="max-w-7xl space-y-6">
-                <livewire:metis-person-companies :query="$query" lazy />
-                <livewire:metis-person-info :query="$query" lazy />
-                <livewire:metis-person-properties :query="$query" lazy />
-                <livewire:metis-person-relations :query="$query" lazy />
+                <livewire:metis-person-companies :query="$query" lazy="on-load" />
+                <livewire:metis-person-info :query="$query" lazy="on-load" />
+                <livewire:metis-person-properties :query="$query" lazy="on-load" />
+                <livewire:metis-person-relations :query="$query" lazy="on-load" />
             </div>
         @elseif($type === 'person')
-            <livewire:metis-person-structure :query="$query" source="name" lazy />
-            <livewire:metis-person-roles :query="$query" lazy />
+            <livewire:metis-person-structure :query="$query" source="name" lazy="on-load" />
+            <livewire:metis-person-roles :query="$query" lazy="on-load" />
+        {{-- 🚨 `lazy="on-load"`, ikke bare `lazy`: almindelig lazy venter paa
+             VIEWPORTEN, saa sektioner under skaermkanten hang for evigt paa
+             "Henter data" (maalt 11/8: 5 haengende uden scroll, 0 efter).
+             🪤 Attributten overskriver `#[Lazy(isolate: false)]` paa klassen. --}}
         @elseif($type === 'address')
-            <livewire:metis-map-panel :query="$query" lazy />
-            <livewire:metis-address-bbr :query="$query" lazy />
-            <livewire:metis-address-valuation :query="$query" lazy />
-            <livewire:metis-address-skraafoto :query="$query" lazy />
-            <livewire:metis-address-owners :query="$query" lazy />
-            <livewire:metis-address-mortgages :query="$query" lazy />
-            <livewire:metis-address-transactions :query="$query" lazy />
-            <livewire:metis-address-similar-trades :query="$query" lazy />
-            <livewire:metis-address-comparison :query="$query" lazy />
-            <livewire:metis-address-companies :query="$query" lazy />
-            <livewire:metis-address-planning :query="$query" lazy />
-            <livewire:metis-address-energy :query="$query" lazy />
-            <livewire:metis-address-heritage :query="$query" lazy />
+            <livewire:metis-map-panel :query="$query" lazy="on-load" />
+            <livewire:metis-address-bbr :query="$query" lazy="on-load" />
+            <livewire:metis-address-valuation :query="$query" lazy="on-load" />
+            <livewire:metis-address-skraafoto :query="$query" lazy="on-load" />
+            <livewire:metis-address-owners :query="$query" lazy="on-load" />
+            <livewire:metis-address-mortgages :query="$query" lazy="on-load" />
+            <livewire:metis-address-transactions :query="$query" lazy="on-load" />
+            <livewire:metis-address-similar-trades :query="$query" lazy="on-load" />
+            <livewire:metis-address-comparison :query="$query" lazy="on-load" />
+            <livewire:metis-address-companies :query="$query" lazy="on-load" />
+            <livewire:metis-address-planning :query="$query" lazy="on-load" />
+            <livewire:metis-address-energy :query="$query" lazy="on-load" />
+            <livewire:metis-address-heritage :query="$query" lazy="on-load" />
         @endif
     </div>
     @endif
