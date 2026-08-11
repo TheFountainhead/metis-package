@@ -34,13 +34,31 @@
                                 <td class="py-2 pr-4">{{ $m['creditor'] ?? '-' }}</td>
                                 <td class="py-2 pr-4 text-right">{{ isset($m['principal']) ? number_format($m['principal'], 0, ',', '.') . ' kr.' : '-' }}</td>
                                 <td class="py-2 pr-4 text-right">{{ isset($m['interest_rate']) ? number_format($m['interest_rate'], 2, ',', '.') . '%' : '-' }}</td>
-                                <td class="py-2">{{ $m['maturity_date'] ?? '-' }}</td>
+                                {{-- 🪤 "ikke oplyst", ikke "-": i en gældstabel læses en
+                                     bindestreg som "ingen udløbsdato" — altså et stående
+                                     lån. Sandheden er at Tinglysningen ikke HAR feltet
+                                     (undersøgt 11/8: tomt på 100% af 1,27 mio. pantebreve;
+                                     hverken `ssl/ejdsummarisk` eller e-TL's egen
+                                     `model:PantebrevFastEjendom` har et udløbsfelt).
+                                     Renten beholder bevidst sin bindestreg — den mangler
+                                     kun på 30,1% og findes for resten, så dér er tomheden
+                                     en egenskab ved det enkelte pantebrev. --}}
+                                <td class="py-2">
+                                    @if($m['maturity_date'] ?? null)
+                                        {{ $m['maturity_date'] }}
+                                    @else
+                                        <span class="text-zinc-400">{{ __('ikke oplyst') }}</span>
+                                    @endif
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
             </div>
             <p class="text-xs text-zinc-400 mt-3">{{ __('Registered principal is not the same as current outstanding debt.') }}</p>
+            {{-- Uden denne linje flytter "ikke oplyst" blot tvetydigheden: brugeren
+                 ved stadig ikke, om det er OS eller KILDEN der mangler noget. --}}
+            <p class="text-xs text-zinc-400 mt-1">{{ __('Tinglysningen oplyser ikke udløbsdato på pantebreve.') }}</p>
         @elseif(! $erUndersoegt)
             {{-- 🚨 "Ingen pantebreve fundet" ville være en FALSK PÅSTAND OM
                  FRAVÆR her: vi har ikke kigget endnu. Målt 10/8 blev 1.105.049
