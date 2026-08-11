@@ -100,7 +100,27 @@
                 $visibleCompanies = $showAllRoles ? $companies : array_values(array_filter($companies, $hasCurrentRole));
                 $hiddenCount = count($companies) - count($visibleCompanies);
             @endphp
-            <flux:heading size="lg" class="mb-3">{{ __('Company Roles') }}</flux:heading>
+            {{-- 🚨 Antallet af skjulte roller staar i OVERSKRIFTEN, ikke kun paa
+                 knappen nederst. Maalt 11/8: Larnaes talte 9 relationer hos
+                 Resights og saa 8 hos os — det manglende selskab laa bag
+                 "Vis også tidligere roller (1)", som han ikke opdagede. Han
+                 konkluderede at vores data var ufuldstaendige.
+
+                 Standarden (skjul gamle roller) er bevidst og uaendret
+                 (Kristian 22/7 — de stoejer). Det der manglede var et signal
+                 om at noget ER filtreret fra.
+
+                 🪤 Ikke et saertilfaelde: 207.649 personer har mindst én
+                 historisk rolle mod 65.509 uden, saa lydloes filtrering er
+                 normaltilstanden for flertallet af opslag. --}}
+            <flux:heading size="lg" class="mb-3">
+                {{ __('Company Roles') }}
+                @if(! $showAllRoles && $hiddenCount > 0)
+                    <span class="text-sm font-normal text-zinc-500">
+                        ({{ $hiddenCount }} {{ __('tidligere skjult') }})
+                    </span>
+                @endif
+            </flux:heading>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead>
