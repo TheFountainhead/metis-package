@@ -5,6 +5,7 @@ namespace TheFountainhead\Metis\Mail;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Support\Facades\URL;
 use TheFountainhead\Metis\Models\MetisLead;
 
 /**
@@ -35,6 +36,18 @@ class QuotaRequestNotification extends Mailable
 
     public function content(): Content
     {
-        return new Content(view: 'metis::mail.quota-request-notification');
+        return new Content(view: 'metis::mail.quota-request-notification', with: [
+            // 🔑 Ét klik frem for en SSH-session. Linket signeres, saa det kan
+            // aabnes uden login — signaturen daekker hele URL'en inkl. tallet,
+            // saa kvoten ikke kan skrues op bagefter.
+            //
+            // 🪤 7 dages gyldighed: en anmodning der ligger over en ferie skal
+            // stadig kunne godkendes, men et link i en indbakke skal ikke
+            // vaere evigt gyldigt.
+            'godkendUrl' => URL::temporarySignedRoute('metis.grant-quota', now()->addDays(7), [
+                'lead' => $this->lead->id,
+                'quota' => 25,
+            ]),
+        ]);
     }
 }

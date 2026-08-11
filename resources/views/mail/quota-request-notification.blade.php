@@ -9,8 +9,12 @@ Første søgning: "{{ $lead->first_search_term ?? 'Ikke registreret' }}" ({{ $le
 Bruger siden: {{ $lead->created_at?->format('d. M Y') ?? '-' }}
 Sidst aktiv: {{ $lead->last_active_at?->diffForHumans() ?? '-' }}
 
-Åbn for flere opslag (sætter kvoten til 25):
+Åbn for 25 opslag (ét klik, virker fra telefonen):
 
-  php artisan metis:grant-quota {{ $lead->email }} 25
+  {{ $godkendUrl }}
 
-Kør på metis.frankston.io. Tallet kan ændres frit.
+Brugeren får selv besked på mail når du har åbnet. Linket gælder 7 dage.
+
+Skal det være et andet tal, kan du køre på metis.frankston.io:
+
+  php artisan metis:grant-quota {{ $lead->email }} <antal>
