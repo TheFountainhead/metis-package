@@ -6,6 +6,7 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Livewire\Concerns\GatesLookups;
 use TheFountainhead\Metis\Models\MetisLookup;
+use TheFountainhead\Metis\Services\RegistryApi;
 use TheFountainhead\Metis\Services\SearchDetector;
 
 class Lookup extends Component
@@ -96,6 +97,44 @@ class Lookup extends Component
 
         if ($erCpr && strtolower($type) !== 'cpr') {
             $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => $query]), navigate: true);
+
+            return;
+        }
+
+        // 🚨 SELSKABSNAVN ER IKKE EN SIDETYPE. Maalt 11/8: Larnaes soegte
+        // "A.P. Møller - Mærsk A/S" to gange med fem sekunders mellemrum
+        // 10/8 kl. 20:32:55 og 20:33:00 — og stoppede saa med at teste.
+        //
+        // `lookup.blade.php` har kun grene for cvr/cpr/address/person og INGEN
+        // `@else`, saa `company_name` faldt igennem til en tom side med
+        // overskriften "Personopslag". Brugeren kan ikke se om selskabet ikke
+        // findes, om det er en fejl, eller om siden stadig loader — og en
+        // gentagen soegning fem sekunder efter er praecis den adfaerd en tom
+        // side fremkalder.
+        //
+        // 🪤 FOER kvote-gaten: et opslag der blot skal videresendes maa ikke
+        // koste brugeren en kvote. Samme raekkefoelge-hensyn som CPR-redirecten
+        // ovenfor.
+        //
+        // 🪤 Kun ved ét entydigt traef. Flere traef hoerer til i
+        // forslagslisten (`Index::searchCompanies()`), hvor brugeren vaelger
+        // selv — at gaette paa den foerste ville sende ham til det forkerte
+        // selskab uden at fortaelle det.
+        if (in_array(strtolower($type), ['company_name', 'company'], true)) {
+            $traef = rescue(fn () => app(RegistryApi::class)->searchByName($query), []) ?? [];
+
+            if (count($traef) === 1 && ! empty($traef[0]['cvr'])) {
+                $this->redirect(
+                    route('metis.lookup', ['type' => 'cvr', 'query' => $traef[0]['cvr']]),
+                    navigate: true
+                );
+
+                return;
+            }
+
+            // Flere eller ingen traef: send til forsiden med soegningen, hvor
+            // forslagslisten kan vise valgmulighederne.
+            $this->redirect(route('metis.home', ['q' => $query]), navigate: true);
 
             return;
         }
