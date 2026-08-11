@@ -206,11 +206,16 @@
                             <td>{{ $m['creditor'] ?? '-' }}</td>
                             <td class="text-right">{{ isset($m['principal']) ? number_format($m['principal'], 0, ',', '.') . ' kr.' : '-' }}</td>
                             <td class="text-right">{{ isset($m['interest_rate']) ? number_format($m['interest_rate'], 2, ',', '.') . '%' : '-' }}</td>
-                            <td>{{ $m['maturity_date'] ?? '-' }}</td>
+                            {{-- Samme begrundelse som i pantesektionen: Tinglysningen HAR
+                                 ikke feltet, saa en bindestreg ville laeses som "staaende
+                                 laan". Vigtigere her end paa skaermen — en PDF forlader
+                                 huset og kan laeses uden vores oevrige kontekst. --}}
+                            <td>{{ $m['maturity_date'] ?? __('ikke oplyst') }}</td>
                         </tr>
                     @endforeach
                 </tbody>
             </table>
+            <p class="label">{{ __('Tinglysningen oplyser ikke udløbsdato på pantebreve.') }}</p>
         @endif
 
         @if(count($transactions) > 0)
