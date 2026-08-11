@@ -5,7 +5,27 @@ namespace TheFountainhead\Metis\Livewire\Sections;
 use Livewire\Attributes\Lazy;
 use Livewire\Component;
 
-#[Lazy]
+/**
+ * 🚨 `isolate: false` — ellers venter sektionen paa VIEWPORTEN.
+ *
+ * Maalt i browseren 11/8 paa "Nordre Frihavnsgade 24, 2100": fem sektioner
+ * (Markedsanalyse, Virksomheder paa adressen, Lokalplaner, Energy Label,
+ * Fredning & beskyttelse) stod paa "Henter data" i det uendelige.
+ *
+ *   uden scroll:  9 livewire-requests, 5 haenger
+ *   efter scroll: 14 requests, 0 haenger
+ *
+ * Hverken data, API eller PHP fejlede — hver sektions `mount()` koerte paa
+ * 0,0s naar den blev kaldt direkte. Requesten blev bare aldrig SENDT, fordi
+ * komponenterne laa nederst paa siden.
+ *
+ * 🪤 En spinner der aldrig stopper laeses som "systemet er gaaet i staa",
+ * ikke som "scroll ned". Rapporteret tre gange som en fejl.
+ *
+ * 🪤 Bonus: `isolate: false` samler sektionerne i ÉN request frem for én pr.
+ * sektion.
+ */
+#[Lazy(isolate: false)]
 abstract class MetisSection extends Component
 {
     public string $query;
