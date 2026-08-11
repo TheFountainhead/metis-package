@@ -13,6 +13,7 @@ use TheFountainhead\Metis\Livewire\Analytics;
 use TheFountainhead\Metis\Livewire\AlertsInbox;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 use TheFountainhead\Metis\Livewire\LenderExposure;
+use TheFountainhead\Metis\Http\Controllers\GrantQuotaController;
 use TheFountainhead\Metis\Livewire\Lookup;
 use TheFountainhead\Metis\Livewire\PropertyExplore;
 use TheFountainhead\Metis\Livewire\Search;
@@ -42,6 +43,20 @@ Route::middleware(NoIndex::class)->group(function () {
     Route::get('/spoerg', Analytics::class)->name('metis.analytics')->middleware('throttle:20,1');
     Route::get('/alerts', AlertsInbox::class)->name('metis.alerts')->middleware('throttle:60,1');
     Route::get('/alerts/{id}', AlertDetail::class)->name('metis.alert.detail')->middleware('throttle:60,1')->whereNumber('id');
+
+    // 🔑 Godkendelses-link i kvote-mailen: ét klik fra telefonen frem for en
+    // SSH-session med `metis:grant-quota`. Friktionen dér betoed at en
+    // anmodning kunne blive liggende, og en ventende testbruger er tabt.
+    //
+    // 🚨 AUTH-FRI — beskyttet af `signed` alene, saa den KAN aabnes uden login.
+    // Derfor to ting der begge skal holde: signaturen daekker hele URL'en inkl.
+    // `quota` (tallet kan ikke skrues op bagefter), og ruten ligger INDE i
+    // NoIndex-gruppen. Praecis den kombination manglede paa CPR-ruterne 9/8,
+    // hvor beskyttelsen sad paa den ene af to veje ind.
+    Route::get('/godkend-kvote/{lead}/{quota}', GrantQuotaController::class)
+        ->name('metis.grant-quota')
+        ->middleware(['signed', 'throttle:10,1'])
+        ->whereNumber(['lead', 'quota']);
 });
 /*
  * 🚨 DER ER TO robots.txt, og de var IKKE enige.
