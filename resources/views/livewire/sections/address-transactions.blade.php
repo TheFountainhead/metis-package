@@ -32,7 +32,7 @@
             </div>
         @else
             @if($hasError)
-                @include('metis::livewire.sections.partials.lookup-error')
+                @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
             @else
             <p class="text-sm text-zinc-500">{{ __('No transactions found.') }}</p>
             @endif

@@ -8,7 +8,7 @@
         </div>
 
         @if($hasError)
-            @include('metis::livewire.sections.partials.lookup-error')
+            @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
         @elseif($totalCount === 0)
             <p class="text-sm text-zinc-500">{{ __('Ingen lignende handler fundet i området') }}</p>
         @else

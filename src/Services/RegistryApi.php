@@ -206,6 +206,17 @@ class RegistryApi
     {
         $result = $this->post('/v1/cvr/search-by-name', ['name' => $name]);
 
+        // 🚨 GIV FEJLEN VIDERE. `$result['companies'] ?? []` destruerede den
+        // uigenkaldeligt: en fejl har ingen 'companies'-noegle, saa kalderen
+        // fik en tom liste og kunne ALDRIG se forskel paa "ingen selskaber"
+        // og "opslaget fejlede". Search.php:576 gater paa isset($result['error'])
+        // og saa derfor intet — brugeren fik "ingen resultater" for et opslag
+        // der aldrig lykkedes. Samme falske benaegtelse som adressesiden,
+        // bare paa selskabssoegningen. fetchProperty():317 gjorde det rigtigt.
+        if (isset($result['error'])) {
+            return $result;
+        }
+
         return $result['companies'] ?? [];
     }
 
@@ -681,7 +692,16 @@ class RegistryApi
      */
     protected function cacheStructure(string $cvr, ?array $structure): void
     {
-        if (! empty($structure)) {
+        // 🪰 `! isset(...['error'])` er IKKE redundant med `! empty()`:
+        // et fejl-array ER non-empty. Docblocken ovenfor lovede allerede at
+        // "en fejl ikke maa skygge for friske data i 5 minutter", men koden
+        // holdt det ikke — den cachede fejlen som var den et svar.
+        // Blev foerst FARLIGT da post() holdt op med at kaste paa misdannede
+        // svar: foer kastede en TypeError, saa der var intet at cache.
+        // De tre soeskende (fetchCrossOwnershipCached:458,
+        // fetchCompaniesByCprCached, fetchPersonPropertyPortfolioByCprCached)
+        // gjorde det rigtigt hele tiden. Review-fund 18/8.
+        if (! empty($structure) && ! isset($structure['error'])) {
             Cache::put(self::structureCacheKey($cvr), $structure, 300);
         }
     }
@@ -1379,7 +1399,7 @@ class RegistryApi
             return $this->client()
                 ->post($endpoint, $data)
                 ->throw()
-                ->json('data') ?? ['error' => 'malformed_response', 'status' => null];
+                ->json('data') ?? ['error' => null, 'status' => null];
         } catch (RequestException $e) {
             return $this->errorFrom($e);
         } catch (ConnectionException $e) {

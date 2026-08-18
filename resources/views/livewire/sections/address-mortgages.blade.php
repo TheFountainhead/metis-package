@@ -65,6 +65,7 @@
                  blokken inlinet, og de to tekster begyndte allerede at drive
                  fra hinanden (review-fund 18/8). --}}
             @include('metis::livewire.sections.partials.lookup-error', [
+                'errorMessage' => $errorMessage,
                 'forsikring' => __('Det betyder ikke at ejendommen er gældfri'),
             ])
         @elseif(! $erUndersoegt)

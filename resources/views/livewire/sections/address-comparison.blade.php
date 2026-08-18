@@ -373,7 +373,7 @@
         @endif
 
         @if($hasError)
-            @include('metis::livewire.sections.partials.lookup-error')
+            @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
         @elseif (! $comparison && ! $rentalEstimate && ! $profitability)
             <p class="text-sm text-zinc-500">{{ __('Ingen markedsdata tilgængelig') }}</p>
         @endif

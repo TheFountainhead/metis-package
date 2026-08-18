@@ -23,7 +23,6 @@ class AddressPlanning extends MetisSection
             return;
         }
 
-
         // local_plans is a wrapper, not the plan list itself; 'local_plans' is
         // the pre-#199 legacy key, kept as fallback since deploy order across
         // repos isn't guaranteed. An error wrapper has neither -> [] -> empty state.

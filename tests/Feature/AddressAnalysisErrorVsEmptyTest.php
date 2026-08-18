@@ -165,8 +165,88 @@ it('🚨 et misdannet 200-svar er en FEJL, ikke "ingen data"', function () {
     // ned. Nu bliver det en fejl, som resten af kaeden behandler korrekt.
     Http::fake(['*property/analysis*' => Http::response(['uventet' => 'form'], 200)]);
 
-    $svar = app(RegistryApi::class)->resolveAddressAnalysis('Søndergade 43A, 4653 Karise');
+    $svar = app(RegistryApi::class)->resolveAddressAnalysis('Misdannetvej 1, 9999 Testby');
 
     expect($svar)->toHaveKey('error')
         ->and($svar)->not->toBe([]);
+});
+
+/**
+ * 🚨 ALLE 12 SEKTIONER, IKKE ET UDVALG.
+ *
+ * Guarden blev indsat mekanisk i ni sektioner med et script, og testfilen
+ * daekkede kun tre. En mutation der fjernede guarden i AddressBbr ville
+ * ingen test have fanget — "helper coverage is not call-site coverage":
+ * at mutere hjaelperen beviser at DEN er rigtig, ikke at den BRUGES.
+ *
+ * 🪤 Og hullet var ikke teoretisk: AddressSkraafoto fik guarden i
+ * komponenten, men jeg glemte fejl-grenen i bladen. Den rendrede da et TOMT
+ * <div> ved fejl — hele kortet forsvandt sporloest, hvilket laeses som en
+ * oedelagt side. Fanget af netop denne test, ikke af laesning.
+ */
+dataset('address-sektioner', [
+    'bbr' => [\TheFountainhead\Metis\Livewire\Sections\AddressBbr::class],
+    'ejere' => [\TheFountainhead\Metis\Livewire\Sections\AddressOwners::class],
+    'vurdering' => [\TheFountainhead\Metis\Livewire\Sections\AddressValuation::class],
+    'pantebreve' => [\TheFountainhead\Metis\Livewire\Sections\AddressMortgages::class],
+    'handler' => [\TheFountainhead\Metis\Livewire\Sections\AddressTransactions::class],
+    'lignende handler' => [\TheFountainhead\Metis\Livewire\Sections\AddressSimilarTrades::class],
+    'markedsanalyse' => [\TheFountainhead\Metis\Livewire\Sections\AddressComparison::class],
+    'virksomheder' => [\TheFountainhead\Metis\Livewire\Sections\AddressCompanies::class],
+    'lokalplaner' => [\TheFountainhead\Metis\Livewire\Sections\AddressPlanning::class],
+    'energimaerke' => [\TheFountainhead\Metis\Livewire\Sections\AddressEnergy::class],
+    'fredning' => [\TheFountainhead\Metis\Livewire\Sections\AddressHeritage::class],
+    'skraafoto' => [\TheFountainhead\Metis\Livewire\Sections\AddressSkraafoto::class],
+]);
+
+it('🚨 siger ALDRIG "ingen data" naar opslaget fejlede', function (string $sektion) {
+    Http::fake(['*property/analysis*' => Http::response(['message' => 'Unprocessable'], 422)]);
+
+    // 🪤 EGEN ADRESSE PR. SEKTION. resolveAddressAnalysis cacher paa
+    // md5(adresse), saa 12 sektioner mod SAMME query deler cache-post — og
+    // beforeEach(Cache::flush()) hjaelper ikke, for forureningen sker INDE i
+    // samme test. Foerste koersel cachede fejlen, de elleve naeste laeste den
+    // cachede vaerdi og fik et andet resultat end deres eget fake.
+    $test = Livewire::test($sektion, ['query' => 'Søndergade '.class_basename($sektion).' 1']);
+
+    // 1) Komponenten skal VIDE at det fejlede.
+    expect($test->get('hasError'))->toBeTrue();
+
+    // 2) Og bladen skal SIGE det — et tomt kort er lige saa uaerligt som en
+    //    falsk benaegtelse: brugeren kan ikke se forskel paa "fejl" og
+    //    "siden er i stykker".
+    expect($test->html())->toContain('opslaget lykkedes ikke');
+})->with('address-sektioner');
+
+it('🪤 cacher ALDRIG en malformet STRUKTUR — samme regel som adresse-opslaget', function () {
+    // 🚨 REGRESSION FUNDET AF REVIEW. `cacheStructure()` gatede paa
+    // `! empty($structure)` — men et fejl-array ER non-empty, saa fejlen blev
+    // cachet i 5 minutter. Metodens egen docblock lovede det modsatte.
+    //
+    // Blev foerst farligt da post() holdt op med at kaste paa misdannede svar:
+    // foer kastede en TypeError, saa der var intet at cache. Reglen jeg
+    // indfoerte for adresse-opslaget blev altsaa brudt ét hus laengere nede
+    // ad gaden i samme PR.
+    Cache::flush();
+
+    Http::fakeSequence()
+        ->push(['uventet' => 'form'], 200)
+        ->push(['data' => ['company' => ['name' => 'RIGTIG A/S']]], 200);
+
+    $api = app(RegistryApi::class);
+
+    expect($api->fetchCompanyStructureCached('99887766'))->toHaveKey('error')
+        ->and($api->fetchCompanyStructureCached('99887766'))->not->toHaveKey('error');
+});
+
+it('🚨 searchByName() giver fejlen VIDERE — en tom liste er ikke et svar', function () {
+    // Regression: `$result['companies'] ?? []` destruerede fejlen
+    // uigenkaldeligt. Search.php:576 gater paa isset($result['error']) og saa
+    // derfor intet — brugeren fik "ingen resultater" for et opslag der aldrig
+    // lykkedes. Samme falske benaegtelse, bare paa selskabssoegningen.
+    Http::fake(['*cvr/search-by-name*' => Http::response(['uventet' => 'form'], 200)]);
+
+    expect(app(RegistryApi::class)->searchByName('Malformet Struktur Test ApS'))
+        ->toHaveKey('error')
+        ->and(app(RegistryApi::class)->searchByName('Malformet Struktur Test ApS'))->not->toBe([]);
 });
