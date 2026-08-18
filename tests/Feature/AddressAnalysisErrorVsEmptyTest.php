@@ -216,6 +216,25 @@ it('🚨 siger ALDRIG "ingen data" naar opslaget fejlede', function (string $sek
     //    falsk benaegtelse: brugeren kan ikke se forskel paa "fejl" og
     //    "siden er i stykker".
     expect($test->html())->toContain('opslaget lykkedes ikke');
+
+    // 🪤 REVIEW FANDT ET HUL JEG IKKE KUNNE LUKKE HER. Guarden blev flyttet
+    //    til EFTER feltudtraekket, og hele suiten var groen (754): begge
+    //    assertions ovenfor er sande uanset raekkefoelge — hasError saettes
+    //    stadig, og bladen gater paa hasError. Ingen test observerer FELTET.
+    //
+    //    Jeg proevede at assertere at alle public properties staar paa deres
+    //    default efter en fejl. Det virker ikke: AddressSimilarTrades har
+    //    `limit`, `radiusKm`, `areaPct`, `monthsBack` — soegeparametre med
+    //    defaults der SKAL baere vaerdi, ogsaa ved fejl. En generisk regel kan
+    //    ikke skelne "felt fra svaret" fra "indstilling", og en allowlist pr.
+    //    sektion ville vaere ren duplikering af koden den tester.
+    //
+    //    Konsekvensen i praksis er lille: en fejl-payload har ingen
+    //    'property'-noegle, saa `?? <default>` giver samme resultat som
+    //    guarden. Men kontrakten i MetisSection's docblock ("brug FOER
+    //    felterne udtraekkes") er UHAANDHAEVET, og AddressBbr skriver
+    //    `$this->address = $analysis['property']['address'] ?? $query`, hvor
+    //    raekkefoelgen kunne faa betydning. ⏰ Aaben: metis-package #175.
 })->with('address-sektioner');
 
 it('🪤 cacher ALDRIG en malformet STRUKTUR — samme regel som adresse-opslaget', function () {
