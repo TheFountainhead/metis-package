@@ -216,14 +216,21 @@
                          og `%` (125) haandterer Laravel korrekt, og encoding aendrer
                          dem ikke: verificeret at et normalt navn giver PRAECIS samme
                          URL med og uden, saa ingen dobbelt-encoding. --}}
-                    <div class="flex items-baseline justify-between gap-3 mb-2">
-                        <h2 data-testid="person-name" class="min-w-0 text-xl font-serif text-ink-800">{{ $person['name'] }}</h2>
-                        <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => rawurlencode($person['name'])]) }}"
-                           data-testid="person-structure-link"
-                           class="shrink-0 text-xs px-3 py-1.5 border border-warm-500 text-warm-500 rounded hover:bg-warm-500 hover:text-white transition-colors">
-                            {{ __('Se selskabsstruktur') }} →
-                        </a>
-                    </div>
+                    {{-- 🚨 FULD BREDDE PAA EGEN LINJE, ikke en lille outline-knap
+                         ved siden af navnet. Foerste udgave (#170) satte den
+                         hoejrestillet i en flex-raekke — den blev visuelt SVAGERE
+                         end "Vis alle ejendomme" laengere nede, som er fyldt og
+                         brun. Bagvendt rangorden: at naa grafen er sidens primaere
+                         nye handling, mens "Vis alle ejendomme" blot udfolder en
+                         liste der allerede staar der. Hele problemet var at grafen
+                         var svaer at finde, saa en diskret knap loeser det halvt.
+                         Frederik saa de to versioner side om side og valgte denne. --}}
+                    <h2 data-testid="person-name" class="text-xl font-serif text-ink-800 mb-2">{{ $person['name'] }}</h2>
+                    <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => rawurlencode($person['name'])]) }}"
+                       data-testid="person-structure-link"
+                       class="block w-full mb-3 text-center text-sm px-4 py-2.5 bg-warm-500 text-white rounded-lg hover:bg-warm-600 transition-colors">
+                        {{ __('Se selskabsstruktur') }} →
+                    </a>
                     @if($roles = $person['roles'] ?? [])
                     <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
                         <h3 data-testid="person-roles-heading" class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">Roller</h3>
