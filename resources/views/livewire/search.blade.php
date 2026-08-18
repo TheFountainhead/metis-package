@@ -378,7 +378,14 @@
                                                     </div>
                                                 </div>
                                                 @if($prop['address'] ?? null)
-                                                    <button wire:click="crossReference('address', @js($prop['address']))" class="text-warm-500 text-xs hover:text-warm-600 shrink-0 ml-2">{{ __('Slå op') }}</button>
+                                                    {{-- 🪤 Feltet hedder `postal_code` her (person-property-portfolio);
+                                                         CPR-stiens `personal_properties` kalder det `zip`. Laes
+                                                         payloadens egne noegler — se testens docblock for hvorfor
+                                                         en adresse uden postnummer giver 12 tomme sektioner. --}}
+                                                    @php
+                                                        $addr = trim(($prop['address'] ?? '').', '.($prop['postal_code'] ?? '').' '.($prop['city'] ?? ''), ', ');
+                                                    @endphp
+                                                    <button wire:click="crossReference('address', @js($addr))" class="text-warm-500 text-xs hover:text-warm-600 shrink-0 ml-2">{{ __('Slå op') }}</button>
                                                 @endif
                                             </div>
                                         @endforeach
