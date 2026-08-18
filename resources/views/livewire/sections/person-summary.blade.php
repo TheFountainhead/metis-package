@@ -2,6 +2,13 @@
     <flux:card>
         <flux:heading size="lg" class="mb-4">Overblik</flux:heading>
 
+        {{-- 🚨 FEJL-GRENEN FOERST. Sektionen viser TAL, og et tal er den mest
+             overbevisende falske benaegtelse: "0 Aktive selskaber" ligner et
+             resultat, ikke et mislykket opslag. --}}
+        @if($hasError)
+            @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
+        @else
+
         {{-- Key metrics grid --}}
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <div class="rounded-lg bg-zinc-50 dark:bg-zinc-800 p-3 text-center">
@@ -117,6 +124,7 @@
             <p class="text-xs text-zinc-400 mt-3 italic">
                 Implied valuation er estimeret fra kapitalindskud ÷ ny aktieandel. Baseret på offentlige regnskaber. Faktiske vilkår kan afvige.
             </p>
-        </flux:card>
+            @endif
+    </flux:card>
     @endif
 </div>

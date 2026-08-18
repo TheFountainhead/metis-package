@@ -33,6 +33,21 @@ class PersonSummary extends MetisSection
         $companyResult = rescue(fn () => $api->fetchCompaniesByCpr($query));
         $propertyResult = rescue(fn () => $api->fetchPropertiesByCpr($query));
 
+        // 🚨 ÉN fejlet halvdel er nok. Sektionen viser TAL ("0 Aktive
+        // selskaber", "0 Ejendomme"), og et tal er den mest overbevisende
+        // falske benaegtelse: det ligner et resultat. Fejler kun det ene
+        // kald, ville den anden halvdels tal se komplet ud ved siden af et
+        // nul der bare betyder "vi kunne ikke spoerge".
+        //
+        // 🪤 Derfor `||` og ikke `&&`: at kraeve at BEGGE fejler ville skjule
+        // en halv fejl bag et helt tal. Maalt foer rettelsen: et misdannet
+        // 200-svar gav "0 Aktive selskaber / 0 Ejendomme" og
+        // estimatedNetWorth 0,0 — uden at noget indikerede at opslaget
+        // mislykkedes.
+        if ($this->opslagFejlede($companyResult) || $this->opslagFejlede($propertyResult)) {
+            return;
+        }
+
         $this->companies = $companyResult['companies'] ?? [];
         $this->properties = $propertyResult['properties'] ?? [];
 

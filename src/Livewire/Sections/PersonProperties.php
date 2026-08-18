@@ -22,6 +22,13 @@ class PersonProperties extends MetisSection
         $this->query = $query;
         $result = rescue(fn () => app(RegistryApi::class)->fetchPersonPropertyPortfolioByCprCached($query));
 
+        // 🚨 Et fejlet opslag maa ikke rendere som "0" eller "ingen".
+        // rescue() giver null naar kaldet kaster — se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($result)) {
+            return;
+        }
+
+
         $this->personalProperties = $result['personal_properties'] ?? [];
         $this->companies = $result['companies'] ?? [];
         $this->summary = $result['summary'] ?? [];

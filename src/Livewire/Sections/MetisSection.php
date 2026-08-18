@@ -138,6 +138,28 @@ abstract class MetisSection extends Component
      */
     protected function opslagFejlede(mixed $svar): bool
     {
+        // `null` taeller som fejl — et defensivt baelte, ikke en maalt sti.
+        //
+        // 🪤 AERLIGT FORBEHOLD: jeg tilfoejede denne gren i troen paa at
+        // `rescue()` i person-sektionerne gav null. Det goer den IKKE. Maalt
+        // med en probe: ConnectionException, RuntimeException og HTTP 500
+        // giver alle `['error' => 'upstream_error', 'status' => 0]`, fordi
+        // `post()` fanger dem selv foer rescue() ser noget. Grenen er derfor
+        // uopnaaelig via de nuvaerende kaldstier, og en test af den ville
+        // vaere vacuous (verificeret: mutation der fjerner grenen overlever).
+        //
+        // Den bliver staaende fordi `opslagFejlede()` er en delt kontrakt for
+        // 17 sektioner: en fremtidig kalder KAN sende null (fx et
+        // `rescue(..., null)` eller et kald uden om post()), og et lydloest
+        // `false` ville da vaere den falske benaegtelse igen. Billigt baelte,
+        // dokumenteret som saadan.
+        if ($svar === null) {
+            $this->hasError = true;
+            $this->errorMessage = 'lookup_failed';
+
+            return true;
+        }
+
         if (! is_array($svar) || ! isset($svar['error'])) {
             return false;
         }

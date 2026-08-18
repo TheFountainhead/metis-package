@@ -185,7 +185,11 @@
                 </button>
             @endif
         @else
+            @if($hasError)
+                @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
+            @else
             <p class="text-sm text-zinc-500">{{ __('No company roles found for this person.') }}</p>
+            @endif
         @endif
     </flux:card>
 </div>
