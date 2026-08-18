@@ -195,7 +195,36 @@
             <div class="space-y-3">
                 @foreach(array_slice($result['persons'] ?? [], 0, $visiblePersons) as $person)
                 <div>
-                    <h2 class="text-xl font-serif text-ink-800 mb-2">{{ $person['name'] }}</h2>
+                    {{-- Navn + vejen til ejerskabsgrafen.
+
+                         🚨 Knappen sidder INDE i personloekken, én pr. traef — ikke
+                         én for hele resultatet. Et navneopslag rammer i praksis ALTID
+                         loftet paa 20 traef (maalt paa prod 18/8: "Frederik Larnaes"
+                         giver ogsaa Jesper Friis og Ove Gregers Larnaes; Elasticsearch
+                         matcher loest paa efternavnet). En enkelt knap ville derfor
+                         vaelge person PAA BRUGERENS VEGNE — praecis derfor blev et
+                         automatisk redirect fravalgt.
+
+                         Linket baerer $person['name'] (det FULDE CVR-navn), ikke
+                         soegestrengen: lookup-siden slaar op paa navnet, og
+                         "Frederik Gregers Dannisgaard Larnaes" rammer mere praecist
+                         end "Frederik Larnaes".
+
+                         Knappen vises paa ALLE traef, ogsaa dem uden selskaber. At
+                         skjule den ville kraeve et ekstra kald pr. person paa
+                         soegetidspunktet, og et fravaer af knap ville i sig selv
+                         laese som "denne person har ingenting" — en paastand vi ikke
+                         har daekning for her. Lookup-siden har sin egen tom-tilstand
+                         med CPR-noten, og den er det aerlige sted at sige det. --}}
+                    <div class="flex items-baseline justify-between gap-3 mb-2">
+                        <h2 class="text-xl font-serif text-ink-800">{{ $person['name'] }}</h2>
+                        <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => $person['name']]) }}"
+                           wire:navigate
+                           data-testid="person-structure-link"
+                           class="shrink-0 text-xs px-3 py-1.5 border border-warm-500 text-warm-500 rounded hover:bg-warm-500 hover:text-white transition-colors">
+                            {{ __('Se selskabsstruktur') }} →
+                        </a>
+                    </div>
                     @if($roles = $person['roles'] ?? [])
                     <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
                         <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">Roller</h3>
