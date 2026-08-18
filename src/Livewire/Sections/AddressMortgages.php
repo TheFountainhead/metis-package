@@ -33,6 +33,15 @@ class AddressMortgages extends MetisSection
     {
         $this->query = $query;
         $analysis = app(RegistryApi::class)->resolveAddressAnalysis($query);
+
+        // 🚨 FOERST AF ALT. "Ingen pantebreve fundet" er en paastand om
+        // GAELDFRIHED — den maa aldrig staa naar kaldet fejlede. Bladen har
+        // baaret kommentaren "ville vaere en FALSK PAASTAND" siden #135, men
+        // guarden daekkede kun ikke-crawlede ejendomme, ikke fejlede opslag.
+        if ($this->opslagFejlede($analysis)) {
+            return;
+        }
+
         $this->mortgages = $analysis['property']['mortgages'] ?? [];
         $this->totalDebt = $analysis['property']['total_debt'] ?? 0;
 

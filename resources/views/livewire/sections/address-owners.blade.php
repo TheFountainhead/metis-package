@@ -23,7 +23,11 @@
                 @endforeach
             </div>
         @else
+            @if($hasError)
+                @include('metis::livewire.sections.partials.lookup-error', ['hvad' => __('ejeroplysninger')])
+            @else
             <p class="text-sm text-zinc-500">{{ __('No owner data found.') }}</p>
+            @endif
         @endif
     </flux:card>
 </div>

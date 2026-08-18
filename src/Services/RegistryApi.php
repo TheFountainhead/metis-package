@@ -1125,23 +1125,63 @@ class RegistryApi
     /**
      * Resolve address to property analysis with caching.
      * Merged from MetisInputDetector::resolveAddressAnalysis().
+     *
+     * 🚨 FEJL OG TOM ER IKKE DET SAMME — og var det indtil 18/8.
+     *
+     * Metoden returnerede `[]` for BEGGE udfald, saa de 12 address-sektioner
+     * der forbruger den ikke kunne skelne "vi spurgte og fik intet" fra "vi
+     * kunne ikke spoerge". Resultatet var 12 sektioner der alle skrev
+     * "Ingen data fundet" — og "Ingen pantebreve fundet" laeses som
+     * GAELDFRIHED. I en kreditvurdering er det en konklusion nogen handler
+     * paa. Observeret i prod: ét 422 (adresse uden postnummer) gav 12 falske
+     * benaegtelser paa én side.
+     *
+     * 🪤 OG FEJLEN BLEV CACHET I 24 TIMER. `Cache::remember` wrappede hele
+     * blokken, saa et enkelt daarligt svar laase loegnen fast et doegn.
+     * Kodebasens egen regel siger det modsatte (#134: "cach aldrig fejl,
+     * og stop polling mod doedt backend").
+     *
+     * Formen er BAGUDKOMPATIBEL: fejl-udfaldet baerer nu `error`/`status`,
+     * men ingen `property`-noegle. Alle 12 sektioner laeser
+     * `$analysis['property'][...] ?? <default>`, saa de opfoerer sig
+     * praecis som foer indtil de opgraderes til at bruge fejl-tilstanden.
+     * Referencemoenster: MapPanel::loadLayers() (samme mappe) og
+     * MetisSection's afproevede hasError-kontrakt.
+     *
+     * @return array{}|array{error: string, status: int|null}|array<string, mixed>
+     *   Tom liste = opslaget lykkedes, men ejendommen har ingen data.
+     *   `['error' => ...]` = kaldet fejlede; sig ALDRIG "ingen data" paa den.
      */
     public function resolveAddressAnalysis(string $address): array
     {
         $cacheKey = 'metis:address_analysis:'.md5($address);
 
-        return Cache::remember($cacheKey, now()->addHours(24), function () use ($address) {
-            $parsed = $this->parseAddress($address);
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
 
-            // Return raw API response (not transformed) — sections need full data
-            $result = $this->post('/v1/property/analysis', $parsed);
+        $parsed = $this->parseAddress($address);
 
-            if (isset($result['error']) || empty($result['property'] ?? null)) {
-                return [];
-            }
+        // Return raw API response (not transformed) — sections need full data
+        $result = $this->post('/v1/property/analysis', $parsed);
 
-            return $result;
-        });
+        // Transportfejl/4xx/5xx: giv fejlen VIDERE, og cach den ALDRIG.
+        // post() konverterer en RequestException til ['error' => …, 'status' => …];
+        // et rent null betyder ligeledes "intet troværdigt svar".
+        if ($result === null || isset($result['error'])) {
+            return [
+                'error' => $result['error'] ?? 'transport_error',
+                'status' => $result['status'] ?? null,
+            ];
+        }
+
+        // 200 uden property = ejendommen findes, men vi har ingen data paa den.
+        // DET er den aegte tomme tilstand, og den maa gerne caches.
+        $svar = empty($result['property'] ?? null) ? [] : $result;
+
+        Cache::put($cacheKey, $svar, now()->addHours(24));
+
+        return $svar;
     }
 
     public function resolvePropertyComparison(string $query): ?array
