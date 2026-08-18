@@ -17,6 +17,12 @@ class AddressTransactions extends MetisSection
     {
         $this->query = $query;
         $analysis = app(RegistryApi::class)->resolveAddressAnalysis($query);
+        // 🚨 Et fejlet opslag maa ikke rendere som "ingen data".
+        // Se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($analysis)) {
+            return;
+        }
+
         $this->transactions = $analysis['property']['transactions'] ?? [];
     }
 

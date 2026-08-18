@@ -42,7 +42,7 @@
             @endif
         @else
             @if($hasError)
-                @include('metis::livewire.sections.partials.lookup-error', ['hvad' => __('vurderingsdata')])
+                @include('metis::livewire.sections.partials.lookup-error')
             @else
             <p class="text-sm text-zinc-500">{{ __('No valuation data found.') }}</p>
             @endif

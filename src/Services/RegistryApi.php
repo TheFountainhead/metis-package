@@ -1166,9 +1166,14 @@ class RegistryApi
         $result = $this->post('/v1/property/analysis', $parsed);
 
         // Transportfejl/4xx/5xx: giv fejlen VIDERE, og cach den ALDRIG.
-        // post() konverterer en RequestException til ['error' => …, 'status' => …];
-        // et rent null betyder ligeledes "intet troværdigt svar".
-        if ($result === null || isset($result['error'])) {
+        // post() konverterer en RequestException til ['error' => …, 'status' => …].
+        //
+        // 🪤 Foerste udkast havde ogsaa `$result === null` her, med en kommentar
+        // om at null betyder "intet troevaerdigt svar". Den gren var UOPNAAELIG:
+        // post() er `: array`, saa et null fra ->json('data') kastede en
+        // TypeError FOER vi naaede hertil. Rettet ved kilden (`?? []`), ikke
+        // med en gren der aldrig kunne koere.
+        if (isset($result['error'])) {
             return [
                 'error' => $result['error'] ?? 'transport_error',
                 'status' => $result['status'] ?? null,
@@ -1346,13 +1351,35 @@ class RegistryApi
         }
     }
 
+    /**
+     * 🚨 `?? []` ER IKKE KOSMETIK. Metoden er deklareret `: array`, men
+     * `->json('data')` giver NULL naar et 200-svar mangler `data`-noeglen
+     * (tom body, `{"message":"ok"}`, `{"data":null}`). PHP kastede da en
+     * TypeError FOER kalderen fik en chance for at reagere.
+     *
+     * 🪤 Og det var vaerre end det lyder: MetisSection er
+     * `#[Lazy(isolate: false)]`, saa alle sektioner hentes i ÉT request.
+     * Ét misdannet 200-svar tog derfor HELE adressesiden ned med en 500 —
+     * ikke 12 sektioner med hver sin tomme tilstand. Vi haerdede 4xx/5xx
+     * mens den skarpeste kant stod aaben.
+     *
+     * 🪤 `?? ['error' => …]`, IKKE `?? []`. Foerste rettelse gav en tom liste,
+     * men et svar vi ikke forstaar er ikke "der er ingen data" — det er et
+     * mislykket opslag. Med `[]` degraderede PersonStructure fra 'failed' til
+     * 'empty', altsaa fra "kunne ikke hente" til "personen har ingen
+     * selskaber". Det er praecis den falske benaegtelse hele denne PR handler
+     * om, flyttet ét lag ned. Fanget af en eksisterende test (#118's
+     * "malformed 200 response as a failure rather than a 500").
+     *
+     * Fundet ved review 18/8, verificeret med en probe.
+     */
     protected function post(string $endpoint, array $data): array
     {
         try {
             return $this->client()
                 ->post($endpoint, $data)
                 ->throw()
-                ->json('data');
+                ->json('data') ?? ['error' => 'malformed_response', 'status' => null];
         } catch (RequestException $e) {
             return $this->errorFrom($e);
         } catch (ConnectionException $e) {

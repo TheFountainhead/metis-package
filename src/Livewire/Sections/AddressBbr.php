@@ -19,6 +19,12 @@ class AddressBbr extends MetisSection
     {
         $this->query = $query;
         $analysis = app(RegistryApi::class)->resolveAddressAnalysis($query);
+        // 🚨 Et fejlet opslag maa ikke rendere som "ingen data".
+        // Se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($analysis)) {
+            return;
+        }
+
         $this->bbr = $analysis['property']['bbr'] ?? null;
         $this->address = $analysis['property']['address'] ?? $query;
 

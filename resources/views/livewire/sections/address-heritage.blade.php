@@ -23,7 +23,11 @@
                 @endif
             </dl>
         @else
+            @if($hasError)
+                @include('metis::livewire.sections.partials.lookup-error')
+            @else
             <p class="text-sm text-zinc-500">{{ __('No heritage data found.') }}</p>
+            @endif
         @endif
     </flux:card>
 </div>

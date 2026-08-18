@@ -31,7 +31,11 @@
                 </table>
             </div>
         @else
+            @if($hasError)
+                @include('metis::livewire.sections.partials.lookup-error')
+            @else
             <p class="text-sm text-zinc-500">{{ __('No transactions found.') }}</p>
+            @endif
         @endif
     </flux:card>
 </div>

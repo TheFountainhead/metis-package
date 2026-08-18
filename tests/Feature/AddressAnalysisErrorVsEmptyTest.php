@@ -69,7 +69,7 @@ it('🚨 siger IKKE "ingen pantebreve" naar opslaget fejlede', function () {
     // Den falske benaegtelse maa vaere VAEK ...
     expect($html)->not->toContain('No mortgages found.')
         // ... og erstattet af noget der siger hvad der faktisk skete.
-        ->and($html)->toContain('opslaget mislykkedes');
+        ->and($html)->toContain('opslaget lykkedes ikke');
 });
 
 it('siger det praecist naar adressen er FLERTYDIG (422), ikke bare "noget gik galt"', function () {
@@ -94,7 +94,7 @@ it('viser stadig "No mortgages found." naar ejendommen ER undersoegt og gaeldfri
     $html = Livewire::test(AddressMortgages::class, ['query' => 'Gaeldfri Alle 1, 1000 By'])->html();
 
     expect($html)->toContain('No mortgages found.')
-        ->and($html)->not->toContain('opslaget mislykkedes');
+        ->and($html)->not->toContain('opslaget lykkedes ikke');
 });
 
 it('🚨 siger IKKE "ingen ejerdata" naar opslaget fejlede', function () {
@@ -104,7 +104,7 @@ it('🚨 siger IKKE "ingen ejerdata" naar opslaget fejlede', function () {
         ['query' => 'Søndergade 43A'])->html();
 
     expect($html)->not->toContain('No owner data found.')
-        ->and($html)->toContain('opslaget mislykkedes');
+        ->and($html)->toContain('opslaget lykkedes ikke');
 });
 
 it('🚨 siger IKKE "ingen vurderingsdata" naar opslaget fejlede', function () {
@@ -114,7 +114,7 @@ it('🚨 siger IKKE "ingen vurderingsdata" naar opslaget fejlede', function () {
         ['query' => 'Søndergade 43A'])->html();
 
     expect($html)->not->toContain('No valuation data found.')
-        ->and($html)->toContain('opslaget mislykkedes');
+        ->and($html)->toContain('opslaget lykkedes ikke');
 });
 
 it('viser stadig den AEGTE tomme tilstand for ejere naar kaldet lykkes', function () {
@@ -127,5 +127,46 @@ it('viser stadig den AEGTE tomme tilstand for ejere naar kaldet lykkes', functio
         ['query' => 'Tomvej 1, 1000 By'])->html();
 
     expect($html)->toContain('No owner data found.')
-        ->and($html)->not->toContain('opslaget mislykkedes');
+        ->and($html)->not->toContain('opslaget lykkedes ikke');
+});
+
+it('🪤 den DELTE partial viser ogsaa postnummer-hintet ved 422', function () {
+    // Review-fund: de to tests for 'prøv med postnummer' ramte begge
+    // AddressMortgages, som havde sin EGEN inlinede kopi af grenen. Partialen
+    // — den kode 11 af 12 sektioner faktisk koerer — var helt utestet:
+    // @if(false) i dens 422-gren overlevede hele suiten groent.
+    Http::fake(['*property/analysis*' => Http::response(['message' => 'Unprocessable'], 422)]);
+
+    foreach ([
+        \TheFountainhead\Metis\Livewire\Sections\AddressOwners::class,
+        \TheFountainhead\Metis\Livewire\Sections\AddressValuation::class,
+    ] as $sektion) {
+        expect(Livewire::test($sektion, ['query' => 'Søndergade 43A'])->html())
+            ->toContain('prøv med postnummer');
+    }
+});
+
+it('🪤 en TRANSPORTFEJL faar den generiske besked, ikke postnummer-hintet', function () {
+    // Den hyppigste prod-fejl er timeout, ikke 422. Uden dette kunne
+    // errorMessage vaere hardkodet til 'address_ambiguous' og alle tests
+    // stadig vaere groenne — og brugeren fik da et raad der ikke hjaelper.
+    Http::fake(['*property/analysis*' => fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout')]);
+
+    $html = Livewire::test(\TheFountainhead\Metis\Livewire\Sections\AddressOwners::class,
+        ['query' => 'Søndergade 43A, 4653 Karise'])->html();
+
+    expect($html)->toContain('Vi kunne ikke få svar fra kilden')
+        ->and($html)->not->toContain('prøv med postnummer');
+});
+
+it('🚨 et misdannet 200-svar er en FEJL, ikke "ingen data"', function () {
+    // 🪤 Min foerste rettelse af post() brugte `?? []`, saa et svar vi ikke
+    // forstaar blev til "ingen data" — den falske benaegtelse flyttet ét lag
+    // ned. Nu bliver det en fejl, som resten af kaeden behandler korrekt.
+    Http::fake(['*property/analysis*' => Http::response(['uventet' => 'form'], 200)]);
+
+    $svar = app(RegistryApi::class)->resolveAddressAnalysis('Søndergade 43A, 4653 Karise');
+
+    expect($svar)->toHaveKey('error')
+        ->and($svar)->not->toBe([]);
 });

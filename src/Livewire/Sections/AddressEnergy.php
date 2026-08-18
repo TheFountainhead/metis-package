@@ -17,6 +17,12 @@ class AddressEnergy extends MetisSection
     {
         $this->query = $query;
         $analysis = app(RegistryApi::class)->resolveAddressAnalysis($query);
+        // 🚨 Et fejlet opslag maa ikke rendere som "ingen data".
+        // Se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($analysis)) {
+            return;
+        }
+
         $this->energy = $analysis['property']['energy_label'] ?? null;
     }
 

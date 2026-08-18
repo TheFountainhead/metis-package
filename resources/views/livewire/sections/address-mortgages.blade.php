@@ -60,21 +60,13 @@
                  ved stadig ikke, om det er OS eller KILDEN der mangler noget. --}}
             <p class="text-xs text-zinc-400 mt-1">{{ __('Tinglysningen oplyser ikke udløbsdato på pantebreve.') }}</p>
         @elseif($hasError)
-            {{-- 🚨 SAMME AERLIGHED SOM GRENEN NEDENFOR, anden aarsag. Der stod
-                 foer "No mortgages found." her, fordi et fejlet opslag faldt
-                 igennem til @else: resolveAddressAnalysis() returnerede `[]`
-                 for BAADE fejl og tom (rettet 18/8, se metodens docblock).
-                 Ét 422 gav da 12 falske benaegtelser paa én side. --}}
-            <p class="text-sm text-zinc-500">
-                @if($errorMessage === 'address_ambiguous')
-                    {{ __('Adressen kan ikke entydigt bestemmes — prøv med postnummer.') }}
-                @else
-                    {{ __('Vi kunne ikke hente gældsoplysninger lige nu.') }}
-                @endif
-            </p>
-            <p class="text-xs text-zinc-400 mt-2">
-                {{ __('Det betyder ikke at ejendommen er gældfri — opslaget mislykkedes.') }}
-            </p>
+            {{-- 🔑 Bruger FAELLES-partialen, men med sin egen forsikringslinje:
+                 "gaeldfri" er den farlige slutning netop her. Foer stod hele
+                 blokken inlinet, og de to tekster begyndte allerede at drive
+                 fra hinanden (review-fund 18/8). --}}
+            @include('metis::livewire.sections.partials.lookup-error', [
+                'forsikring' => __('Det betyder ikke at ejendommen er gældfri'),
+            ])
         @elseif(! $erUndersoegt)
             {{-- 🚨 "Ingen pantebreve fundet" ville være en FALSK PÅSTAND OM
                  FRAVÆR her: vi har ikke kigget endnu. Målt 10/8 blev 1.105.049

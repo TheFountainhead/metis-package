@@ -7,7 +7,9 @@
             @endif
         </div>
 
-        @if($totalCount === 0)
+        @if($hasError)
+            @include('metis::livewire.sections.partials.lookup-error')
+        @elseif($totalCount === 0)
             <p class="text-sm text-zinc-500">{{ __('Ingen lignende handler fundet i området') }}</p>
         @else
             <div class="overflow-x-auto">

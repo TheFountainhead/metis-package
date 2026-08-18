@@ -37,6 +37,12 @@ class AddressSimilarTrades extends MetisSection
         // Resolve query → BFE via address analysis. BFE-strengen hedder
         // `matrikel_id` i payloaden — `matrikel` er hele parcel-objektet.
         $analysis = rescue(fn () => app(RegistryApi::class)->resolveAddressAnalysis($query));
+        // 🚨 Et fejlet opslag maa ikke rendere som "ingen data".
+        // Se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($analysis)) {
+            return;
+        }
+
         $bfe = $analysis['property']['matrikel_id'] ?? null;
 
         if (! is_string($bfe) || $bfe === '') {
