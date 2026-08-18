@@ -206,6 +206,17 @@ class RegistryApi
     {
         $result = $this->post('/v1/cvr/search-by-name', ['name' => $name]);
 
+        // 🚨 GIV FEJLEN VIDERE. `$result['companies'] ?? []` destruerede den
+        // uigenkaldeligt: en fejl har ingen 'companies'-noegle, saa kalderen
+        // fik en tom liste og kunne ALDRIG se forskel paa "ingen selskaber"
+        // og "opslaget fejlede". Search.php:576 gater paa isset($result['error'])
+        // og saa derfor intet — brugeren fik "ingen resultater" for et opslag
+        // der aldrig lykkedes. Samme falske benaegtelse som adressesiden,
+        // bare paa selskabssoegningen. fetchProperty():317 gjorde det rigtigt.
+        if (isset($result['error'])) {
+            return $result;
+        }
+
         return $result['companies'] ?? [];
     }
 
@@ -681,7 +692,16 @@ class RegistryApi
      */
     protected function cacheStructure(string $cvr, ?array $structure): void
     {
-        if (! empty($structure)) {
+        // 🪰 `! isset(...['error'])` er IKKE redundant med `! empty()`:
+        // et fejl-array ER non-empty. Docblocken ovenfor lovede allerede at
+        // "en fejl ikke maa skygge for friske data i 5 minutter", men koden
+        // holdt det ikke — den cachede fejlen som var den et svar.
+        // Blev foerst FARLIGT da post() holdt op med at kaste paa misdannede
+        // svar: foer kastede en TypeError, saa der var intet at cache.
+        // De tre soeskende (fetchCrossOwnershipCached:458,
+        // fetchCompaniesByCprCached, fetchPersonPropertyPortfolioByCprCached)
+        // gjorde det rigtigt hele tiden. Review-fund 18/8.
+        if (! empty($structure) && ! isset($structure['error'])) {
             Cache::put(self::structureCacheKey($cvr), $structure, 300);
         }
     }
@@ -1125,23 +1145,68 @@ class RegistryApi
     /**
      * Resolve address to property analysis with caching.
      * Merged from MetisInputDetector::resolveAddressAnalysis().
+     *
+     * 🚨 FEJL OG TOM ER IKKE DET SAMME — og var det indtil 18/8.
+     *
+     * Metoden returnerede `[]` for BEGGE udfald, saa de 12 address-sektioner
+     * der forbruger den ikke kunne skelne "vi spurgte og fik intet" fra "vi
+     * kunne ikke spoerge". Resultatet var 12 sektioner der alle skrev
+     * "Ingen data fundet" — og "Ingen pantebreve fundet" laeses som
+     * GAELDFRIHED. I en kreditvurdering er det en konklusion nogen handler
+     * paa. Observeret i prod: ét 422 (adresse uden postnummer) gav 12 falske
+     * benaegtelser paa én side.
+     *
+     * 🪤 OG FEJLEN BLEV CACHET I 24 TIMER. `Cache::remember` wrappede hele
+     * blokken, saa et enkelt daarligt svar laase loegnen fast et doegn.
+     * Kodebasens egen regel siger det modsatte (#134: "cach aldrig fejl,
+     * og stop polling mod doedt backend").
+     *
+     * Formen er BAGUDKOMPATIBEL: fejl-udfaldet baerer nu `error`/`status`,
+     * men ingen `property`-noegle. Alle 12 sektioner laeser
+     * `$analysis['property'][...] ?? <default>`, saa de opfoerer sig
+     * praecis som foer indtil de opgraderes til at bruge fejl-tilstanden.
+     * Referencemoenster: MapPanel::loadLayers() (samme mappe) og
+     * MetisSection's afproevede hasError-kontrakt.
+     *
+     * @return array{}|array{error: string, status: int|null}|array<string, mixed>
+     *   Tom liste = opslaget lykkedes, men ejendommen har ingen data.
+     *   `['error' => ...]` = kaldet fejlede; sig ALDRIG "ingen data" paa den.
      */
     public function resolveAddressAnalysis(string $address): array
     {
         $cacheKey = 'metis:address_analysis:'.md5($address);
 
-        return Cache::remember($cacheKey, now()->addHours(24), function () use ($address) {
-            $parsed = $this->parseAddress($address);
+        if (! is_null($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
 
-            // Return raw API response (not transformed) — sections need full data
-            $result = $this->post('/v1/property/analysis', $parsed);
+        $parsed = $this->parseAddress($address);
 
-            if (isset($result['error']) || empty($result['property'] ?? null)) {
-                return [];
-            }
+        // Return raw API response (not transformed) — sections need full data
+        $result = $this->post('/v1/property/analysis', $parsed);
 
-            return $result;
-        });
+        // Transportfejl/4xx/5xx: giv fejlen VIDERE, og cach den ALDRIG.
+        // post() konverterer en RequestException til ['error' => …, 'status' => …].
+        //
+        // 🪤 Foerste udkast havde ogsaa `$result === null` her, med en kommentar
+        // om at null betyder "intet troevaerdigt svar". Den gren var UOPNAAELIG:
+        // post() er `: array`, saa et null fra ->json('data') kastede en
+        // TypeError FOER vi naaede hertil. Rettet ved kilden (`?? []`), ikke
+        // med en gren der aldrig kunne koere.
+        if (isset($result['error'])) {
+            return [
+                'error' => $result['error'] ?? 'transport_error',
+                'status' => $result['status'] ?? null,
+            ];
+        }
+
+        // 200 uden property = ejendommen findes, men vi har ingen data paa den.
+        // DET er den aegte tomme tilstand, og den maa gerne caches.
+        $svar = empty($result['property'] ?? null) ? [] : $result;
+
+        Cache::put($cacheKey, $svar, now()->addHours(24));
+
+        return $svar;
     }
 
     public function resolvePropertyComparison(string $query): ?array
@@ -1306,13 +1371,35 @@ class RegistryApi
         }
     }
 
+    /**
+     * 🚨 `?? []` ER IKKE KOSMETIK. Metoden er deklareret `: array`, men
+     * `->json('data')` giver NULL naar et 200-svar mangler `data`-noeglen
+     * (tom body, `{"message":"ok"}`, `{"data":null}`). PHP kastede da en
+     * TypeError FOER kalderen fik en chance for at reagere.
+     *
+     * 🪤 Og det var vaerre end det lyder: MetisSection er
+     * `#[Lazy(isolate: false)]`, saa alle sektioner hentes i ÉT request.
+     * Ét misdannet 200-svar tog derfor HELE adressesiden ned med en 500 —
+     * ikke 12 sektioner med hver sin tomme tilstand. Vi haerdede 4xx/5xx
+     * mens den skarpeste kant stod aaben.
+     *
+     * 🪤 `?? ['error' => …]`, IKKE `?? []`. Foerste rettelse gav en tom liste,
+     * men et svar vi ikke forstaar er ikke "der er ingen data" — det er et
+     * mislykket opslag. Med `[]` degraderede PersonStructure fra 'failed' til
+     * 'empty', altsaa fra "kunne ikke hente" til "personen har ingen
+     * selskaber". Det er praecis den falske benaegtelse hele denne PR handler
+     * om, flyttet ét lag ned. Fanget af en eksisterende test (#118's
+     * "malformed 200 response as a failure rather than a 500").
+     *
+     * Fundet ved review 18/8, verificeret med en probe.
+     */
     protected function post(string $endpoint, array $data): array
     {
         try {
             return $this->client()
                 ->post($endpoint, $data)
                 ->throw()
-                ->json('data');
+                ->json('data') ?? ['error' => 'malformed_response', 'status' => null];
         } catch (RequestException $e) {
             return $this->errorFrom($e);
         } catch (ConnectionException $e) {

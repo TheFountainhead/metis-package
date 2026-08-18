@@ -41,7 +41,11 @@
                 </table>
             @endif
         @else
+            @if($hasError)
+                @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
+            @else
             <p class="text-sm text-zinc-500">{{ __('No valuation data found.') }}</p>
+            @endif
         @endif
     </flux:card>
 </div>

@@ -36,7 +36,23 @@ class AddressSimilarTrades extends MetisSection
 
         // Resolve query → BFE via address analysis. BFE-strengen hedder
         // `matrikel_id` i payloaden — `matrikel` er hele parcel-objektet.
-        $analysis = rescue(fn () => app(RegistryApi::class)->resolveAddressAnalysis($query));
+        // 🪤 INTET `rescue()` HER. Det stod her foer, og det gjorde guarden
+        // nedenfor virkningsloes: rescue() giver `null` naar kaldet kaster, og
+        // opslagFejlede(null) returnerer false (den kraever et array med en
+        // 'error'-noegle). Sektionen skrev da "Ingen lignende handler fundet i
+        // omraadet" paa et opslag der aldrig lykkedes — det ENESTE sted den
+        // falske benaegtelse overlevede denne PR.
+        // De elleve oevrige sektioner har ikke rescue() og er aerligere for
+        // det: en exception naar frem til Livewires egen fejlhaandtering
+        // frem for at blive til en tom liste. Review-fund 18/8.
+        $analysis = app(RegistryApi::class)->resolveAddressAnalysis($query);
+
+        // 🚨 Et fejlet opslag maa ikke rendere som "ingen data".
+        // Se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($analysis)) {
+            return;
+        }
+
         $bfe = $analysis['property']['matrikel_id'] ?? null;
 
         if (! is_string($bfe) || $bfe === '') {

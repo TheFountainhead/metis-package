@@ -33,7 +33,11 @@
                 <a href="{{ $energy['report_url'] }}" target="_blank" rel="noopener" class="mt-3 inline-block text-blue-600 hover:underline dark:text-blue-400 text-xs">{{ __('View energy label report (PDF)') }}</a>
             @endif
         @else
+            @if($hasError)
+                @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
+            @else
             <p class="text-sm text-zinc-500">{{ __('No energy label found.') }}</p>
+            @endif
         @endif
     </flux:card>
 </div>

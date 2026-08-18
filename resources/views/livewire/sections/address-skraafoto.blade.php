@@ -19,5 +19,15 @@
                 {{ __('Kilde:') }} <a href="https://skraafoto.dataforsyningen.dk" target="_blank" rel="noopener" class="hover:underline">skraafoto.dataforsyningen.dk</a> ({{ __('Klimadatastyrelsen') }})
             </p>
         </flux:card>
+    @elseif($hasError)
+        {{-- 🚨 Sektionen havde INGEN @else: ved fejl rendrede den et tomt
+             <div>, saa hele kortet forsvandt sporloest fra siden. Det laeses
+             som "siden er i stykker", ikke som "vi mangler data" — en anden
+             og daarligere fejlmodus end de oevrige sektioners falske
+             benaegtelse. Review-fund 18/8. --}}
+        <flux:card>
+            <flux:heading size="lg" class="mb-4">{{ __('Skråfoto') }}</flux:heading>
+            @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
+        </flux:card>
     @endif
 </div>

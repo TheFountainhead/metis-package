@@ -22,6 +22,12 @@ class AddressComparison extends MetisSection
         $api = app(RegistryApi::class);
 
         $analysis = $api->resolveAddressAnalysis($query);
+        // 🚨 Et fejlet opslag maa ikke rendere som "ingen data".
+        // Se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($analysis)) {
+            return;
+        }
+
         $this->rentalEstimate = data_get($analysis, 'property.rental_estimate');
         $this->profitability = data_get($analysis, 'property.profitability');
 

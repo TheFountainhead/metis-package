@@ -17,6 +17,11 @@ class AddressPlanning extends MetisSection
     {
         $this->query = $query;
         $analysis = app(RegistryApi::class)->resolveAddressAnalysis($query);
+        // 🚨 Et fejlet opslag maa ikke rendere som "ingen data".
+        // Se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($analysis)) {
+            return;
+        }
 
         // local_plans is a wrapper, not the plan list itself; 'local_plans' is
         // the pre-#199 legacy key, kept as fallback since deploy order across

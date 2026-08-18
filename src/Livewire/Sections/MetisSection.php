@@ -117,6 +117,44 @@ abstract class MetisSection extends Component
         $this->gated = $this->kvoteOpbrugt();
     }
 
+    /**
+     * Fejlede opslaget? Saetter da hasError og returnerer true.
+     *
+     * 🚨 EN TOM-TILSTAND ER EN PAASTAND, IKKE EN VISNING. "Ingen pantebreve
+     * fundet" laeses som GAELDFRIHED — i en kreditvurdering en konklusion
+     * nogen handler paa. Foer 18/8 returnerede resolveAddressAnalysis() `[]`
+     * for BAADE fejl og tom, saa ét 422 gav 12 falske benaegtelser paa én
+     * side (adresse uden postnummer, observeret i prod).
+     *
+     * Brug i mount() FOER felterne udtraekkes:
+     *
+     *     $analysis = app(RegistryApi::class)->resolveAddressAnalysis($query);
+     *     if ($this->opslagFejlede($analysis)) {
+     *         return;
+     *     }
+     *
+     * Bladen skal da rendere fejl-grenen paa `$hasError` i stedet for sin
+     * "ingen data"-besked. Referencemoenster: MapPanel::loadLayers().
+     */
+    protected function opslagFejlede(mixed $svar): bool
+    {
+        if (! is_array($svar) || ! isset($svar['error'])) {
+            return false;
+        }
+
+        $this->hasError = true;
+
+        // 422 fra /v1/property/analysis betyder specifikt "adressen kan ikke
+        // oploeses til én matrikel" — ikke "vi kunne ikke naa serveren".
+        // Brugeren kan selv rette DEN fejl ved at tilfoeje postnummer, saa
+        // beskeden skal sige det frem for et generisk "noget gik galt".
+        $this->errorMessage = ($svar['status'] ?? null) === 422
+            ? 'address_ambiguous'
+            : 'lookup_failed';
+
+        return true;
+    }
+
     protected function kvoteOpbrugt(): bool
     {
         if (! config('metis.gating.enabled', true)) {

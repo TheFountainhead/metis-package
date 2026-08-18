@@ -59,6 +59,15 @@
             {{-- Uden denne linje flytter "ikke oplyst" blot tvetydigheden: brugeren
                  ved stadig ikke, om det er OS eller KILDEN der mangler noget. --}}
             <p class="text-xs text-zinc-400 mt-1">{{ __('Tinglysningen oplyser ikke udløbsdato på pantebreve.') }}</p>
+        @elseif($hasError)
+            {{-- 🔑 Bruger FAELLES-partialen, men med sin egen forsikringslinje:
+                 "gaeldfri" er den farlige slutning netop her. Foer stod hele
+                 blokken inlinet, og de to tekster begyndte allerede at drive
+                 fra hinanden (review-fund 18/8). --}}
+            @include('metis::livewire.sections.partials.lookup-error', [
+                'errorMessage' => $errorMessage,
+                'forsikring' => __('Det betyder ikke at ejendommen er gældfri'),
+            ])
         @elseif(! $erUndersoegt)
             {{-- 🚨 "Ingen pantebreve fundet" ville være en FALSK PÅSTAND OM
                  FRAVÆR her: vi har ikke kigget endnu. Målt 10/8 blev 1.105.049
