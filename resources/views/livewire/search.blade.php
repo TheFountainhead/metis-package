@@ -195,10 +195,38 @@
             <div class="space-y-3">
                 @foreach(array_slice($result['persons'] ?? [], 0, $visiblePersons) as $person)
                 <div>
-                    <h2 class="text-xl font-serif text-ink-800 mb-2">{{ $person['name'] }}</h2>
+                    {{-- Navn + vejen til ejerskabsgrafen (grafen bor KUN paa
+                         lookup-siden; herfra var den foer helt uopnaaelig).
+
+                         Knappen vises paa ALLE traef, ogsaa dem uden selskaber. At
+                         skjule den ville kraeve et ekstra kald pr. person paa
+                         soegetidspunktet, og et fravaer af knap ville i sig selv
+                         laese som "denne person har ingenting" — en paastand vi ikke
+                         har daekning for her. Lookup-siden har sin egen tom-tilstand
+                         med CPR-noten, og den er det aerlige sted at sige det.
+
+                         🪤 `rawurlencode` FOER route(): rute-segmentet er defineret
+                         med `->where('query', '.*')`, og Laravel efterlader derfor
+                         `?` og `#` RAA i URL'en. Browseren laeser dem som query- og
+                         fragment-skilletegn, saa `Lookup::mount()` faar et AFKORTET
+                         navn — intet 404, bare et tavst opslag paa en anden person.
+                         Maalt paa prod 18/8: 1 af 2.023.590 navne har `?` (og det er
+                         en tegnsaets-korruption), 0 har `#` — sjaeldent, men den
+                         vaerste fejlklasse: forkert svar uden fejl. `/` (1.822 navne)
+                         og `%` (125) haandterer Laravel korrekt, og encoding aendrer
+                         dem ikke: verificeret at et normalt navn giver PRAECIS samme
+                         URL med og uden, saa ingen dobbelt-encoding. --}}
+                    <div class="flex items-baseline justify-between gap-3 mb-2">
+                        <h2 data-testid="person-name" class="min-w-0 text-xl font-serif text-ink-800">{{ $person['name'] }}</h2>
+                        <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => rawurlencode($person['name'])]) }}"
+                           data-testid="person-structure-link"
+                           class="shrink-0 text-xs px-3 py-1.5 border border-warm-500 text-warm-500 rounded hover:bg-warm-500 hover:text-white transition-colors">
+                            {{ __('Se selskabsstruktur') }} →
+                        </a>
+                    </div>
                     @if($roles = $person['roles'] ?? [])
                     <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
-                        <h3 class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">Roller</h3>
+                        <h3 data-testid="person-roles-heading" class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">Roller</h3>
                         @foreach($roles as $role)
                         <div class="flex justify-between items-center py-2 {{ !$loop->last ? 'border-b border-sand-100' : '' }}">
                             <span class="text-[14px]">
