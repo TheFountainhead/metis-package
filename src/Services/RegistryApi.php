@@ -1399,7 +1399,7 @@ class RegistryApi
             return $this->client()
                 ->post($endpoint, $data)
                 ->throw()
-                ->json('data') ?? ['error' => null, 'status' => null];
+                ->json('data') ?? ['error' => 'malformed_response', 'status' => null];
         } catch (RequestException $e) {
             return $this->errorFrom($e);
         } catch (ConnectionException $e) {
