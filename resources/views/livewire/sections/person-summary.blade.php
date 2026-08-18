@@ -66,6 +66,7 @@
             </div>
         @endif
 
+        @endif   {{-- @if($hasError) --}}
     </flux:card>
 
     {{-- Detected capital increases (kapitalforhøjelser) — separate card at bottom --}}
@@ -124,7 +125,6 @@
             <p class="text-xs text-zinc-400 mt-3 italic">
                 Implied valuation er estimeret fra kapitalindskud ÷ ny aktieandel. Baseret på offentlige regnskaber. Faktiske vilkår kan afvige.
             </p>
-            @endif
-    </flux:card>
+        </flux:card>
     @endif
 </div>

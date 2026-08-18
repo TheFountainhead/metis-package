@@ -103,3 +103,23 @@ it('viser stadig den AEGTE tomme tilstand naar kaldet lykkes', function () {
     expect($html)->toContain('No company roles found')
         ->and($html)->not->toContain('opslaget lykkedes ikke');
 });
+
+it('🚨 flager naar KVOTEN er opbrugt — rescue() giver da NULL', function (string $sektion) {
+    // 🪤 DEN TEST JEG IKKE SKREV FOERST. Jeg konkluderede at null-grenen i
+    // opslagFejlede() var doed kode, fordi min probe kun kastede exceptions
+    // fra HTTP-FAKEN — altsaa EFTER at client() var passeret, hvor post()
+    // fanger dem. Mutationen der fjernede grenen overlevede derfor.
+    //
+    // Den ægte sti: client() kaster QuotaExceededException FOER kaldet, og
+    // post() fanger kun RequestException/ConnectionException. Den slipper ud
+    // og bliver til null gennem rescue(). Det rammer hver uautentificeret
+    // bruger der har brugt sit gratis opslag — uden guarden ville de se
+    // "0 Ejendomme" i stedet for at faa at vide at vi ikke slog op.
+    config(['metis.gating.enabled' => true, 'metis.gating.free_lookups' => 1]);
+    session(['metis_lookup_count' => 999]);
+
+    $test = Livewire::test($sektion, ['query' => '0101011234']);
+
+    expect($test->get('hasError'))->toBeTrue()
+        ->and($test->get('errorMessage'))->toBe('lookup_failed');
+})->with('person-sektioner');

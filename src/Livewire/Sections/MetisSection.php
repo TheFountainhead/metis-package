@@ -138,21 +138,27 @@ abstract class MetisSection extends Component
      */
     protected function opslagFejlede(mixed $svar): bool
     {
-        // `null` taeller som fejl — et defensivt baelte, ikke en maalt sti.
+        // 🚨 `null` TAELLER SOM FEJL — og det er en LIVE produktionssti.
         //
-        // 🪤 AERLIGT FORBEHOLD: jeg tilfoejede denne gren i troen paa at
-        // `rescue()` i person-sektionerne gav null. Det goer den IKKE. Maalt
-        // med en probe: ConnectionException, RuntimeException og HTTP 500
-        // giver alle `['error' => 'upstream_error', 'status' => 0]`, fordi
-        // `post()` fanger dem selv foer rescue() ser noget. Grenen er derfor
-        // uopnaaelig via de nuvaerende kaldstier, og en test af den ville
-        // vaere vacuous (verificeret: mutation der fjerner grenen overlever).
+        // Den rammer hver uautentificeret bruger der har brugt sit gratis
+        // opslag: `client()` kaster `QuotaExceededException` FOER HTTP-kaldet,
+        // og `post()` fanger kun `RequestException`/`ConnectionException`.
+        // QuotaExceededException extends RuntimeException, saa den slipper ud
+        // af post() og bliver til `null` gennem sektionernes `rescue()`.
+        // Uden denne gren ville en kvote-opbrugt bruger se "0 Ejendomme" i
+        // stedet for at faa at vide at opslaget ikke blev udfoert.
         //
-        // Den bliver staaende fordi `opslagFejlede()` er en delt kontrakt for
-        // 17 sektioner: en fremtidig kalder KAN sende null (fx et
-        // `rescue(..., null)` eller et kald uden om post()), og et lydloest
-        // `false` ville da vaere den falske benaegtelse igen. Billigt baelte,
-        // dokumenteret som saadan.
+        // 🪤 JEG KONKLUDEREDE FOERST AT GRENEN VAR DOED KODE. Min probe
+        // testede ConnectionException, RuntimeException og HTTP 500 — alle
+        // kastet fra HTTP-FAKEN, altsaa EFTER at client() var passeret.
+        // post() fanger dem, saa de kommer aldrig frem som null. Jeg
+        // konstruerede ikke den tilstand hvor det positive kunne ske; review
+        // gjorde (18/8) og maalte `rescue(...) === null` ved kvote-gaten.
+        //
+        // Andre live null-kilder: fetchSimilarSales() (bar
+        // `catch (\Throwable) { return null; }`), fetchPersonPropertyPortfolio()
+        // og alt der gaar gennem get()/getEnvelope()/postEnvelope(), som er
+        // deklareret `?array` og IKKE har post()'s `?? ['error' => …]`-vaern.
         if ($svar === null) {
             $this->hasError = true;
             $this->errorMessage = 'lookup_failed';
