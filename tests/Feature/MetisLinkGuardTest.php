@@ -58,3 +58,34 @@ it('lader adresser og CVR passere uaendret gennem encodingen', function () {
         ->and((new MetisLink('address', 'Bredgade 40, 1260 København'))->url())
         ->toContain('Bredgade%2040%2C%201260%20K%C3%B8benhavn');
 });
+
+it('🪤 mister hverken label, slot, query ELLER klasser naar linket falder bort', function () {
+    // 🚨 Guarden aabnede en gren der foer kun kunne naas ved TOM query, hvor
+    // "-" er aerligt. Nu naas den med GYLDIGE data: i embedded mode alle 33
+    // kaldesteder paa én gang. 10 af dem sender ingen :label (4 bruger slot),
+    // og 3 sender egne klasser. Uden dette blev et selskabsnavn til en bar
+    // bindestreg — informationen forsvandt, ikke bare linket.
+    //
+    // Renderer den FAKTISKE blade, ikke url() isoleret: fejlen levede i
+    // bladen, og en gron url()-test kunne aldrig se den.
+    Route::setRoutes(new \Illuminate\Routing\RouteCollection);
+
+    $render = fn (string $tpl, array $data = []) => \Illuminate\Support\Facades\Blade::render($tpl, $data);
+
+    // 1) hverken label eller slot -> query overlever
+    expect($render('<x-metis-link type="person" :query="$q" />', ['q' => 'Frederik Gregers Dannisgård Larnæs']))
+        ->toContain('Frederik Gregers Dannisgård Larnæs');
+
+    // 2) slot uden label -> slot overlever
+    expect($render('<x-metis-link type="cvr" query="45170209">Inova ApS</x-metis-link>'))
+        ->toContain('Inova ApS');
+
+    // 3) kaldestedets egen klasse overlever (address-owners:13, company-card:22)
+    $medKlasse = $render('<x-metis-link type="person" :query="$q" class="font-medium" />', ['q' => 'Test Person']);
+    expect($medKlasse)->toContain('font-medium')
+        ->and($medKlasse)->toContain('Test Person')
+        ->and($medKlasse)->not->toContain('<a ');
+
+    // 4) tom query -> "-" er stadig det aerlige svar
+    expect(trim(strip_tags($render('<x-metis-link type="cvr" query="" />'))))->toBe('-');
+});
