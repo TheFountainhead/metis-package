@@ -378,7 +378,22 @@
                                                     </div>
                                                 </div>
                                                 @if($prop['address'] ?? null)
-                                                    <button wire:click="crossReference('address', @js($prop['address']))" class="text-warm-500 text-xs hover:text-warm-600 shrink-0 ml-2">{{ __('Slå op') }}</button>
+                                                    {{-- 🚨 POSTNUMMER SKAL MED. Her stod `@js($prop['address'])` alene,
+                                                         altsaa "Søndergade 43A" uden postnummer — og en adresse uden
+                                                         postnummer kan IKKE opløses til en unik matrikel:
+                                                         registry-api svarer 422, og saa staar ALLE 12 sektioner tomme
+                                                         med hver sin "Ingen data fundet". Det laeses som en paastand
+                                                         om ejendommen ("ingen pantebreve"), men betyder i
+                                                         virkeligheden "vi ved ikke hvilken ejendom du mener".
+                                                         Maalt 18/8: "Søndergade 43A" findes mindst 5 steder (Allinge,
+                                                         Hornsyld, Kjellerup ×3) — den rigtige var 4653 Karise.
+                                                         🪤 Feltet hedder `postal_code` her (person-property-portfolio);
+                                                         CPR-stiens `personal_properties` kalder det `zip`. Laes altid
+                                                         payloadens egne noegler frem for at antage. --}}
+                                                    @php
+                                                        $propAddr = trim(($prop['address'] ?? '').', '.($prop['postal_code'] ?? '').' '.($prop['city'] ?? ''), ', ');
+                                                    @endphp
+                                                    <button wire:click="crossReference('address', @js($propAddr))" class="text-warm-500 text-xs hover:text-warm-600 shrink-0 ml-2">{{ __('Slå op') }}</button>
                                                 @endif
                                             </div>
                                         @endforeach
