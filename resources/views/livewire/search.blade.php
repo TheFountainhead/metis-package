@@ -216,21 +216,31 @@
                          og `%` (125) haandterer Laravel korrekt, og encoding aendrer
                          dem ikke: verificeret at et normalt navn giver PRAECIS samme
                          URL med og uden, saa ingen dobbelt-encoding. --}}
-                    {{-- 🚨 FULD BREDDE PAA EGEN LINJE, ikke en lille outline-knap
-                         ved siden af navnet. Foerste udgave (#170) satte den
-                         hoejrestillet i en flex-raekke — den blev visuelt SVAGERE
-                         end "Vis alle ejendomme" laengere nede, som er fyldt og
-                         brun. Bagvendt rangorden: at naa grafen er sidens primaere
-                         nye handling, mens "Vis alle ejendomme" blot udfolder en
-                         liste der allerede staar der. Hele problemet var at grafen
-                         var svaer at finde, saa en diskret knap loeser det halvt.
-                         Frederik saa de to versioner side om side og valgte denne. --}}
-                    <h2 data-testid="person-name" class="text-xl font-serif text-ink-800 mb-2">{{ $person['name'] }}</h2>
-                    <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => rawurlencode($person['name'])]) }}"
-                       data-testid="person-structure-link"
-                       class="block w-full mb-3 text-center text-sm px-4 py-2.5 bg-warm-500 text-white rounded-lg hover:bg-warm-600 transition-colors">
-                        {{ __('Se selskabsstruktur') }} →
-                    </a>
+                    {{-- 🚨 NAVN + KNAP I ET EGET HVIDT KORT, ikke loese elementer
+                         paa den beige flade.
+
+                         Tre forsoeg foer den ramte oplaegget:
+                         #170  lille outline-knap hoejrestillet ved siden af navnet
+                               — visuelt SVAGERE end "Vis alle ejendomme" laengere
+                               nede, skoent den er sidens primaere NYE handling.
+                         #171  fuld bredde + fyldt, men navn og knap svaevede paa
+                               baggrunden mellem de hvide kort.
+                         her   samme kort-stil som Roller/Ejer nedenfor, saa
+                               personens header er ét kort paa linje med resten.
+
+                         🪤 Farven ER rigtig og maa ikke "rettes": `warm-500` er
+                         #7a1f1f (= claret), Metis' brandfarve efter
+                         PropertyScope-rebrandet. Min egen mockup brugte #a8763e,
+                         en okker jeg selv fandt paa i stedet for at laese
+                         app.css — mockup'en var forkert, ikke koden. --}}
+                    <div class="bg-white rounded-2xl p-5 border border-sand-200/60 mb-3">
+                        <h2 data-testid="person-name" class="text-xl font-serif text-ink-800 mb-3">{{ $person['name'] }}</h2>
+                        <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => rawurlencode($person['name'])]) }}"
+                           data-testid="person-structure-link"
+                           class="block w-full text-center text-sm px-4 py-2.5 bg-warm-500 text-white rounded-lg hover:bg-warm-600 transition-colors">
+                            {{ __('Se selskabsstruktur') }} →
+                        </a>
+                    </div>
                     @if($roles = $person['roles'] ?? [])
                     <div class="bg-white rounded-2xl p-5 border border-sand-200/60">
                         <h3 data-testid="person-roles-heading" class="text-[11px] font-semibold text-warm-500 uppercase tracking-widest mb-3">Roller</h3>
