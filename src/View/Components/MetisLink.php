@@ -4,6 +4,7 @@ namespace TheFountainhead\Metis\View\Components;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\View\Component;
+use TheFountainhead\Metis\Services\SearchDetector;
 
 class MetisLink extends Component
 {
@@ -41,7 +42,45 @@ class MetisLink extends Component
      */
     public function url(): ?string
     {
+        // 🚨 TOM QUERY KASTER — `UrlGenerationException: Missing required
+        // parameter`. Bladen har en `@if($query && ...)`-guard, men den er
+        // ikke redundant med denne: uden dette tjek er bladen det ENESTE der
+        // staar mellem et tomt felt og et ukontrolleret throw paa 33
+        // kaldesteder. Invarianten hoerer hjemme ét sted — her, hvor URL'en
+        // bygges — saa en fremtidig kalder af url() ikke arver faelden.
+        // (Review-fund: en mutation der fjernede bladens guard overlevede
+        // hele suiten.)
+        if (trim($this->query) === '') {
+            return null;
+        }
+
         if (! Route::has('metis.lookup')) {
+            return null;
+        }
+
+        // 🚨 ET CPR MAA ALDRIG I EN URL. Guarden staar HER, hvor URL'en
+        // BYGGES — ikke kun i Lookup::mount(), som er modtageren.
+        //
+        // Lookup fanger allerede et CPR og redirecter (Lookup.php:98), saa
+        // `metis_lookups` er beskyttet (verificeret: 0 raekker). Men det sker
+        // EFTER at URL'en er dannet og udleveret: CPR'et staar da allerede i
+        // href'en, i browserhistorikken og i en eventuel Referer — og
+        // standalone-layoutet loader unpkg + Cloudflare paa hver side.
+        // Praecedens for at det ikke er teoretisk: Googlebot hentede 35
+        // unikke CPR-URL'er 9/8.
+        //
+        // 🪤 rawurlencode() aendrer IKKE et CPR (ingen tegn at encode), saa
+        // encodingen nedenfor er ingen beskyttelse.
+        //
+        // Maalt 18/8: 0 af 744.134 selskaber har en 10-cifret identifikator,
+        // saa triggeren er ikke aktuel i dag. Guarden er billig og lukker
+        // hullet uanset hvad EJF sender i morgen — kaldestederne stoler i dag
+        // paa `type === 'company'`, altsaa en TYPEPAASTAND fra en ekstern
+        // kilde, ikke en formkontrol af selve vaerdien.
+        //
+        // Genbruger den kanoniske detektor: regexen fandtes engang i FEM
+        // kopier med hver sin normalisering (SearchDetector.php:25-31).
+        if ((new SearchDetector)->isCpr($this->query) && strtolower($this->type) !== 'cpr') {
             return null;
         }
 

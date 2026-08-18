@@ -89,3 +89,36 @@ it('🪤 mister hverken label, slot, query ELLER klasser naar linket falder bort
     // 4) tom query -> "-" er stadig det aerlige svar
     expect(trim(strip_tags($render('<x-metis-link type="cvr" query="" />'))))->toBe('-');
 });
+
+it('🚨 kaster ikke paa tom query — heller ikke naar ruten ER registreret', function () {
+    // 🪤 Testen for tom query laa foer INDE i setRoutes-blokken, hvor url()
+    // allerede returnerer null af en anden grund. Prod-tilstanden — tom query
+    // MED registreret rute — var udaekket, og dér kaster route() faktisk
+    // `UrlGenerationException: Missing required parameter`.
+    // Instrumentet skal konstruere tilstanden hvor det positive KAN ske.
+    expect(Route::has('metis.lookup'))->toBeTrue()
+        ->and((new MetisLink('cvr', ''))->url())->toBeNull()
+        ->and((new MetisLink('cvr', '   '))->url())->toBeNull();
+});
+
+it('🚨 bygger ALDRIG en URL med et CPR paa en ikke-cpr-type', function () {
+    // Invarianten er "CPR maa aldrig i en URL", og den skal haandhaeves hvor
+    // URL'en BYGGES. Lookup::mount() fanger det allerede og redirecter, saa
+    // metis_lookups er beskyttet — men det sker EFTER at href'en er udleveret
+    // til browserhistorik og Referer.
+    // 🪤 rawurlencode() aendrer ikke et CPR: ingen tegn at encode.
+    expect((new MetisLink('cvr', '010190-1234'))->url())->toBeNull()
+        ->and((new MetisLink('person', '0101901234'))->url())->toBeNull()
+        ->and((new MetisLink('address', '010190 1234'))->url())->toBeNull()
+        // cpr-typen er den ene lovlige modtager (ingen kaldesteder bruger den i dag)
+        ->and((new MetisLink('cpr', '010190-1234'))->url())->toContain('/lookup/cpr/');
+});
+
+it('🪤 encoder mellemrum som %20, ikke som +', function () {
+    // urlencode() ville give '+' og ramme et andet opslag. Den mutation blev
+    // foer kun fanget TILFAELDIGT af adresse-testen; her er den eksplicit.
+    expect((new MetisLink('person', 'Frederik Larnæs'))->url())
+        ->toContain('Frederik%20Larn')
+        ->and((new MetisLink('person', 'Frederik Larnæs'))->url())
+        ->not->toContain('Frederik+');
+});
