@@ -378,22 +378,14 @@
                                                     </div>
                                                 </div>
                                                 @if($prop['address'] ?? null)
-                                                    {{-- 🚨 POSTNUMMER SKAL MED. Her stod `@js($prop['address'])` alene,
-                                                         altsaa "Søndergade 43A" uden postnummer — og en adresse uden
-                                                         postnummer kan IKKE opløses til en unik matrikel:
-                                                         registry-api svarer 422, og saa staar ALLE 12 sektioner tomme
-                                                         med hver sin "Ingen data fundet". Det laeses som en paastand
-                                                         om ejendommen ("ingen pantebreve"), men betyder i
-                                                         virkeligheden "vi ved ikke hvilken ejendom du mener".
-                                                         Maalt 18/8: "Søndergade 43A" findes mindst 5 steder (Allinge,
-                                                         Hornsyld, Kjellerup ×3) — den rigtige var 4653 Karise.
-                                                         🪤 Feltet hedder `postal_code` her (person-property-portfolio);
-                                                         CPR-stiens `personal_properties` kalder det `zip`. Laes altid
-                                                         payloadens egne noegler frem for at antage. --}}
+                                                    {{-- 🪤 Feltet hedder `postal_code` her (person-property-portfolio);
+                                                         CPR-stiens `personal_properties` kalder det `zip`. Laes
+                                                         payloadens egne noegler — se testens docblock for hvorfor
+                                                         en adresse uden postnummer giver 12 tomme sektioner. --}}
                                                     @php
-                                                        $propAddr = trim(($prop['address'] ?? '').', '.($prop['postal_code'] ?? '').' '.($prop['city'] ?? ''), ', ');
+                                                        $addr = trim(($prop['address'] ?? '').', '.($prop['postal_code'] ?? '').' '.($prop['city'] ?? ''), ', ');
                                                     @endphp
-                                                    <button wire:click="crossReference('address', @js($propAddr))" class="text-warm-500 text-xs hover:text-warm-600 shrink-0 ml-2">{{ __('Slå op') }}</button>
+                                                    <button wire:click="crossReference('address', @js($addr))" class="text-warm-500 text-xs hover:text-warm-600 shrink-0 ml-2">{{ __('Slå op') }}</button>
                                                 @endif
                                             </div>
                                         @endforeach
