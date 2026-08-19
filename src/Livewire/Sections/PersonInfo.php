@@ -18,6 +18,13 @@ class PersonInfo extends MetisSection
     {
         $this->query = $query;
         $result = rescue(fn () => app(RegistryApi::class)->fetchPropertiesByCpr($query));
+
+        // 🚨 Et fejlet opslag maa ikke rendere som "0" eller "ingen".
+        // rescue() giver null naar kaldet kaster — se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($result)) {
+            return;
+        }
+
         $this->properties = $result['properties'] ?? null;
 
         // Try to extract name from residence or first property for label

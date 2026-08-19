@@ -20,6 +20,13 @@ class PersonRelations extends MetisSection
 
         // Get person's companies
         $result = rescue(fn () => $api->fetchCompaniesByCpr($query));
+
+        // 🚨 Et fejlet opslag maa ikke rendere som "0" eller "ingen".
+        // rescue() giver null naar kaldet kaster — se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($result)) {
+            return;
+        }
+
         $companies = collect($result['companies'] ?? []);
 
         // CVRs where the queried person currently has an active role

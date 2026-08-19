@@ -123,7 +123,11 @@
         @endif
 
         @if(empty($personalProperties) && empty($companies))
+            @if($hasError)
+                @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
+            @else
             <p class="text-sm text-zinc-500">{{ __('No properties found.') }}</p>
+            @endif
         @endif
     </flux:card>
 </div>

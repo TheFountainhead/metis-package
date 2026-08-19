@@ -67,7 +67,11 @@
                 @endforeach
             </div>
         @else
-            <p class="text-sm text-zinc-500">Ingen relaterede personer fundet.</p>
+            @if($hasError)
+                @include('metis::livewire.sections.partials.lookup-error', ['errorMessage' => $errorMessage])
+            @else
+                <p class="text-sm text-zinc-500">Ingen relaterede personer fundet.</p>
+            @endif
         @endif
     </flux:card>
 </div>

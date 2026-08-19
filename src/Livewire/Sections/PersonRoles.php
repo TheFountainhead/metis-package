@@ -26,6 +26,13 @@ class PersonRoles extends MetisSection
 
         $result = rescue(fn () => $api->fetchPersonRoles($query));
 
+        // 🚨 Et fejlet opslag maa ikke rendere som "0" eller "ingen".
+        // rescue() giver null naar kaldet kaster — se MetisSection::opslagFejlede().
+        if ($this->opslagFejlede($result)) {
+            return;
+        }
+
+
         if ($result) {
             $this->personName = $result['person_name'] ?? $query;
             $this->address = $result['address'] ?? null;
