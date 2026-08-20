@@ -61,7 +61,20 @@ it('lenker fra et persontraef til ejerskabsgrafen', function () {
     // data-testid frem for tekst: assertSee matcher HELE siden, saa en
     // assertion paa "Se selskabsstruktur" ville ogsaa passe hvis strengen
     // dukkede op i en helt anden sektion.
-    searchPersonName()->assertSee('data-testid="person-structure-link"', false);
+    //
+    // 🚨 MEN TESTID'ET ALENE ER IKKE NOK. Efter migrationen til
+    // <x-metis-link> merges attributterne paa BEGGE grene — baade <a> og
+    // den inerte <span> der renderes naar URL'en ikke kan bygges (rute
+    // uregistreret, CPR-formet navn). Maalt: en mutation der fik url() til
+    // altid at returnere null lod netop denne test vaere GROEN.
+    //
+    // "En LABEL er ikke en TILSTAND" — samme fejlklasse som hele denne sag
+    // handler om, genindfoert i den test der skulle bevogte den. Vi kraever
+    // derfor et <a> MED href.
+    $html = searchPersonName()->html();
+
+    expect($html)->toMatch('/<a[^>]*data-testid="person-structure-link"/')
+        ->and($html)->toMatch('/<a[^>]*href="[^"]*lookup\/person[^"]*"[^>]*data-testid="person-structure-link"/');
 });
 
 it('🪤 encoder navnet, saa et "?" ikke afkorter opslaget tavst', function () {
@@ -115,6 +128,9 @@ it('🪤 knappen staar INDE i personloekken, ikke ved siden af resultatet', func
 
     expect($navn)->toBeLessThan($knap)
         ->and($knap)->toBeLessThan($roller);
+
+    // 🚨 Og at knappen faktisk ER et link — se noten i foerste test.
+    expect($html)->toMatch('/<a[^>]*data-testid="person-structure-link"/');
 });
 
 it('🪤 giver HVER person sin egen knap naar der ER flere traef', function () {
