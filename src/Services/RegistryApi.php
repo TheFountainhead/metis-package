@@ -1271,7 +1271,7 @@ class RegistryApi
         // Begge veje bruger den samme praedikat, saa de ikke kan drive fra
         // hinanden. FOER cachen, saa en afvist adresse aldrig laases fast
         // (#134: "cach aldrig fejl").
-        if (empty($parsed['zip'])) {
+        if (! $this->adresseKanOploeses($address)) {
             return ['error' => 'address_ambiguous', 'status' => 422];
         }
 

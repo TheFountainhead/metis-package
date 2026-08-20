@@ -156,7 +156,7 @@
 
             $opslagsadresse = null;
             if ($adresselinje !== '') {
-                $harPostnr = ! empty(app(\TheFountainhead\Metis\Services\RegistryApi::class)->parseAddress($adresselinje)['zip']);
+                $harPostnr = app(\TheFountainhead\Metis\Services\RegistryApi::class)->adresseKanOploeses($adresselinje);
 
                 $opslagsadresse = ($harPostnr || $postnr === '')
                     ? $adresselinje

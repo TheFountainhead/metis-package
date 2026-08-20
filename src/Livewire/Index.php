@@ -73,7 +73,7 @@ class Index extends Component
     public function selectCompany(string $cvr): void
     {
         if ($cvr) {
-            $this->redirect(route('metis.lookup', ['type' => 'cvr', 'query' => $cvr]));
+            $this->redirect(route('metis.lookup', ['type' => 'cvr', 'query' => rawurlencode($cvr)]));
         }
     }
 
@@ -111,7 +111,7 @@ class Index extends Component
             return;
         }
 
-        $this->redirect(route('metis.lookup', ['type' => $type, 'query' => $query]));
+        $this->redirect(route('metis.lookup', ['type' => $type, 'query' => rawurlencode($query)]));
     }
 
     public function render()

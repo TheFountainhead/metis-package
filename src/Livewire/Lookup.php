@@ -121,7 +121,7 @@ class Lookup extends Component
         $erCpr = (new SearchDetector)->isCpr($query);
 
         if ($erCpr && strtolower($type) !== 'cpr') {
-            $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => $query]), navigate: true);
+            $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => rawurlencode($query)]), navigate: true);
 
             return;
         }
@@ -150,7 +150,7 @@ class Lookup extends Component
 
             if (count($traef) === 1 && ! empty($traef[0]['cvr'])) {
                 $this->redirect(
-                    route('metis.lookup', ['type' => 'cvr', 'query' => $traef[0]['cvr']]),
+                    route('metis.lookup', ['type' => 'cvr', 'query' => rawurlencode($traef[0]['cvr'])]),
                     navigate: true
                 );
 
@@ -211,7 +211,7 @@ class Lookup extends Component
         // Kvoten taelles stadig ikke for et ufuldstaendigt opslag: `taelOpslag()`
         // ligger efter dette `return`.
         if (strtolower($type) === 'address'
-            && empty(app(RegistryApi::class)->parseAddress($query)['zip'])) {
+            && ! app(RegistryApi::class)->adresseKanOploeses($query)) {
             $this->ufuldstaendigAdresse = true;
 
             // `addressAutocomplete()` garanterer nu formen: fejl-arrayen og
@@ -280,7 +280,7 @@ class Lookup extends Component
         // Uden redirect ville `$gated = false` alene ikke hjaelpe: sektionerne
         // er `lazy` og blev aldrig mountet i den gatede render.
         $this->redirect(
-            route('metis.lookup', ['type' => $this->type, 'query' => $this->query]),
+            route('metis.lookup', ['type' => $this->type, 'query' => rawurlencode($this->query)]),
             navigate: true
         );
     }

@@ -5,27 +5,6 @@ use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\Sections\AddressBbr;
 use TheFountainhead\Metis\Services\RegistryApi;
 
-/*
- * 🚨 GUARDEN SKAL SIDDE VED CHOKEPUNKTET, IKKE PAA HVER DOER.
- *
- * PR #179 lagde en postnummer-guard i `Lookup::mount()`. Maalt EFTER merge:
- * den er fuldstaendig omgaaet. De 12 adresse-sektioner er selvstaendigt
- * mountbare `lazy`-komponenter, saa et `__lazyLoad`-payload rammer
- * `AddressBbr::mount()` DIREKTE — `Lookup::mount()` koerer aldrig.
- *
- *   Livewire::test(AddressBbr::class, ['query' => 'Søndergade 43A'])
- *   => POST /v1/property/analysis {"street":"Søndergade","number":"43A","zip":""}
- *
- * `resolveAddressAnalysis()` er det ENESTE punkt alle 14 kaldesteder deler
- * (12 sektioner + MapPanel + MetisPdfController). Praecis samme argument som
- * kvote-gaten i `client()`: "en guard pr. mount() ville vaere samme fejl ét
- * niveau nede: den 29. sektion ville mangle den".
- *
- * 🔑 `MetisSection::opslagFejlede()` mapper ALLEREDE status 422 til
- * 'address_ambiguous', saa sektionerne viser den rigtige besked uden
- * aendring. Kontrakten fandtes; den blev bare ikke brugt.
- */
-
 it('kalder ALDRIG property/analysis for en adresse uden postnummer', function () {
     Http::fake(['*' => Http::response(['data' => ['property' => []]], 200)]);
 
@@ -47,16 +26,29 @@ it('lukker ogsaa doeren gennem en sektion mountet DIREKTE', function () {
     Http::assertNotSent(fn ($r) => str_contains($r->url(), '/v1/property/analysis'));
 });
 
-it('lukker doeren gennem PDF-controlleren', function () {
-    Http::fake(['*' => Http::response(['data' => ['property' => []]], 200)]);
+/*
+ * 🔴 MetisPdfController er IKKE testet — og det skal staa her, ikke skjules.
+ *
+ * To udkast paastod at daekke den, begge falsk groenne:
+ *   1. kaldte `resolveAddressAnalysis()` direkte (byte-identisk med testen
+ *      ovenfor). Mutation: controlleren kaster i sin constructor => GROEN.
+ *   2. gik gennem ruten. Men `tests/TestCase.php:37` loader ruterne, og
+ *      opslaget svarer 500 fordi Browsershot/Puppeteer ikke koerer i CI.
+ *      `assertNotSent` blev derfor trivielt sand: INTET naaede at koere.
+ *      Mutation: controlleren kaster => stadig GROEN.
+ *
+ * ⇒ Controlleren har NUL daekning. Guarden i `fetchProperty()` og
+ * `resolveAddressAnalysis()` beskytter den kodesti — det er pinnet af
+ * `naar ingen af de kendte indgange ud...` ovenfor, som kalder de samme
+ * metoder controlleren kalder. Men at PDF'en OPFOERER sig rigtigt er
+ * utestet, og PDF'en kan fortsat ikke UDTRYKKE en fejl: 422, aegte tom og
+ * ingen-data giver byte-identisk dokument uden ét udsagn om ejendommen.
+ *
+ * At skrive en test der ikke kan fejle ville vaere vaerre end ingen test.
+ * Sagen er noteret i PR-beskrivelsen som aabent punkt.
+ */
 
-    $svar = app(RegistryApi::class)->resolveAddressAnalysis('Søndergade 43A');
 
-    // PDF'en kan i dag ikke skelne fejl fra tom; den skal i det mindste ikke
-    // udloese kaldet. (Egen fejlgren i pdf.blade er en separat opgave.)
-    expect($svar)->toHaveKey('error');
-    Http::assertNotSent(fn ($r) => str_contains($r->url(), '/v1/property/analysis'));
-});
 
 /*
  * 🚨 REVIEW-FUND: `number !== ''` AFVISTE HELT ALMINDELIGE DANSKE ADRESSER.
@@ -89,8 +81,13 @@ it('afviser IKKE gyldige adresser med mellemrum foer husnummerets bogstav', func
         'Vestergade 1 A, 5000 Odense C',
         'Bakkedraget 7 st tv, 8000 Aarhus C',
     ] as $adresse) {
-        expect($api->resolveAddressAnalysis($adresse))
-            ->not->toHaveKey('error', $adresse.' blev afvist');
+        // 🪤 ÉT argument. `toHaveKey('error', $besked)` laeser andet argument
+        // som forventet VAERDI, ikke som besked — assertionen blev "ingen
+        // error-noegle hvis vaerdi er lig den danske tekst", altsaa trivielt
+        // sand. Maalt: en mutation der afviste 2 af 3 adresser forblev groen.
+        // Samme Pest-faelde som kommentaren om `toContain` ovenfor advarer mod;
+        // jeg gentog den ti linjer laengere nede.
+        expect($api->resolveAddressAnalysis($adresse))->not->toHaveKey('error');
     }
 
     Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/property/analysis'));
@@ -144,44 +141,51 @@ it('lukker ogsaa doeren gennem fetchPropertyByAddress', function () {
 });
 
 /*
- * 🚨 EN VAGT PAA VAGTEN. Dette er sjette fix i familien, og hver gang har en
- * NY DOER vaeret aarsagen. Denne test fejler hvis nogen tilfoejer et kald til
- * endpointet uden en guard umiddelbart foran.
+ * 🚨 EN VAGT PAA VAGTEN — MEN EN DER MAALER ADFAERD, IKKE TEKST.
  *
- * 🔑 Den maaler ENDPOINTET, ikke metodenavnet — praecis den maalefejl der
- * skjulte doer 15 for mig: jeg greppede efter `resolveAddressAnalysis` og
- * fandt 14 kaldere, men `fetchProperty()` rammer samme endpoint uden at gaa
- * gennem den metode.
+ * Foerste udkast var to kildekode-scannere: "der skal staa
+ * `address_ambiguous` inden for 15 linjer af hvert post()" og "kun
+ * RegistryApi maa naevne endpointet". Begge var falsk groenne. Maalt:
+ *
+ *   - guard-body slettet, kun ordet tilbage i en KOMMENTAR  => GROEN 🚨
+ *   - guard intakt, 16 kommentarlinjer indsat foran         => ROED 🚨
+ *   - ny fil med `self::BASE.'/analysis'` (streng delt op)  => GROEN 🚨
+ *
+ * Forkert i BEGGE retninger: groen naar guarden er vaek, roed naar koden er
+ * rigtig. Og en grep-baseret vagt mod doer 16 gentager praecis den
+ * maalefejl der skjulte doer 15.
+ *
+ * ⇒ Vi pinner i stedet ADFAERDEN paa hver kendt indgang. En ny doer fanges
+ * ikke af en scanner, men af at nogen skriver en test for den — og af at
+ * `fetchProperty()` er det eneste sted der poster.
  */
-it('har en address_ambiguous-guard foran HVERT kald til property/analysis', function () {
-    $fil = __DIR__.'/../../../src/Services/RegistryApi.php';
-    $linjer = file($fil);
+it('naar ingen af de kendte indgange ud med en uoploeselig adresse', function () {
+    $ufuldstaendig = 'Søndergade 43A';
 
-    $poster = [];
-    foreach ($linjer as $nr => $linje) {
-        if (str_contains($linje, "post('/v1/property/analysis'")) {
-            $poster[] = $nr;
-        }
-    }
+    $indgange = [
+        'resolveAddressAnalysis' => fn () => app(RegistryApi::class)->resolveAddressAnalysis($ufuldstaendig),
+        'fetchPropertyByAddress' => fn () => app(RegistryApi::class)->fetchPropertyByAddress($ufuldstaendig),
+        'fetchProperty' => fn () => app(RegistryApi::class)->fetchProperty(
+            app(RegistryApi::class)->parseAddress($ufuldstaendig)
+        ),
+    ];
 
-    expect($poster)->not->toBeEmpty('endpointet kaldes slet ikke — er stien aendret?');
+    foreach ($indgange as $navn => $kald) {
+        Http::fake(['*' => Http::response(['data' => ['property' => []]], 200)]);
 
-    foreach ($poster as $nr) {
-        // Kig 15 linjer OP fra kaldet: der SKAL staa en address_ambiguous-guard.
-        $fra = max(0, $nr - 15);
-        $foran = implode('', array_slice($linjer, $fra, $nr - $fra));
+        $svar = $kald();
 
-        // 🪤 IKKE `toContain($needle, $besked)` — Pest laeser ALLE argumenter
-        // som needles, saa fejlbeskeden blev en ekstra soegestreng og testen
-        // fejlede af en grund der intet havde med koden at goere.
-        expect(str_contains($foran, 'address_ambiguous'))
-            ->toBeTrue("post() paa linje ".($nr + 1)." har ingen guard foran sig");
+        expect($svar)->toHaveKey('error');
+        expect($svar['error'])->toBe('address_ambiguous');
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), '/v1/property/analysis'));
     }
 });
 
 /*
- * 🚨 INGEN ANDEN FIL MAA POSTE TIL ENDPOINTET. Guarden ville vaere omgaaet
- * igen, praecis som doer 15 var det.
+ * Den ENE strukturelle invariant der er vaerd at beholde: ingen anden fil
+ * end RegistryApi maa poste til endpointet. Den kan stadig omgaas af en delt
+ * streng — men den maaler et reelt arkitektur-krav, ikke naerhed af tekst,
+ * og en overtraedelse er en bevidst handling frem for et uheld.
  */
 it('poster kun til property/analysis fra RegistryApi', function () {
     $src = realpath(__DIR__.'/../../../src');
