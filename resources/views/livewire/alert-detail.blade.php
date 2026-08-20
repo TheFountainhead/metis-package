@@ -178,8 +178,11 @@
             // som '../../../admin' (ekstern JSON) gav en sti browseren
             // normaliserer VAEK fra /lookup/address/. MetisLink.php:87 goer
             // allerede praecis dette.
-            $opslagsUrl = ($opslagsadresse !== null && Route::has('metis.lookup'))
-                ? route('metis.lookup', ['type' => 'address', 'query' => rawurlencode($opslagsadresse)])
+            // 🔑 ÉN builder. `urlFor()` baerer selv rute-guarden, tom-query-
+            // guarden, CPR-guarden og rawurlencode — de fire ting dette
+            // kaldested foer haandrullede (og glemte det halve af).
+            $opslagsUrl = $opslagsadresse !== null
+                ? \TheFountainhead\Metis\View\Components\MetisLink::urlFor('address', $opslagsadresse)
                 : null;
 
             // Observer-path carries no before/after objects — synthesise the current

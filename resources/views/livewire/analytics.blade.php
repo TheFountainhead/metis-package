@@ -107,10 +107,11 @@
                         @foreach($svar['ejendomme'] as $e)
                             <tr class="border-t border-sand-100">
                                 <td class="px-4 py-2">
-                                    <a href="{{ route('metis.lookup', ['type' => 'address', 'query' => rawurlencode(trim(data_get($e, 'address').', '.data_get($e, 'postal_code'), ', '))]) }}"
-                                       class="text-warm-600 hover:underline">
+                                    <x-metis-link type="address"
+                                        :query="trim(data_get($e, 'address').', '.data_get($e, 'postal_code'), ', ')"
+                                        class="text-warm-600 hover:underline">
                                         {{ data_get($e, 'address') ?: __('Uden adresse') }}
-                                    </a>
+                                    </x-metis-link>
                                 </td>
                                 <td class="px-4 py-2 text-ink-700/70">{{ data_get($e, 'postal_code') }}</td>
                             </tr>

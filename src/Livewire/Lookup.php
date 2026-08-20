@@ -7,6 +7,7 @@ use Livewire\Component;
 use TheFountainhead\Metis\Livewire\Concerns\GatesLookups;
 use TheFountainhead\Metis\Models\MetisLookup;
 use TheFountainhead\Metis\Services\RegistryApi;
+use TheFountainhead\Metis\View\Components\MetisLink;
 use TheFountainhead\Metis\Services\SearchDetector;
 
 class Lookup extends Component
@@ -121,7 +122,7 @@ class Lookup extends Component
         $erCpr = (new SearchDetector)->isCpr($query);
 
         if ($erCpr && strtolower($type) !== 'cpr') {
-            $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => rawurlencode($query)]), navigate: true);
+            $this->redirect(MetisLink::urlFor('cpr', $query), navigate: true);
 
             return;
         }
@@ -150,7 +151,7 @@ class Lookup extends Component
 
             if (count($traef) === 1 && ! empty($traef[0]['cvr'])) {
                 $this->redirect(
-                    route('metis.lookup', ['type' => 'cvr', 'query' => rawurlencode($traef[0]['cvr'])]),
+                    MetisLink::urlFor('cvr', $traef[0]['cvr']),
                     navigate: true
                 );
 
@@ -280,7 +281,7 @@ class Lookup extends Component
         // Uden redirect ville `$gated = false` alene ikke hjaelpe: sektionerne
         // er `lazy` og blev aldrig mountet i den gatede render.
         $this->redirect(
-            route('metis.lookup', ['type' => $this->type, 'query' => rawurlencode($this->query)]),
+            MetisLink::urlFor($this->type, $this->query),
             navigate: true
         );
     }

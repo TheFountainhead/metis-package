@@ -235,11 +235,11 @@
                          app.css — mockup'en var forkert, ikke koden. --}}
                     <div class="bg-white rounded-2xl p-5 border border-sand-200/60 mb-3">
                         <h2 data-testid="person-name" class="text-xl font-serif text-ink-800 mb-3">{{ $person['name'] }}</h2>
-                        <a href="{{ route('metis.lookup', ['type' => 'person', 'query' => rawurlencode($person['name'])]) }}"
-                           data-testid="person-structure-link"
-                           class="block w-full text-center text-sm px-4 py-2.5 bg-warm-500 text-white rounded-lg hover:bg-warm-600 transition-colors">
+                        <x-metis-link type="person" :query="$person['name']"
+                            data-testid="person-structure-link"
+                            class="block w-full text-center text-sm px-4 py-2.5 bg-warm-500 text-white rounded-lg hover:bg-warm-600 transition-colors">
                             {{ __('Se selskabsstruktur') }} →
-                        </a>
+                        </x-metis-link>
                     </div>
                     @if($roles = $person['roles'] ?? [])
                     <div class="bg-white rounded-2xl p-5 border border-sand-200/60">

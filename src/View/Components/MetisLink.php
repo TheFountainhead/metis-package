@@ -40,6 +40,24 @@ class MetisLink extends Component
      * forsiden er vaerre end ingen knap. Bladen renderer da den samme
      * inaktive `<span>` som ved tom query.
      */
+    /**
+     * Samme regler som `url()`, men uden en komponent-instans.
+     *
+     * 🔑 Til REDIRECTS og andre steder der skal bruge URL'en frem for at
+     * rendere et link. Foer denne fandtes, haandrullede fem `redirect()`-kald
+     * i `Index`/`Lookup` deres eget `route('metis.lookup', …)` — og arvede
+     * dermed ingen af de fire guards her. Migreret 20/8.
+     *
+     * 🪤 DELER KROP med `url()`. To implementeringer af samme regel driver
+     * fra hinanden — kodebasen har allerede betalt for det med FIRE
+     * CPR-detektorer, hvor den fjerde accepterede et format de tre andre
+     * afviste.
+     */
+    public static function urlFor(string $type, string $query): ?string
+    {
+        return (new self($type, $query))->url();
+    }
+
     public function url(): ?string
     {
         // 🚨 TOM QUERY KASTER — `UrlGenerationException: Missing required

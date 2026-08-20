@@ -270,9 +270,7 @@
                                 @foreach($results as $r)
                                     @php
                                         $addr = trim(($r['property']['address'] ?? '').', '.($r['property']['postal_code'] ?? ''), ', ');
-                                        $detailUrl = (Route::has('metis.lookup') && $addr)
-                                            ? route('metis.lookup', ['type' => 'address', 'query' => rawurlencode($addr)])
-                                            : null;
+                                        $detailUrl = \TheFountainhead\Metis\View\Components\MetisLink::urlFor('address', $addr);
                                     @endphp
                                     <li class="px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition">
                                         <div class="flex justify-between items-start gap-4">
