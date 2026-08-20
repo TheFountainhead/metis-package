@@ -94,7 +94,7 @@
                 <flux:heading size="lg" class="mb-3">{{ __('Recent lookups') }}</flux:heading>
                 <div class="space-y-1">
                     @foreach($lookups as $lookup)
-                        <a href="{{ route('metis.lookup', ['type' => $lookup->search_type, 'query' => $lookup->search_term]) }}"
+                        <a href="{{ route('metis.lookup', ['type' => $lookup->search_type, 'query' => rawurlencode($lookup->search_term)]) }}"
                            class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors group">
                             <div class="flex items-center gap-3">
                                 <span class="px-2 py-0.5 text-xs rounded-full bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 uppercase">

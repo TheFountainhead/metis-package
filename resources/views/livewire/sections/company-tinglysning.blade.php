@@ -257,7 +257,7 @@
                                                 {{-- type=cvr, ikke 'company': lookup-viewet brancher
                                                      kun paa cvr|cpr|person|address. 'company' matcher
                                                      ingen gren og gav en tom side uden fejl. --}}
-                                                <a href="{{ route('metis.lookup', ['type' => 'cvr', 'query' => $lender['cvr']]) }}"
+                                                <a href="{{ route('metis.lookup', ['type' => 'cvr', 'query' => rawurlencode($lender['cvr'])]) }}"
                                                    class="hover:underline">{{ $lender['cvr'] }}</a>
                                             @else
                                                 <span class="text-zinc-300">-</span>

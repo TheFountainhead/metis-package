@@ -323,8 +323,60 @@ class RegistryApi
         return $this->fetchProperty($parsed);
     }
 
+    /**
+     * Kan denne adresse overhovedet oploeses til én matrikel?
+     *
+     * 🔑 ÉN definition, ikke fire. Kodebasen har allerede betalt for den fejl
+     * med FIRE CPR-detektorer, hvor den fjerde accepterede et format de tre
+     * andre afviste. `Search::search()` og `Lookup::mount()` spoerger nu samme
+     * sted som chokepunktet.
+     *
+     * 🪤 KUN `zip`. Foerste udkast krævede ogsaa `number !== ''` — det AFVISTE
+     * helt almindelige danske adresser, fordi `parseAddress()`s regex er
+     * ankret til sidste token og ikke taaler et mellemrum foer bogstavet:
+     *
+     *   'Strandvejen 100 B, 2900 Hellerup'   -> number='' (men FULDT gyldig)
+     *   'Vestergade 1 A, 5000 Odense C'      -> number=''
+     *   'Bakkedraget 7 st tv, 8000 Aarhus C' -> number=''
+     *
+     * Maalt: alle tre naaede API'et og fik data FOER guarden. En tom `number`
+     * er altsaa oftest en PARSER-begraensning, ikke et hul i adressen — og
+     * upstream afgoer det bedre end vi kan. `zip` er derimod aegte paakraevet.
+     */
+    public function adresseKanOploeses(string $address): bool
+    {
+        return ! empty($this->parseAddress($address)['zip']);
+    }
+
+    /**
+     * 🚨 CHOKEPUNKTET. Her — ikke i `resolveAddressAnalysis()`.
+     *
+     * Foerste udkast lagde guarden i `resolveAddressAnalysis()` og kaldte den
+     * "det eneste punkt alle 14 kaldesteder deler". Det var forkert, og
+     * maalefejlen er vaerd at huske: jeg greppede efter METODENAVNET og fandt
+     * 14 kaldere — men `fetchPropertyByAddress()` rammer samme endpoint UDEN
+     * at gaa gennem den metode, saa den var per konstruktion usynlig for min
+     * soegning. Maalt:
+     *
+     *   fetchPropertyByAddress('Søndergade 43A')
+     *   => POST /v1/property/analysis {"street":…,"number":"43A","zip":""}
+     *
+     * 🔑 Spoerg ikke "hvem kalder metoden?" men "hvem rammer ENDPOINTET?".
+     * `grep "v1/property/analysis"` fandt den paa ét sekund.
+     *
+     * `fetchProperty()` er det ENESTE sted der poster til endpointet — en
+     * test pinner det (`AdresseChokepunktTest`), saa doer nr. 16 ikke kan
+     * snige sig ind.
+     */
     public function fetchProperty(array $searchData): array
     {
+        // Upstream: "The matrikel id field is required when street / number /
+        // zip is not present". Samme gadeadresse findes typisk flere steder i
+        // landet, saa uden postnummer kan den ikke oploeses.
+        if (empty($searchData['matrikel_id'] ?? null) && empty($searchData['zip'] ?? null)) {
+            return ['error' => 'address_ambiguous', 'status' => 422];
+        }
+
         $result = $this->post('/v1/property/analysis', $searchData);
 
         if (isset($result['error'])) {
@@ -1213,38 +1265,13 @@ class RegistryApi
 
         $parsed = $this->parseAddress($address);
 
-        // 🚨 CHOKEPUNKTET. En ufuldstaendig adresse spoerges der slet ikke paa.
-        //
-        // Upstream svarer "The matrikel id field is required when street /
-        // number / zip is not present" — samme gadeadresse findes typisk flere
-        // steder i landet (Søndergade 43A ligger mindst fem steder), saa den
-        // kan ikke oploeses til én matrikel.
-        //
-        // 🔑 GUARDEN HOERER HJEMME HER, IKKE PAA HVER DOER. Maalt 20/8 efter
-        // PR #179: en guard i `Lookup::mount()` er FULDSTAENDIG omgaaet, fordi
-        // de 12 adresse-sektioner er selvstaendigt mountbare `lazy`-komponenter
-        // — et `__lazyLoad`-payload rammer `AddressBbr::mount()` direkte, og
-        // `Lookup::mount()` koerer aldrig:
-        //
-        //   Livewire::test(AddressBbr::class, ['query' => 'Søndergade 43A'])
-        //   => POST /v1/property/analysis {"street":…,"number":"43A","zip":""}
-        //
-        // Denne metode er det ENESTE punkt alle 14 kaldesteder deler (12
-        // sektioner + MapPanel + MetisPdfController). Praecis samme argument
-        // som kvote-gaten i `client()`: "en guard pr. mount() ville vaere
-        // samme fejl ét niveau nede: den 29. sektion ville mangle den".
-        // Femte fix i denne familie; de fire foerste laa alle i kalder-laget.
-        //
-        // 🪤 `number` OGSAA, ikke kun `zip`. `parseAddress('Agernskrænten+33,+2750')`
-        // giver zip='2750' men number='' — den slap forbi PR #179's zip-guard og
-        // fejlede 422 paa `number` BAGVED den kontrol der skulle fange den.
-        //
-        // 🪤 FOER cachen skrives, saa en afvist adresse aldrig laases fast
-        // (#134: "cach aldrig fejl"). Formen er den samme
-        // `['error' => …, 'status' => …]` som alle forbrugere allerede
-        // isset()-guarder paa, og `MetisSection::opslagFejlede()` mapper
-        // ALLEREDE 422 til 'address_ambiguous' — kontrakten fandtes.
-        if (empty($parsed['zip']) || $parsed['number'] === '') {
+        // 🚨 Samme guard som `fetchProperty()` — men her SKAL den staa
+        // eksplicit, fordi denne metode poster direkte (sektionerne har brug
+        // for det RAA svar, ikke fetchProperty()'s transformerede form).
+        // Begge veje bruger den samme praedikat, saa de ikke kan drive fra
+        // hinanden. FOER cachen, saa en afvist adresse aldrig laases fast
+        // (#134: "cach aldrig fejl").
+        if (empty($parsed['zip'])) {
             return ['error' => 'address_ambiguous', 'status' => 422];
         }
 
