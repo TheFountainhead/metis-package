@@ -26,7 +26,11 @@ beforeEach(fn () => Cache::flush());
 it('🚨 giver en FEJL videre i stedet for en tom liste', function () {
     Http::fake(['*property/analysis*' => Http::response(['message' => 'Unprocessable'], 422)]);
 
-    $svar = app(RegistryApi::class)->resolveAddressAnalysis('Søndergade 43A');
+    // 🪤 Adressen skal vaere KOMPLET. Siden 20/8 afviser chokepunkt-guarden
+    // en adresse uden postnummer FOER kaldet, saa 'Søndergade 43A' ville
+    // teste guarden i stedet for det upstream-422 denne test handler om —
+    // en fixtur der ikke kan naa den kode den paastaar at daekke.
+    $svar = app(RegistryApi::class)->resolveAddressAnalysis('Søndergade 43A, 4653');
 
     // Foer: [] — ikke til at skelne fra "ejendommen har ingen data".
     expect($svar)->toHaveKey('error')
@@ -43,8 +47,9 @@ it('🪤 cacher ALDRIG en fejl — ét daarligt svar maa ikke laase et doegn', f
 
     $api = app(RegistryApi::class);
 
-    expect($api->resolveAddressAnalysis('Søndergade 43A'))->toHaveKey('error');
-    expect($api->resolveAddressAnalysis('Søndergade 43A'))->toHaveKey('property');
+    // 🪤 Komplet adresse — se noten ovenfor.
+    expect($api->resolveAddressAnalysis('Søndergade 43A, 4653'))->toHaveKey('error');
+    expect($api->resolveAddressAnalysis('Søndergade 43A, 4653'))->toHaveKey('property');
 });
 
 it('cacher stadig et AEGTE tomt svar — det er ikke en fejl', function () {

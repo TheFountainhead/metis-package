@@ -106,3 +106,70 @@ it('viser ikke en fejl-array som adresseforslag', function () {
         ->assertDontSee('upstream_error')
         ->assertSee('Vi fandt ingen forslag');
 });
+
+/*
+ * 🚨 REVIEW-FUND (P1): guarden OMGIK kvote-gaten.
+ *
+ * Postnummer-guarden returnerede FOER `skalGates()`. Begrundelsen — "et
+ * opslag vi ved vil fejle maa ikke koste en kvote" — er rigtig om at
+ * TAELLE, men den sprang gaten helt over OG lavede stadig et udgaaende
+ * kald. Maalt over kvote: 5 af 5 requests slap forbi og udloeste 5
+ * autocomplete-kald; med postnummer blev den samme bruger gated.
+ *
+ * `/lookup/{type}/{query}` i routes/embedded.php har INGEN throttle.
+ */
+it('gater et opslag over kvote FOER den henter forslag', function () {
+    config(['metis.gating.enabled' => true]);
+    Http::fake(['*' => Http::response(['data' => []], 200)]);
+
+    session(['metis_lookup_count' => 99]);
+
+    Livewire::test(Lookup::class, ['type' => 'address', 'query' => 'Søndergade 43A'])
+        ->assertSet('gated', true)
+        ->assertSet('ufuldstaendigAdresse', false);
+
+    // Selve tingen: ingen udgaaende kald for en bruger over kvoten.
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'autocomplete'));
+});
+
+/*
+ * 🚨 REVIEW-FUND (P1): route() encoder IKKE '/'.
+ *
+ * Maalt: route('metis.lookup', ['query' => '../../../admin']) giver
+ * /lookup/address/../../../admin — browseren normaliserer '../' vaek FOER
+ * afsendelse, saa linket navigerer et helt andet sted hen i appen.
+ * $f['tekst'] er upstream autocomplete-data, altsaa ikke vores input.
+ * `MetisLink.php:87` rawurlencode'r allerede; her blev det glemt.
+ */
+it('encoder skraastreger i forslagslinks', function () {
+    config(['metis.gating.enabled' => false]);
+    Http::fake([
+        '*/v1/map/autocomplete*' => Http::response(['data' => [
+            ['tekst' => '../../../admin'],
+        ]], 200),
+        '*' => Http::response(['data' => []], 200),
+    ]);
+
+    $html = Livewire::test(Lookup::class, ['type' => 'address', 'query' => 'Søndergade 43A'])->html();
+
+    expect($html)->not->toContain('/lookup/address/../../../admin');
+    expect($html)->toContain('..%2F..%2F..%2Fadmin');
+});
+
+/*
+ * 🚨 REVIEW-FUND (P2): et forslag med ikke-skalarr `tekst` tog siden ned.
+ * Samme defekt som `postal_code` fik en is_scalar-guard for ét lag oppe.
+ */
+it('overlever et forslag hvor tekst ikke er en streng', function () {
+    config(['metis.gating.enabled' => false]);
+    Http::fake([
+        '*/v1/map/autocomplete*' => Http::response(['data' => [
+            ['tekst' => ['array' => 'ikke en streng']],
+            ['tekst' => 'Søndergade 43A, 4653 Karise'],
+        ]], 200),
+        '*' => Http::response(['data' => []], 200),
+    ]);
+
+    Livewire::test(Lookup::class, ['type' => 'address', 'query' => 'Søndergade 43A'])
+        ->assertSee('Søndergade 43A, 4653 Karise');
+});

@@ -35,7 +35,7 @@
                          API'et ikke kan blive til opdigtede adresse-links. --}}
                     @foreach($forslag as $f)
                         <li>
-                            <a href="{{ route('metis.lookup', ['type' => 'address', 'query' => $f['tekst']]) }}"
+                            <a href="{{ route('metis.lookup', ['type' => 'address', 'query' => rawurlencode($f['tekst'])]) }}"
                                class="block px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition">
                                 {{ $f['tekst'] }}
                             </a>

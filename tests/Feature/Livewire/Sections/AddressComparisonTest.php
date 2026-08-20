@@ -49,7 +49,7 @@ it('labels scenario buttons as Udbudsleje and Skøn realiseret', function () {
         '*property/compare*' => Http::response(['data' => null]),
     ]);
 
-    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12'])
+    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12, 2740'])
         ->assertSee('Udbudsleje')
         ->assertSee('Skøn realiseret')
         ->assertDontSee('Marked"', false);
@@ -61,7 +61,7 @@ it('shows lavere-signal confidence-badge for erhvervs-leje (kontor)', function (
         '*property/compare*' => Http::response(['data' => null]),
     ]);
 
-    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12'])
+    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12, 2740'])
         ->assertSee('Lavere signal')
         ->assertSee('erhvervsleje forhandles');
 });
@@ -97,18 +97,27 @@ it('source-text refers to udbud not marked', function () {
         '*property/compare*' => Http::response(['data' => null]),
     ]);
 
-    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12'])
+    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12, 2740'])
         ->assertSee('udbud')
         ->assertSee('Realiseret leje typisk');
 });
 
+/*
+ * 🪤 ADRESSERNE HER BAERER POSTNUMMER MED VILJE (tilfoejet 20/8).
+ *
+ * Chokepunkt-guarden i `RegistryApi::resolveAddressAnalysis()` afviser en
+ * adresse uden postnummer FOER kaldet — den kan ikke oploeses til én matrikel.
+ * Fixturerne brugte 'Tonsbakken 12' som bekvem placeholder, men disse tests
+ * handler om leje-grid og scenarier, ikke om adresse-opløsning. Uden
+ * postnummer ville de teste guarden i stedet for deres eget emne.
+ */
 it('renders rent grid with correct base value', function () {
     Http::fake([
         '*property/analysis*' => Http::response(fakeAnalysisWithRent('kontor')),
         '*property/compare*' => Http::response(['data' => null]),
     ]);
 
-    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12'])
+    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12, 2740'])
         ->assertSet('rentalEstimate.avg_rent_per_sqm', 1450);
 });
 
@@ -118,7 +127,7 @@ it('shows Annonce-baseret source badges for market estimates (F8)', function () 
         '*property/compare*' => Http::response(['data' => null]),
     ]);
 
-    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12'])
+    Livewire::test(AddressComparison::class, ['query' => 'Tonsbakken 12, 2740'])
         ->assertSee(__('Annonce-baseret'))
         ->assertSee(__('Annonce-baseret leje'));
 });

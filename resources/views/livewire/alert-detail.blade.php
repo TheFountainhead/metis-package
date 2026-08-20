@@ -107,7 +107,12 @@
             $before = $meta['before'] ?? null;
             $after = $meta['after'] ?? null;
             $bfe = $meta['bfe'] ?? null;
+            // 🪤 Normalisér ved KILDEN, ikke ved hvert forbrugssted. `$address`
+            // bruges baade til visning (:238) og til opslagslinket; et array
+            // fra ekstern JSON gav htmlspecialchars()-TypeError paa DEN ANDEN
+            // linje da kun linket var guardet. Ét sted at rette, ikke to.
             $address = $meta['property_address'] ?? $meta['address'] ?? null;
+            $address = is_scalar($address) ? (string) $address : null;
 
             // 🚨 EN ADRESSE UDEN POSTNUMMER KAN IKKE OPLOESES — den giver 422.
             //
@@ -138,13 +143,24 @@
             $postnr = $meta['postal_code'] ?? null;
             $postnr = is_scalar($postnr) ? trim((string) $postnr) : '';
 
+            // 🪤 (adressen er normaliseret til ?string ved kilden, :110)
+            //
+            // 🪤 TOM adresse er ikke det samme som null. Foerste udkast
+            // guardede paa `$address !== null`, saa '' faldt igennem:
+            // trim('', ', ') = '' og saa ', '.$postnr => ", 2750" — et
+            // renderet link til et bart postnummer. Og parseAddress(', 2750')
+            // FINDER et zip, saa den ville slippe forbi guarden og fejle paa
+            // `number` bagved. Derfor: er der ingen gadelinje, er der intet
+            // opslag at lave.
+            $adresselinje = $address !== null ? trim($address, ', ') : '';
+
             $opslagsadresse = null;
-            if ($address !== null) {
-                $harPostnr = ! empty(app(\TheFountainhead\Metis\Services\RegistryApi::class)->parseAddress($address)['zip']);
+            if ($adresselinje !== '') {
+                $harPostnr = ! empty(app(\TheFountainhead\Metis\Services\RegistryApi::class)->parseAddress($adresselinje)['zip']);
 
                 $opslagsadresse = ($harPostnr || $postnr === '')
-                    ? trim($address, ', ')
-                    : trim($address, ', ').', '.$postnr;
+                    ? $adresselinje
+                    : $adresselinje.', '.$postnr;
             }
 
             // 🚨 route(), IKKE en haandbygget sti: urlencode() giver '+' for
@@ -157,8 +173,13 @@
             // (embedded vs standalone), saa et bart route()-kald ville kaste
             // RouteNotFoundException og tage hele alert-siden ned. Samme guard
             // som debt-search.blade.php:273 og MetisLink.php:57.
+            //
+            // 🚨 rawurlencode() FOERST: route() lader '/' staa, saa en adresse
+            // som '../../../admin' (ekstern JSON) gav en sti browseren
+            // normaliserer VAEK fra /lookup/address/. MetisLink.php:87 goer
+            // allerede praecis dette.
             $opslagsUrl = ($opslagsadresse !== null && Route::has('metis.lookup'))
-                ? route('metis.lookup', ['type' => 'address', 'query' => $opslagsadresse])
+                ? route('metis.lookup', ['type' => 'address', 'query' => rawurlencode($opslagsadresse)])
                 : null;
 
             // Observer-path carries no before/after objects — synthesise the current

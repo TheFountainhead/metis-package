@@ -384,9 +384,40 @@ class RegistryApi
         return $this->get("/v1/valuations/{$matrikelId}");
     }
 
+    /**
+     * 🚨 EN FORSLAGSLISTE ER ALDRIG EN FEJL-ARRAY — filtret hoerer hjemme HER.
+     *
+     * `get()` sender en RequestException gennem `errorFrom()`, som RETURNERER
+     * `['error' => 'upstream_error', 'status' => 500]`. `rescue()` fanger den
+     * ikke (intet kastes), og arrayen har `count() == 2`, saa enhver
+     * `@if(count($forslag) > 0) @foreach` itererer dens VAERDIER.
+     *
+     * Maalt 20/8 — fire forbrugere, ingen af dem filtrerede:
+     *   Index.php:38,91    -> index.blade.php:25 laeser {{ $suggestion['tekst'] }}
+     *                         UDEN `??` => TypeError, FORSIDEN gaar ned
+     *   Search.php:161,283 -> to tomme knapper under "Mente du:"
+     *
+     * 🔑 PR #179 rettede det i `Lookup` ALENE. Det er samme fejl som guarden
+     * paa hver doer: det femte kaldested arver faelden. Her kan det ikke ske —
+     * ingen forbruger vil nogensinde have en fejl-array som forslagsliste.
+     *
+     * 🪤 `is_scalar($r['tekst'])` med: en raekke med et array i feltet gav
+     * "Array to string conversion" i bladen og tog hele siden ned.
+     *
+     * @return list<array{tekst: string, ...}> Tom liste = intet brugbart svar.
+     */
     public function addressAutocomplete(string $query, int $limit = 10): array
     {
-        return $this->get('/v1/map/autocomplete', ['q' => $query, 'limit' => $limit]) ?? [];
+        $svar = $this->get('/v1/map/autocomplete', ['q' => $query, 'limit' => $limit]) ?? [];
+
+        if (isset($svar['error'])) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $svar,
+            fn ($r) => is_array($r) && ! empty($r['tekst']) && is_scalar($r['tekst'])
+        ));
     }
 
     /**
@@ -1181,6 +1212,41 @@ class RegistryApi
         }
 
         $parsed = $this->parseAddress($address);
+
+        // 🚨 CHOKEPUNKTET. En ufuldstaendig adresse spoerges der slet ikke paa.
+        //
+        // Upstream svarer "The matrikel id field is required when street /
+        // number / zip is not present" — samme gadeadresse findes typisk flere
+        // steder i landet (Søndergade 43A ligger mindst fem steder), saa den
+        // kan ikke oploeses til én matrikel.
+        //
+        // 🔑 GUARDEN HOERER HJEMME HER, IKKE PAA HVER DOER. Maalt 20/8 efter
+        // PR #179: en guard i `Lookup::mount()` er FULDSTAENDIG omgaaet, fordi
+        // de 12 adresse-sektioner er selvstaendigt mountbare `lazy`-komponenter
+        // — et `__lazyLoad`-payload rammer `AddressBbr::mount()` direkte, og
+        // `Lookup::mount()` koerer aldrig:
+        //
+        //   Livewire::test(AddressBbr::class, ['query' => 'Søndergade 43A'])
+        //   => POST /v1/property/analysis {"street":…,"number":"43A","zip":""}
+        //
+        // Denne metode er det ENESTE punkt alle 14 kaldesteder deler (12
+        // sektioner + MapPanel + MetisPdfController). Praecis samme argument
+        // som kvote-gaten i `client()`: "en guard pr. mount() ville vaere
+        // samme fejl ét niveau nede: den 29. sektion ville mangle den".
+        // Femte fix i denne familie; de fire foerste laa alle i kalder-laget.
+        //
+        // 🪤 `number` OGSAA, ikke kun `zip`. `parseAddress('Agernskrænten+33,+2750')`
+        // giver zip='2750' men number='' — den slap forbi PR #179's zip-guard og
+        // fejlede 422 paa `number` BAGVED den kontrol der skulle fange den.
+        //
+        // 🪤 FOER cachen skrives, saa en afvist adresse aldrig laases fast
+        // (#134: "cach aldrig fejl"). Formen er den samme
+        // `['error' => …, 'status' => …]` som alle forbrugere allerede
+        // isset()-guarder paa, og `MetisSection::opslagFejlede()` mapper
+        // ALLEREDE 422 til 'address_ambiguous' — kontrakten fandtes.
+        if (empty($parsed['zip']) || $parsed['number'] === '') {
+            return ['error' => 'address_ambiguous', 'status' => 422];
+        }
 
         // Return raw API response (not transformed) — sections need full data
         $result = $this->post('/v1/property/analysis', $parsed);
