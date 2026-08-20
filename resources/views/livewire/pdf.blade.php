@@ -149,6 +149,7 @@
 
     @elseif($type === 'address')
         @php
+            $opslagsfejl = $data['analysis']['error'] ?? null;
             $prop = $data['analysis']['property'] ?? [];
             $bbr = $prop['bbr'] ?? null;
             $valuation = $prop['valuation'] ?? null;
@@ -157,6 +158,45 @@
             $transactions = $prop['transactions'] ?? [];
             $companies = $prop['companies_at_address'] ?? [];
         @endphp
+
+        @if($opslagsfejl)
+            {{-- 🚨 EN PDF FORLADER HUSET. Uden denne gren faldt ALLE sektioner
+                 tavst igennem (de er `@if` uden `@else`), og dokumentet blev
+                 byte-identisk med et vellykket opslag paa en ejendom uden
+                 data: header, adresse, tidsstempel, sidefod. Et tomt dokument
+                 der ser faerdigt ud.
+
+                 Det laeses som "ingen ejere, ingen pantebreve" — altsaa
+                 GAELDFRIHED — i en sagsmappe hvor ingen kan se at opslaget
+                 fejlede. Samme falske benaegtelse som de 12 sektioner fik
+                 lukket 18/8, paa den ene flade hvor den overlever og
+                 videresendes.
+
+                 🔑 Samme to beskeder som `partials/lookup-error.blade.php`,
+                 saa skaerm og print ikke driver fra hinanden. --}}
+            <h2>{{ __('Opslaget kunne ikke udføres') }}</h2>
+            <p class="empty">
+                @if($opslagsfejl === 'address_ambiguous')
+                    {{ __('Adressen kan ikke entydigt bestemmes — prøv med postnummer.') }}
+                @else
+                    {{ __('Vi kunne ikke få svar fra kilden.') }}
+                @endif
+            </p>
+            <p class="label">
+                {{ __('Dokumentet indeholder derfor ingen oplysninger om ejendommen. Fraværet af data er IKKE en oplysning om ejendommen.') }}
+            </p>
+        @elseif(empty($prop))
+            {{-- 🪤 OG DEN AEGTE TOMME TILSTAND. Fanget ved at SE dokumentet:
+                 efter fejlgrenen kunne 422 skelnes fra "ingen data", men den
+                 TOMME gav stadig kun header + sidefod. Opslaget LYKKEDES, og
+                 det skal staa — ellers kan modtageren ikke skelne "vi spurgte,
+                 der er intet" fra "noget gik galt".
+
+                 Min egen test beviste kun at de to udfald var FORSKELLIGE.
+                 En ulighed er et svagere krav end to sande udsagn. --}}
+            <h2>{{ __('Opslaget blev udført') }}</h2>
+            <p class="empty">{{ __('Vi fandt ingen registrerede oplysninger på adressen.') }}</p>
+        @else
 
         @if($prop['street_view_url'] ?? null)
             <div style="margin-bottom: 16px;">
@@ -249,6 +289,7 @@
                     @endforeach
                 </tbody>
             </table>
+        @endif
         @endif
     @endif
 
