@@ -271,7 +271,7 @@
                                     @php
                                         $addr = trim(($r['property']['address'] ?? '').', '.($r['property']['postal_code'] ?? ''), ', ');
                                         $detailUrl = (Route::has('metis.lookup') && $addr)
-                                            ? route('metis.lookup', ['type' => 'address', 'query' => $addr])
+                                            ? route('metis.lookup', ['type' => 'address', 'query' => rawurlencode($addr)])
                                             : null;
                                     @endphp
                                     <li class="px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition">

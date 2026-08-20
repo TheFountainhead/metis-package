@@ -279,7 +279,7 @@ class Search extends Component
         // En adresse uden postnummer kan ikke opløses til en unik matrikel
         // (registry-api svarer 422 → alle sektioner står tomme uden forklaring).
         // Vis i stedet autocomplete-forslagene, så brugeren vælger den fulde adresse.
-        if ($type === 'address' && empty(app(RegistryApi::class)->parseAddress($query)['zip'])) {
+        if ($type === 'address' && ! app(RegistryApi::class)->adresseKanOploeses($query)) {
             $suggestions = rescue(fn () => app(RegistryApi::class)->addressAutocomplete($query, 5), []) ?? [];
             $this->error = true;
             $this->errorMessage = 'no_results';

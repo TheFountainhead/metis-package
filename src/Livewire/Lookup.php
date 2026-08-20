@@ -121,7 +121,7 @@ class Lookup extends Component
         $erCpr = (new SearchDetector)->isCpr($query);
 
         if ($erCpr && strtolower($type) !== 'cpr') {
-            $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => $query]), navigate: true);
+            $this->redirect(route('metis.lookup', ['type' => 'cpr', 'query' => rawurlencode($query)]), navigate: true);
 
             return;
         }
@@ -150,7 +150,7 @@ class Lookup extends Component
 
             if (count($traef) === 1 && ! empty($traef[0]['cvr'])) {
                 $this->redirect(
-                    route('metis.lookup', ['type' => 'cvr', 'query' => $traef[0]['cvr']]),
+                    route('metis.lookup', ['type' => 'cvr', 'query' => rawurlencode($traef[0]['cvr'])]),
                     navigate: true
                 );
 
@@ -179,36 +179,6 @@ class Lookup extends Component
         // Brugeren faar autocomplete-forslagene, saa han kan vaelge den fulde
         // adresse — praecis som i `Search`. En tom fejlbesked ville efterlade
         // ham uden vej videre.
-        if (strtolower($type) === 'address'
-            && empty(app(RegistryApi::class)->parseAddress($query)['zip'])) {
-            $this->ufuldstaendigAdresse = true;
-
-            // 🚨 rescue() FANGER KUN EXCEPTIONS — og addressAutocomplete()
-            // kaster ikke. get() sender en RequestException gennem
-            // errorFrom(), som RETURNERER ['error' => …, 'status' => …].
-            //
-            // Uden filtret nedenfor blev den fejl-array til $forslag, og
-            // @foreach'en itererede dens VAERDIER: brugeren fik at vide
-            // "vaelg den rigtige nedenfor" og blev tilbudt to opdigtede
-            // adresser — "upstream_error" og "500" — som klikbare links.
-            //
-            // Praecis den fejlklasse kodebasen lige har lukket ét lag nede
-            // (1cdff86: "et fejlet opslag maa ikke rendere som ingen data").
-            // Behold kun raekker der faktisk BAERER en adresse.
-            $svar = rescue(
-                fn () => app(RegistryApi::class)->addressAutocomplete($query, 5),
-                []
-            ) ?? [];
-
-            $this->forslag = isset($svar['error'])
-                ? []
-                : array_values(array_filter(
-                    $svar,
-                    fn ($r) => is_array($r) && ! empty($r['tekst'])
-                ));
-
-            return;
-        }
 
         // 🚨 KVOTE-GATEN. Maalt paa prod 9/8: den fandtes KUN i
         // `Search::performSearch()`, saa et direkte kald til
@@ -226,6 +196,32 @@ class Lookup extends Component
         if ($this->skalGates()) {
             $this->gated = true;
             $this->dispatch('show-email-gate');
+
+            return;
+        }
+
+        // 🚨 EFTER KVOTE-GATEN. Foerste udkast lagde denne guard FOER, med
+        // begrundelsen "et opslag vi ved vil fejle maa ikke koste en kvote".
+        // Den var rigtig om at TAELLE, men forkert om raekkefoelgen: den sprang
+        // gaten helt over og lavede stadig et udgaaende kald. Maalt over kvote:
+        // 5 af 5 requests slap forbi med 5 autocomplete-kald, mens den samme
+        // bruger MED postnummer blev gated. `/lookup/{type}/{query}` i
+        // routes/embedded.php har ingen throttle.
+        //
+        // Kvoten taelles stadig ikke for et ufuldstaendigt opslag: `taelOpslag()`
+        // ligger efter dette `return`.
+        if (strtolower($type) === 'address'
+            && ! app(RegistryApi::class)->adresseKanOploeses($query)) {
+            $this->ufuldstaendigAdresse = true;
+
+            // `addressAutocomplete()` garanterer nu formen: fejl-arrayen og
+            // raekker uden brugbar `tekst` er filtreret fra ved KILDEN
+            // (RegistryApi:387), saa alle fire forbrugere er daekket — ikke
+            // kun denne. `rescue()` staar tilbage for en aegte exception.
+            $this->forslag = rescue(
+                fn () => app(RegistryApi::class)->addressAutocomplete($query, 5),
+                []
+            ) ?? [];
 
             return;
         }
@@ -284,7 +280,7 @@ class Lookup extends Component
         // Uden redirect ville `$gated = false` alene ikke hjaelpe: sektionerne
         // er `lazy` og blev aldrig mountet i den gatede render.
         $this->redirect(
-            route('metis.lookup', ['type' => $this->type, 'query' => $this->query]),
+            route('metis.lookup', ['type' => $this->type, 'query' => rawurlencode($this->query)]),
             navigate: true
         );
     }

@@ -323,8 +323,78 @@ class RegistryApi
         return $this->fetchProperty($parsed);
     }
 
+    /**
+     * Kan denne adresse overhovedet oploeses til én matrikel?
+     *
+     * 🔑 ÉN definition, ikke fire. Kodebasen har allerede betalt for den fejl
+     * med FIRE CPR-detektorer, hvor den fjerde accepterede et format de tre
+     * andre afviste. `Search::search()` og `Lookup::mount()` spoerger nu samme
+     * sted som chokepunktet.
+     *
+     * 🪤 KUN `zip`. Foerste udkast krævede ogsaa `number !== ''` — det AFVISTE
+     * helt almindelige danske adresser, fordi `parseAddress()`s regex er
+     * ankret til sidste token og ikke taaler et mellemrum foer bogstavet:
+     *
+     *   'Strandvejen 100 B, 2900 Hellerup'   -> number='' (men FULDT gyldig)
+     *   'Vestergade 1 A, 5000 Odense C'      -> number=''
+     *   'Bakkedraget 7 st tv, 8000 Aarhus C' -> number=''
+     *
+     * Maalt: alle tre naaede API'et og fik data FOER guarden. En tom `number`
+     * er altsaa oftest en PARSER-begraensning, ikke et hul i adressen — og
+     * upstream afgoer det bedre end vi kan. `zip` er derimod aegte paakraevet.
+     */
+    public function adresseKanOploeses(string $address): bool
+    {
+        return $this->parsetAdresseKanOploeses($this->parseAddress($address));
+    }
+
+    /**
+     * Samme regel, men over den PARSEDE form.
+     *
+     * 🔑 To former, ÉN regel. `fetchProperty()` tager et array der lovligt kan
+     * baere `matrikel_id` UDEN adresse — en streng-praedikat kan ikke udtrykke
+     * det, saa at tvinge dem sammen ville enten braekke matrikel-opslag eller
+     * gen-indfoere `number`-regressionen. De to former deler nu krop i stedet
+     * for at vaere to uafhaengige formuleringer der kan drive fra hinanden.
+     */
+    public function parsetAdresseKanOploeses(array $parsed): bool
+    {
+        if (! empty($parsed['matrikel_id'])) {
+            return true;
+        }
+
+        return ! empty($parsed['zip']);
+    }
+
+    /**
+     * 🚨 CHOKEPUNKTET. Her — ikke i `resolveAddressAnalysis()`.
+     *
+     * Foerste udkast lagde guarden i `resolveAddressAnalysis()` og kaldte den
+     * "det eneste punkt alle 14 kaldesteder deler". Det var forkert, og
+     * maalefejlen er vaerd at huske: jeg greppede efter METODENAVNET og fandt
+     * 14 kaldere — men `fetchPropertyByAddress()` rammer samme endpoint UDEN
+     * at gaa gennem den metode, saa den var per konstruktion usynlig for min
+     * soegning. Maalt:
+     *
+     *   fetchPropertyByAddress('Søndergade 43A')
+     *   => POST /v1/property/analysis {"street":…,"number":"43A","zip":""}
+     *
+     * 🔑 Spoerg ikke "hvem kalder metoden?" men "hvem rammer ENDPOINTET?".
+     * `grep "v1/property/analysis"` fandt den paa ét sekund.
+     *
+     * `fetchProperty()` er det ENESTE sted der poster til endpointet — en
+     * test pinner det (`AdresseChokepunktTest`), saa doer nr. 16 ikke kan
+     * snige sig ind.
+     */
     public function fetchProperty(array $searchData): array
     {
+        // Upstream: "The matrikel id field is required when street / number /
+        // zip is not present". Samme gadeadresse findes typisk flere steder i
+        // landet, saa uden postnummer kan den ikke oploeses.
+        if (! $this->parsetAdresseKanOploeses($searchData)) {
+            return ['error' => 'address_ambiguous', 'status' => 422];
+        }
+
         $result = $this->post('/v1/property/analysis', $searchData);
 
         if (isset($result['error'])) {
@@ -384,9 +454,40 @@ class RegistryApi
         return $this->get("/v1/valuations/{$matrikelId}");
     }
 
+    /**
+     * 🚨 EN FORSLAGSLISTE ER ALDRIG EN FEJL-ARRAY — filtret hoerer hjemme HER.
+     *
+     * `get()` sender en RequestException gennem `errorFrom()`, som RETURNERER
+     * `['error' => 'upstream_error', 'status' => 500]`. `rescue()` fanger den
+     * ikke (intet kastes), og arrayen har `count() == 2`, saa enhver
+     * `@if(count($forslag) > 0) @foreach` itererer dens VAERDIER.
+     *
+     * Maalt 20/8 — fire forbrugere, ingen af dem filtrerede:
+     *   Index.php:38,91    -> index.blade.php:25 laeser {{ $suggestion['tekst'] }}
+     *                         UDEN `??` => TypeError, FORSIDEN gaar ned
+     *   Search.php:161,283 -> to tomme knapper under "Mente du:"
+     *
+     * 🔑 PR #179 rettede det i `Lookup` ALENE. Det er samme fejl som guarden
+     * paa hver doer: det femte kaldested arver faelden. Her kan det ikke ske —
+     * ingen forbruger vil nogensinde have en fejl-array som forslagsliste.
+     *
+     * 🪤 `is_scalar($r['tekst'])` med: en raekke med et array i feltet gav
+     * "Array to string conversion" i bladen og tog hele siden ned.
+     *
+     * @return list<array{tekst: string, ...}> Tom liste = intet brugbart svar.
+     */
     public function addressAutocomplete(string $query, int $limit = 10): array
     {
-        return $this->get('/v1/map/autocomplete', ['q' => $query, 'limit' => $limit]) ?? [];
+        $svar = $this->get('/v1/map/autocomplete', ['q' => $query, 'limit' => $limit]) ?? [];
+
+        if (isset($svar['error'])) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $svar,
+            fn ($r) => is_array($r) && ! empty($r['tekst']) && is_scalar($r['tekst'])
+        ));
     }
 
     /**
@@ -1182,6 +1283,16 @@ class RegistryApi
 
         $parsed = $this->parseAddress($address);
 
+        // 🚨 Samme guard som `fetchProperty()` — men her SKAL den staa
+        // eksplicit, fordi denne metode poster direkte (sektionerne har brug
+        // for det RAA svar, ikke fetchProperty()'s transformerede form).
+        // Begge veje bruger den samme praedikat, saa de ikke kan drive fra
+        // hinanden. FOER cachen, saa en afvist adresse aldrig laases fast
+        // (#134: "cach aldrig fejl").
+        if (! $this->adresseKanOploeses($address)) {
+            return ['error' => 'address_ambiguous', 'status' => 422];
+        }
+
         // Return raw API response (not transformed) — sections need full data
         $result = $this->post('/v1/property/analysis', $parsed);
 
@@ -1211,11 +1322,21 @@ class RegistryApi
 
     public function resolvePropertyComparison(string $query): ?array
     {
-        $parsed = $this->parseAddress($query);
-
-        if (! $parsed || empty($parsed['zip'])) {
+        // 🚨 SJETTE KOPI af praedikatet, fundet ved review 20/8. Den var en
+        // haandrullet variant (`empty($parsed['zip'])`) mod et ANDET endpoint
+        // (`property/compare`), uden for begge vagt-testers raekkevidde og
+        // UDEN egen test: guarden kunne slettes helt uden at én af 804 tests
+        // blev roed.
+        //
+        // 🪤 Den er i praksis uopnaaelig i dag, fordi `AddressComparison::mount()`
+        // kalder `resolveAddressAnalysis()` FOERST og returnerer ved fejl. Men
+        // den er beskyttet af en RAEKKEFOELGE i en kalder, ikke af sin egen
+        // kontrakt — praecis saadan doer 15 og 16 opstod i denne fejlfamilie.
+        if (! $this->adresseKanOploeses($query)) {
             return null;
         }
+
+        $parsed = $this->parseAddress($query);
 
         $address = trim(($parsed['street'] ?? '') . ' ' . ($parsed['number'] ?? ''));
         $postalCode = $parsed['zip'];

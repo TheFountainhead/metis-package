@@ -24,12 +24,34 @@
 
     @if($type === 'cvr')
         @php
+            $opslagsfejl = $data['company'] === null || isset($data['company']['error']);
+
             $company = $data['company']['companies'][0] ?? null;
             $roles = $company['roles'] ?? [];
             $structure = $data['structure'] ?? [];
             $portfolio = $data['portfolio']['portfolio'] ?? null;
             $tax = $data['tax']['records'] ?? [];
         @endphp
+
+        @if($opslagsfejl)
+            {{-- 🚨 SAMME FALSKE BENAEGTELSE SOM ADRESSE-GRENEN — men VAERRE.
+                 Adresse-sektionerne er `@if` uden `@else`, saa en fejl gav et
+                 TAVST dokument. Her har hver sektion et `@else`, saa en total
+                 upstream-fejl printer en BEKRAEFTENDE benaegtelse: "No roles
+                 found.", "No companies found." — en positiv paastand om et
+                 selskab eller en person, produceret naar vi intet ved.
+
+                 Maalt 20/8: fejl, aegte tom og `rescue()`-null gav
+                 BYTE-IDENTISK dokument.
+
+                 🪤 `rescue()` uden fallback giver `null`, saa fejl har TO
+                 former: `null` og `['error' => …]`. Begge er fejl. --}}
+            <h2>{{ __('Opslaget kunne ikke udføres') }}</h2>
+            <p class="empty">{{ __('Vi kunne ikke få svar fra kilden.') }}</p>
+            <p class="label">
+                {{ __('Fraværet af data er IKKE en oplysning — opslaget blev ikke udført.') }}
+            </p>
+        @else
 
         <h2>{{ __('Company Information') }}</h2>
         @if($company)
@@ -95,12 +117,38 @@
                 </tbody>
             </table>
         @endif
+        @endif
 
     @elseif($type === 'cpr')
         @php
+            $opslagsfejl = ($data['properties'] ?? null) === null
+                || isset($data['properties']['error'])
+                || ($data['companies'] ?? null) === null
+                || isset($data['companies']['error']);
+
             $properties = $data['properties']['properties'] ?? [];
             $companies = $data['companies']['companies'] ?? [];
         @endphp
+
+        @if($opslagsfejl)
+            {{-- 🚨 SAMME FALSKE BENAEGTELSE SOM ADRESSE-GRENEN — men VAERRE.
+                 Adresse-sektionerne er `@if` uden `@else`, saa en fejl gav et
+                 TAVST dokument. Her har hver sektion et `@else`, saa en total
+                 upstream-fejl printer en BEKRAEFTENDE benaegtelse: "No roles
+                 found.", "No companies found." — en positiv paastand om et
+                 selskab eller en person, produceret naar vi intet ved.
+
+                 Maalt 20/8: fejl, aegte tom og `rescue()`-null gav
+                 BYTE-IDENTISK dokument.
+
+                 🪤 `rescue()` uden fallback giver `null`, saa fejl har TO
+                 former: `null` og `['error' => …]`. Begge er fejl. --}}
+            <h2>{{ __('Opslaget kunne ikke udføres') }}</h2>
+            <p class="empty">{{ __('Vi kunne ikke få svar fra kilden.') }}</p>
+            <p class="label">
+                {{ __('Fraværet af data er IKKE en oplysning — opslaget blev ikke udført.') }}
+            </p>
+        @else
 
         <h2>{{ __('Owned Properties') }}</h2>
         @if(count($properties) > 0)
@@ -146,9 +194,11 @@
         @else
             <p class="empty">{{ __('No companies found.') }}</p>
         @endif
+        @endif
 
     @elseif($type === 'address')
         @php
+            $opslagsfejl = $data['analysis']['error'] ?? null;
             $prop = $data['analysis']['property'] ?? [];
             $bbr = $prop['bbr'] ?? null;
             $valuation = $prop['valuation'] ?? null;
@@ -156,7 +206,64 @@
             $mortgages = $prop['mortgages'] ?? [];
             $transactions = $prop['transactions'] ?? [];
             $companies = $prop['companies_at_address'] ?? [];
+
+            // 🚨 MAAL OM NOGEN SEKTION PRINTER — ikke om beholderen er tom.
+            // `empty($prop)` var forkert: en ejendom MED adresse, postnummer
+            // og matrikel-id men uden bbr/ejere/pantebreve gav praecis det
+            // tavse dokument denne gren findes for at forhindre.
+            // `resolveAddressAnalysis()` normaliserer kun et HELT tomt
+            // property til `[]`; et delvist udfyldt gaar lige igennem.
+            //
+            // 🪤 Listen skal daekke ALLE sektioner nedenfor. En ny sektion
+            // uden en post her ville genskabe hullet — derfor pinner
+            // `PdfFejlgrenTest` at hver enkelt af dem alene er nok.
+            $harIndhold = ! empty($bbr)
+                || ! empty($valuation)
+                || count($owners) > 0
+                || count($mortgages) > 0
+                || count($transactions) > 0
+                || count($companies) > 0
+                || ! empty($prop['street_view_url'] ?? null);
         @endphp
+
+        @if($opslagsfejl)
+            {{-- 🚨 EN PDF FORLADER HUSET. Uden denne gren faldt ALLE sektioner
+                 tavst igennem (de er `@if` uden `@else`), og dokumentet blev
+                 byte-identisk med et vellykket opslag paa en ejendom uden
+                 data: header, adresse, tidsstempel, sidefod. Et tomt dokument
+                 der ser faerdigt ud.
+
+                 Det laeses som "ingen ejere, ingen pantebreve" — altsaa
+                 GAELDFRIHED — i en sagsmappe hvor ingen kan se at opslaget
+                 fejlede. Samme falske benaegtelse som de 12 sektioner fik
+                 lukket 18/8, paa den ene flade hvor den overlever og
+                 videresendes.
+
+                 🔑 Samme to beskeder som `partials/lookup-error.blade.php`,
+                 saa skaerm og print ikke driver fra hinanden. --}}
+            <h2>{{ __('Opslaget kunne ikke udføres') }}</h2>
+            <p class="empty">
+                @if($opslagsfejl === 'address_ambiguous')
+                    {{ __('Adressen kan ikke entydigt bestemmes — prøv med postnummer.') }}
+                @else
+                    {{ __('Vi kunne ikke få svar fra kilden.') }}
+                @endif
+            </p>
+            <p class="label">
+                {{ __('Dokumentet indeholder derfor ingen oplysninger om ejendommen. Fraværet af data er IKKE en oplysning om ejendommen.') }}
+            </p>
+        @elseif(! $harIndhold)
+            {{-- 🪤 OG DEN AEGTE TOMME TILSTAND. Fanget ved at SE dokumentet:
+                 efter fejlgrenen kunne 422 skelnes fra "ingen data", men den
+                 TOMME gav stadig kun header + sidefod. Opslaget LYKKEDES, og
+                 det skal staa — ellers kan modtageren ikke skelne "vi spurgte,
+                 der er intet" fra "noget gik galt".
+
+                 Min egen test beviste kun at de to udfald var FORSKELLIGE.
+                 En ulighed er et svagere krav end to sande udsagn. --}}
+            <h2>{{ __('Opslaget blev udført') }}</h2>
+            <p class="empty">{{ __('Vi fandt ingen registrerede oplysninger på adressen.') }}</p>
+        @else
 
         @if($prop['street_view_url'] ?? null)
             <div style="margin-bottom: 16px;">
@@ -249,6 +356,7 @@
                     @endforeach
                 </tbody>
             </table>
+        @endif
         @endif
     @endif
 

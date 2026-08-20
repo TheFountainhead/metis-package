@@ -535,3 +535,56 @@ it('tager ikke siden ned naar lookup-ruten ikke er registreret', function () {
         ->assertSet('error', null)
         ->assertDontSee('Se ejendom');
 });
+
+/*
+ * 🚨 REVIEW-FUND (P1): route() encoder IKKE '/'.
+ * `$meta['address']` er ekstern alert-JSON. En raekke som '../../../admin'
+ * gav /lookup/address/../../../admin — browseren normaliserer '../' vaek
+ * FOER afsendelse, saa linket navigerer et andet sted hen i appen.
+ */
+it('encoder skraastreger i "Se ejendom"-linket', function () {
+    Http::fake(['*/v1/alerts/708' => Http::response(['data' => observerAlert([
+        'id' => 708,
+        'metadata' => ['address' => '../../../admin', 'postal_code' => '2750'],
+    ])], 200)]);
+
+    $html = Livewire::test(AlertDetail::class, ['id' => 708])->html();
+
+    expect($html)->not->toContain('/lookup/address/../../../admin');
+    expect(opslagsadresseFraLink($html))->toBe('../../../admin, 2750');
+});
+
+/*
+ * 🚨 REVIEW-FUND (P1): en TOM adresse byggede et link til et bart postnummer.
+ *
+ * Guarden skiftede fra `@if($address)` (truthy) til `$address !== null`, saa
+ * '' faldt igennem: trim('', ', ') = '' og saa ', '.$postnr =&gt; ", 2750".
+ * `@if($opslagsUrl)` er sand for den streng, saa linket RENDEREDE — og
+ * parseAddress(', 2750') finder zip, saa den ville slippe forbi guarden og
+ * fejle paa `number` bagved. Praecis den "tavsere fejl" PR #179 advarede mod.
+ */
+it('bygger intet link naar adressen er tom', function () {
+    Http::fake(['*/v1/alerts/709' => Http::response(['data' => observerAlert([
+        'id' => 709,
+        'metadata' => ['address' => '', 'postal_code' => '2750'],
+    ])], 200)]);
+
+    $html = Livewire::test(AlertDetail::class, ['id' => 709])->html();
+
+    expect(opslagsadresseFraLink($html))->toBeNull();
+    expect($html)->not->toContain('Se ejendom');
+});
+
+/*
+ * 🪤 Samme is_scalar-hul som `postal_code` fik lukket — men paa `address`.
+ * Et array gav "Array to string conversion" og tog hele alert-siden ned.
+ */
+it('overlever en address der ikke er skalarr', function () {
+    Http::fake(['*/v1/alerts/710' => Http::response(['data' => observerAlert([
+        'id' => 710,
+        'metadata' => ['address' => ['ikke', 'en', 'streng'], 'postal_code' => '2750'],
+    ])], 200)]);
+
+    Livewire::test(AlertDetail::class, ['id' => 710])
+        ->assertSet('error', null);
+});

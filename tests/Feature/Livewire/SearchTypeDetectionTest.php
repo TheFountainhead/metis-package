@@ -120,9 +120,15 @@ it('🚨 autocomplete paa en adresse giver forslag', function () {
     //
     // Samme omskrivning som ovenfor: en mode-mod-mode-sammenligning kan ikke
     // fejle naar der kun findes én vej. Vi asserter paa antallet direkte.
-    Http::fake(['*' => Http::response(['data' => ['adresser' => [
+    // 🪤 FIXTUREN BESKREV EN FORM API'ET ALDRIG SENDER. Den var pakket ind i
+    // en `adresser`-noegle; maalt mod prod 20/8 returnerer
+    // /v1/map/autocomplete en FLAD liste af {tekst, data}. Nøglen `adresser`
+    // findes intet andet sted i kodebasen end her. Testen var groen mod en
+    // struktur der ikke eksisterer — den fejlede foerst da
+    // addressAutocomplete() begyndte at validere formen.
+    Http::fake(['*' => Http::response(['data' => [
         ['tekst' => 'Bredgade 40, 1260 København'],
-    ]]])]);
+    ]])]);
 
     $forslag = Livewire::test(Search::class)
         ->set('query', 'Bredgade 40')
