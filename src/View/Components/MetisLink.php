@@ -40,6 +40,41 @@ class MetisLink extends Component
      * forsiden er vaerre end ingen knap. Bladen renderer da den samme
      * inaktive `<span>` som ved tom query.
      */
+    /**
+     * Samme regler som `url()`, men uden en komponent-instans.
+     *
+     * 🔑 Til REDIRECTS og andre steder der skal bruge URL'en frem for at
+     * rendere et link. Foer denne fandtes, haandrullede fem `redirect()`-kald
+     * i `Index`/`Lookup` deres eget `route('metis.lookup', …)` — og arvede
+     * dermed ingen af de fire guards her. Migreret 20/8.
+     *
+     * 🪤 DELER KROP med `url()`. To implementeringer af samme regel driver
+     * fra hinanden — kodebasen har allerede betalt for det med FIRE
+     * CPR-detektorer, hvor den fjerde accepterede et format de tre andre
+     * afviste.
+     */
+    public static function urlFor(string $type, string $query): ?string
+    {
+        return (new self($type, $query))->url();
+    }
+
+    /**
+     * Som `urlFor()`, men falder tilbage til forsiden i stedet for `null`.
+     *
+     * 🚨 TIL REDIRECTS. `$this->redirect(null)` er et TAVST no-op: Livewire
+     * typehinter loest og gemmer null uden at kaste, saa brugeren klikker og
+     * INTET sker — ingen fejl, ingen besked.
+     *
+     * 🪤 Foer migrationen kastede `route()` ved tom query, saa tilstanden var
+     * SYNLIG (om end som en white-screen). Migrationen gjorde den robust og
+     * dermed tavs. "Brugeren klikker og intet sker" er praecis den tilstand
+     * denne sag handler om — derfor et sted at LANDE frem for ingenting.
+     */
+    public static function urlForEllerHjem(string $type, string $query): string
+    {
+        return self::urlFor($type, $query) ?? route('metis.home');
+    }
+
     public function url(): ?string
     {
         // 🚨 TOM QUERY KASTER — `UrlGenerationException: Missing required

@@ -5,6 +5,7 @@ namespace TheFountainhead\Metis\Livewire;
 use Livewire\Component;
 use TheFountainhead\Metis\Models\MetisLookup;
 use TheFountainhead\Metis\Services\RegistryApi;
+use TheFountainhead\Metis\View\Components\MetisLink;
 use TheFountainhead\Metis\Services\SearchDetector;
 
 class Index extends Component
@@ -73,7 +74,7 @@ class Index extends Component
     public function selectCompany(string $cvr): void
     {
         if ($cvr) {
-            $this->redirect(route('metis.lookup', ['type' => 'cvr', 'query' => rawurlencode($cvr)]));
+            $this->redirect(MetisLink::urlForEllerHjem('cvr', $cvr));
         }
     }
 
@@ -111,7 +112,7 @@ class Index extends Component
             return;
         }
 
-        $this->redirect(route('metis.lookup', ['type' => $type, 'query' => rawurlencode($query)]));
+        $this->redirect(MetisLink::urlForEllerHjem($type, $query));
     }
 
     public function render()

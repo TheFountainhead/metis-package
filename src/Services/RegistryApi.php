@@ -1400,9 +1400,69 @@ class RegistryApi
      */
     protected function errorFrom(RequestException $e): array
     {
-        report($e);
+        // 🚨 EN FORVENTET 4xx ER IKKE EN APPLIKATIONSFEJL.
+        //
+        // Foer rapporterede vi ALT — ogsaa et 422 der blot betyder "adressen
+        // kan ikke oploeses". Flare fik en fuld stak, umulig at skelne fra et
+        // crash, og #9104992 samlede 117 forekomster hvoraf de fleste var en
+        // HAANDTERET tilstand vi selv viser brugeren en besked for.
+        //
+        // 🔑 SMALT, ikke bredt. Kun registry-apis matrikel-422 tie-stilles.
+        // Alle andre 4xx og ALLE 5xx rapporteres uaendret — mister vi dem,
+        // mister vi signalet om at upstream begynder at afvise noget vi
+        // TROEDE var gyldigt. Frederiks valg 20/8.
+        //
+        // 🪤 RETURVAERDIEN ER UAENDRET. Alle 14+ forbrugere ser stadig
+        // `['error' => …, 'status' => 422]`, saa brugeren faar praecis samme
+        // besked. Kun rapporteringen falder vaek.
+        //
+        // 🪤 Siden chokepunkt-guarden landede naar en postnummerloes adresse
+        // ALDRIG hertil — den afvises foer kaldet. Rammer vi alligevel dette,
+        // er det fordi upstream afviser noget vi selv godkendte. Beskeden er
+        // maalt mod prod 20/8, ikke gaettet.
+        if (! $this->erForventetAdresseAfvisning($e)) {
+            report($e);
+        }
 
         return ['error' => 'upstream_error', 'status' => $e->getCode()];
+    }
+
+    /**
+     * Er dette registry-apis "adressen kan ikke oploeses"-422?
+     *
+     * Maalt mod prod 20/8 — den aegte krop:
+     *   {"message":"The matrikel id field is required when street / number /
+     *    zip is not present. (and 2 more errors)","errors":{…}}
+     *
+     * 🪤 Matcher paa BESKEDEN, ikke kun statuskoden: et 422 kan ogsaa betyde
+     * "ugyldig api-noegle", og DEN vil vi vide besked om.
+     */
+    protected function erForventetAdresseAfvisning(RequestException $e): bool
+    {
+        if ($e->response?->status() !== 422) {
+            return false;
+        }
+
+        // 🪤 IKKE `(string) $json['message']`. Et Laravel-validationssvar kan
+        // baere et ARRAY dér, og castet gav `ErrorException: Array to string
+        // conversion` — kastet INDE I `catch (RequestException $e)`, hvor
+        // intet fanger det. En haandteret fejl blev til en uhaandteret, i
+        // selve koden der findes for at haandtere fejl. Og det ramte HVER
+        // 422, ikke kun matrikel-varianten.
+        $besked = $e->response->json('message');
+
+        if (! is_string($besked)) {
+            return false;
+        }
+
+        // 🪤 ANKRET, ikke `str_contains`. Maalt: "Your api token is invalid:
+        // matrikel id field is required" blev tie-stillet — en upstream-fejl
+        // der blot CITERER validerings-teksten forsvandt fra Flare. Præcis
+        // det signal-tab kommentaren ovenfor siger den beskytter imod.
+        //
+        // registry-apis egen form (maalt mod prod 20/8) starter med feltet:
+        //   "The matrikel id field is required when street / number / zip …"
+        return str_starts_with($besked, 'The matrikel id field is required');
     }
 
     /**
