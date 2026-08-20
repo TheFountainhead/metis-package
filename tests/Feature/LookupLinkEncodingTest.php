@@ -5,20 +5,21 @@
  *
  * `route()` lader '/', '?' og '#' staa raat i et sti-segment. En vaerdi som
  * '../../../admin' bliver til /lookup/address/../../../admin, som browseren
- * normaliserer VAEK fra /lookup/address/ foer afsendelse.
+ * normaliserer VAEK fra /lookup/address/ foer afsendelse. Kilderne er ikke
+ * vores: registry-api-svar og brugerens egen soegehistorik.
  *
- * Kilderne er ikke vores: registry-api-svar og brugerens egen soegehistorik
- * (enhver streng i /lookup/{type}/{query} gemmes i metis_lookups og gengives
- * som link paa forsiden).
+ * 🪤 TRE UDKAST VAR SELV BLINDE — hver gang fordi soegefeltet var SMALLERE
+ * end det der skulle bevogtes:
+ *   1. scannede kun blades ⇒ fem PHP-kaldesteder usynlige (heraf to med
+ *      brugerstyret input).
+ *   2. tjekkede kun at ORDET stod paa linjen ⇒
+ *      `['type' => rawurlencode($t), 'query' => $raa]` passerede.
+ *   3. matchede kun ÉN LINJE ⇒ review omskrev et rigtigt kaldested over tre
+ *      linjer UDEN encoding, og testen forblev GROEN. Maalt, ikke gaettet.
  *
- * 🪤 FOERSTE UDKAST SCANNEDE KUN BLADES. Fem PHP-kaldesteder var strukturelt
- * usynlige — heraf `Index.php:114` og `Lookup.php:283`, begge med
- * brugerstyret input. Samme maalefejl som doer 15: jeg scopede soegningen
- * til en FILTYPE i stedet for til SINKET. Tredje gang i denne sag.
- *
- * 🪤 OG DEN TJEKKEDE KUN AT ORDET FANDTES PAA LINJEN. Review viste at
- * `['type' => rawurlencode($t), 'query' => $raa]` passerede — encodingen sad
- * paa den harmloese noegle. Vi kraever nu at den staar paa 'query' selv.
+ * ⇒ Vi bruger nu PHPs tokenizer. Den ser kun kode (ikke kommentarer/strenge),
+ * og den er ligeglad med linjeombrydning, anfoerselstegn og mellemrum —
+ * fordi den laeser TOKENS, ikke tekst.
  */
 it('rawurlencoder query i hvert metis.lookup-link', function () {
     $rødder = [
@@ -32,7 +33,7 @@ it('rawurlencoder query i hvert metis.lookup-link', function () {
         $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($rod));
 
         foreach ($it as $f) {
-            if (! in_array($f->getExtension(), ['php'], true)) {
+            if ($f->getExtension() !== 'php') {
                 continue;
             }
 
@@ -41,14 +42,38 @@ it('rawurlencoder query i hvert metis.lookup-link', function () {
                 continue;
             }
 
-            foreach (file($f->getPathname()) as $nr => $linje) {
-                if (! str_contains($linje, "route('metis.lookup'")) {
+            $tokens = array_values(array_filter(
+                token_get_all(file_get_contents($f->getPathname())),
+                fn ($t) => ! is_array($t)
+                    || ! in_array($t[0], [T_COMMENT, T_DOC_COMMENT, T_WHITESPACE], true)
+            ));
+
+            foreach ($tokens as $i => $t) {
+                // Find rutenavnet som en STRENG i kode — uanset anfoerselstegn.
+                if (! is_array($t) || $t[0] !== T_CONSTANT_ENCAPSED_STRING) {
                     continue;
                 }
 
-                // Kraev rawurlencode PAA query-vaerdien, ikke bare et sted paa linjen.
-                if (! preg_match("/'query'\s*=>\s*rawurlencode\(/", $linje)) {
-                    $synder[] = str_replace([$rod.'/', dirname($rod).'/'], '', $f->getPathname()).':'.($nr + 1);
+                if (trim($t[1], '"\'') !== 'metis.lookup') {
+                    continue;
+                }
+
+                // Saml de naeste ~40 tokens: hele route()-kaldets argumentliste,
+                // uanset hvor mange linjer den straekker sig over.
+                $efter = '';
+                for ($j = $i; $j < min(count($tokens), $i + 40); $j++) {
+                    $efter .= is_array($tokens[$j]) ? $tokens[$j][1] : $tokens[$j];
+                }
+
+                // 🪤 BEGGE anfoerselstegn: foerste udkast matchede kun 'query',
+                // saa "query" slap igennem — maalt ved mutation.
+                if (! preg_match('/["\']query["\']\s*=>/', $efter)) {
+                    continue;
+                }
+
+                // Kraev rawurlencode PAA query-vaerdien — ikke bare et sted i kaldet.
+                if (! preg_match('/["\']query["\']\s*=>\s*rawurlencode\(/', $efter)) {
+                    $synder[] = str_replace([$rod.'/', dirname($rod).'/'], '', $f->getPathname()).':'.$t[2];
                 }
             }
         }

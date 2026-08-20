@@ -205,3 +205,34 @@ it('poster kun til property/analysis fra RegistryApi', function () {
 
     expect($andre)->toBe([]);
 });
+
+/*
+ * 🚨 DEN FJERDE GUARD HAVDE NUL DAEKNING.
+ *
+ * `resolvePropertyComparison()` rammer et ANDET endpoint (`property/compare`)
+ * og havde sin egen haandrullede kopi af reglen. Maalt af review: guarden
+ * kunne SLETTES HELT uden at én af 804 tests blev roed — en guard ingen test
+ * bevogter er bare en kommentar.
+ *
+ * Den er i praksis uopnaaelig i dag, fordi `AddressComparison::mount()` kalder
+ * `resolveAddressAnalysis()` foerst og returnerer ved fejl. Men den er
+ * beskyttet af en RAEKKEFOELGE i en kalder, ikke af sin egen kontrakt —
+ * praecis saadan doer 15 og 16 opstod.
+ */
+it('naar ikke ud til property/compare med en uoploeselig adresse', function () {
+    Http::fake(['*' => Http::response(['data' => ['comparison' => []]], 200)]);
+
+    expect(app(RegistryApi::class)->resolvePropertyComparison('Søndergade 43A'))->toBeNull();
+
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'property/compare'));
+});
+
+it('naar UD til property/compare med en komplet adresse', function () {
+    Http::fake(['*' => Http::response(['data' => ['snit' => 42]], 200)]);
+
+    // Positiv kontrol: beviser at guarden blev EVALUERET og gav lov.
+    expect(app(RegistryApi::class)->resolvePropertyComparison('Søndergade 43A, 4653'))
+        ->toBe(['snit' => 42]);
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), 'property/compare'));
+});

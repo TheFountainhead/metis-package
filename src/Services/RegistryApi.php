@@ -345,7 +345,25 @@ class RegistryApi
      */
     public function adresseKanOploeses(string $address): bool
     {
-        return ! empty($this->parseAddress($address)['zip']);
+        return $this->parsetAdresseKanOploeses($this->parseAddress($address));
+    }
+
+    /**
+     * Samme regel, men over den PARSEDE form.
+     *
+     * 🔑 To former, ÉN regel. `fetchProperty()` tager et array der lovligt kan
+     * baere `matrikel_id` UDEN adresse — en streng-praedikat kan ikke udtrykke
+     * det, saa at tvinge dem sammen ville enten braekke matrikel-opslag eller
+     * gen-indfoere `number`-regressionen. De to former deler nu krop i stedet
+     * for at vaere to uafhaengige formuleringer der kan drive fra hinanden.
+     */
+    public function parsetAdresseKanOploeses(array $parsed): bool
+    {
+        if (! empty($parsed['matrikel_id'])) {
+            return true;
+        }
+
+        return ! empty($parsed['zip']);
     }
 
     /**
@@ -373,7 +391,7 @@ class RegistryApi
         // Upstream: "The matrikel id field is required when street / number /
         // zip is not present". Samme gadeadresse findes typisk flere steder i
         // landet, saa uden postnummer kan den ikke oploeses.
-        if (empty($searchData['matrikel_id'] ?? null) && empty($searchData['zip'] ?? null)) {
+        if (! $this->parsetAdresseKanOploeses($searchData)) {
             return ['error' => 'address_ambiguous', 'status' => 422];
         }
 
@@ -1304,11 +1322,21 @@ class RegistryApi
 
     public function resolvePropertyComparison(string $query): ?array
     {
-        $parsed = $this->parseAddress($query);
-
-        if (! $parsed || empty($parsed['zip'])) {
+        // 🚨 SJETTE KOPI af praedikatet, fundet ved review 20/8. Den var en
+        // haandrullet variant (`empty($parsed['zip'])`) mod et ANDET endpoint
+        // (`property/compare`), uden for begge vagt-testers raekkevidde og
+        // UDEN egen test: guarden kunne slettes helt uden at én af 804 tests
+        // blev roed.
+        //
+        // 🪤 Den er i praksis uopnaaelig i dag, fordi `AddressComparison::mount()`
+        // kalder `resolveAddressAnalysis()` FOERST og returnerer ved fejl. Men
+        // den er beskyttet af en RAEKKEFOELGE i en kalder, ikke af sin egen
+        // kontrakt — praecis saadan doer 15 og 16 opstod i denne fejlfamilie.
+        if (! $this->adresseKanOploeses($query)) {
             return null;
         }
+
+        $parsed = $this->parseAddress($query);
 
         $address = trim(($parsed['street'] ?? '') . ' ' . ($parsed['number'] ?? ''));
         $postalCode = $parsed['zip'];
