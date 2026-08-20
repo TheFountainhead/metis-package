@@ -109,6 +109,28 @@
             $bfe = $meta['bfe'] ?? null;
             $address = $meta['property_address'] ?? $meta['address'] ?? null;
 
+            // 🚨 EN ADRESSE UDEN POSTNUMMER KAN IKKE OPLOESES — den giver 422.
+            //
+            // `properties.address` er GADELINJEN alene; postnummeret ligger i
+            // soesterkolonnen `postal_code`. Maalt paa prod 20/8: af 2.680.226
+            // raekker med adresse indeholder 278 (0,01%) overhovedet fire
+            // cifre — og det er husnumre. Uden postnummer kan registry-api
+            // ikke vide hvilken af flere ens gadeadresser der menes, og
+            // svarer "The matrikel id field is required".
+            //
+            // Alert-metadataen BAERER postnummeret (safeMetadata sender
+            // `postal_code`) — linket nedenfor laeste det bare aldrig.
+            // Flare #9104992, 117 forekomster.
+            //
+            // 🪤 trim(..., ', ') er ikke pynt: ownership_change-stien
+            // (MonitoringService) sender kun `property_address` uden
+            // postnummer, og et haengende ", " ville sende en anden — og
+            // stadig ugyldig — streng afsted. Samme guardede form som
+            // debt-search.blade.php:272.
+            $opslagsadresse = $address !== null
+                ? trim($address.', '.($meta['postal_code'] ?? ''), ', ')
+                : null;
+
             // Observer-path carries no before/after objects — synthesise the current
             // pantebrev state from the flat fields so the facts panel renders real data
             // instead of em-dashes. principal_amount_kr is in KRONER; the formatter
@@ -188,7 +210,7 @@
                         @endif
                     </div>
                     @if($address)
-                        <a href="/lookup/address/{{ urlencode($address) }}"
+                        <a href="/lookup/address/{{ urlencode($opslagsadresse) }}"
                            class="text-sm text-blue-600 hover:underline whitespace-nowrap">
                             {{ __('Se ejendom') }} →
                         </a>

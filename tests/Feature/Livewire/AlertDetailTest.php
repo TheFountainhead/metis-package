@@ -348,3 +348,65 @@ it('does not masquerade an unknown change_kind as a new mortgage', function () {
         ->assertDontSee('Ny tilstand')
         ->assertSee('Kreditor skiftet fra Nordea Kredit'); // description still surfaced
 });
+
+/*
+ * 🚨 "Se ejendom" sendte adressen UDEN postnummer — og ramte 422.
+ *
+ * Flare #9104992 (117 forekomster, prod). Linket byggede
+ * `/lookup/address/{{ urlencode($address) }}` af metadata.address alene.
+ *
+ * Maalt paa prod 20/8 (registry-api, `properties`, 2.680.226 raekker med
+ * adresse): kolonnen `address` er GADELINJEN alene — postnummeret ligger i
+ * soesterkolonnen `postal_code`. Kun 278 raekker (0,01%) indeholder
+ * overhovedet fire cifre, og de er husnumre. Alert-metadataen baerer
+ * `postal_code` med (DetectMortgageChange::safeMetadata), men bladen laeste
+ * den aldrig.
+ *
+ * Uden postnummer kan adressen ikke opløses til én matrikel — registry-api
+ * svarer "The matrikel id field is required when street / number / zip is
+ * not present". Maalt mod prod:
+ *   parseAddress('Agernskrænten 33')        -> zip: ''      -> 422
+ *   parseAddress('Agernskrænten 33, 2750')  -> zip: '2750'  -> oploest
+ *
+ * 🪤 DEN EKSISTERENDE FIXTUR KAN IKKE FANGE DET. `observerAlert()` bruger
+ * 'Bredgade 40, 1260 København K' — postnummeret staar allerede i selve
+ * adressestrengen, saa linket blev tilfaeldigvis gyldigt. En test paa den
+ * fixtur ville vaere groen uden at bevise noget. Derfor bruges her den form
+ * prod faktisk leverer.
+ */
+it('bygger "Se ejendom"-linket MED postnummer naar adressen er en ren gadelinje', function () {
+    Http::fake(['*/v1/alerts/702' => Http::response(['data' => observerAlert([
+        'id' => 702,
+        'metadata' => [
+            // Prod-formen: gadelinje i `address`, postnummer i egen noegle.
+            'address' => 'Agernskrænten 33',
+            'postal_code' => '2750',
+        ],
+    ])], 200)]);
+
+    // Asserter paa selve HREF'en, ikke paa at siden naevner postnummeret:
+    // adressen staar ogsaa i overskriften, saa assertSee('2750') ville vaere
+    // groen uden at linket aendrede sig.
+    Livewire::test(AlertDetail::class, ['id' => 702])
+        ->assertSet('error', null)
+        ->assertSee('href="/lookup/address/'.urlencode('Agernskrænten 33, 2750').'"', false);
+});
+
+/*
+ * Postnummeret mangler i payloaden (fx ownership_change fra
+ * MonitoringService, der kun sender `property_address`). Saa er en 422 ikke
+ * til at undgaa — men linket maa ikke faa en efterhaengende ", ".
+ */
+it('efterlader ingen haengende komma naar postnummeret mangler', function () {
+    Http::fake(['*/v1/alerts/703' => Http::response(['data' => observerAlert([
+        'id' => 703,
+        'metadata' => [
+            'address' => 'Agernskrænten 33',
+            'postal_code' => null,
+        ],
+    ])], 200)]);
+
+    Livewire::test(AlertDetail::class, ['id' => 703])
+        ->assertSet('error', null)
+        ->assertSee('href="/lookup/address/'.urlencode('Agernskrænten 33').'"', false);
+});
