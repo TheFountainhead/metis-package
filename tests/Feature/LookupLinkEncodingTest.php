@@ -42,11 +42,7 @@ it('rawurlencoder query i hvert metis.lookup-link', function () {
                 continue;
             }
 
-            $tokens = array_values(array_filter(
-                token_get_all(file_get_contents($f->getPathname())),
-                fn ($t) => ! is_array($t)
-                    || ! in_array($t[0], [T_COMMENT, T_DOC_COMMENT, T_WHITESPACE], true)
-            ));
+            $tokens = metisKodeTokens($f->getPathname());
 
             foreach ($tokens as $i => $t) {
                 // Find rutenavnet som en STRENG i kode — uanset anfoerselstegn.
@@ -58,21 +54,54 @@ it('rawurlencoder query i hvert metis.lookup-link', function () {
                     continue;
                 }
 
-                // Saml de naeste ~40 tokens: hele route()-kaldets argumentliste,
-                // uanset hvor mange linjer den straekker sig over.
+                // 🪤 HELE kaldet, ikke et vindue paa 40 tokens. Foerste
+                // udkast missede en `'query'`-noegle der laa laengere ude i en
+                // lang array — et nyt afgraenset soegefelt, samme form som det
+                // gamle linje-baserede. Vi laeser nu til den matchende `)`.
                 $efter = '';
-                for ($j = $i; $j < min(count($tokens), $i + 40); $j++) {
-                    $efter .= is_array($tokens[$j]) ? $tokens[$j][1] : $tokens[$j];
+                $dybde = 0;
+                $set = false;
+                for ($j = $i; $j < count($tokens); $j++) {
+                    $tekst = is_array($tokens[$j]) ? $tokens[$j][1] : $tokens[$j];
+                    $efter .= $tekst;
+
+                    if ($tekst === '(') {
+                        $dybde++;
+                        $set = true;
+                    } elseif ($tekst === ')') {
+                        $dybde--;
+                        if ($set && $dybde <= 0) {
+                            break;
+                        }
+                    }
                 }
 
-                // 🪤 BEGGE anfoerselstegn: foerste udkast matchede kun 'query',
-                // saa "query" slap igennem — maalt ved mutation.
-                if (! preg_match('/["\']query["\']\s*=>/', $efter)) {
+                // 🚨 POSITIONELLE parametre: `route('metis.lookup', ['address', $q])`
+                // binder {type}/{query} og er fuldt gyldigt — men har ingen
+                // 'query'-noegle at matche paa. Enhver form UDEN en eksplicit
+                // navngivet, encodet query er derfor en synder.
+                $harNavngivetQuery = preg_match('/["\']query["\']\s*=>/', $efter);
+                // 🪤 KENDT HUL, bevidst efterladt: dette beviser at et
+                // rawurlencode-kald STARTER vaerdien — ikke at det DAEKKER
+                // den. `'query' => rawurlencode($a) . $q` slipper igennem
+                // (maalt). At jage den med mønstermatch ville kraeve et endnu
+                // smallere soegefelt, og det er praecis fejlklassen denne sag
+                // handler om.
+                //
+                // 🔑 Den varige kur er ikke en skarpere scanner, men at
+                // fjerne behovet: rut alle links gennem `<x-metis-link>`
+                // (MetisLink.php:87), som ikke KAN kaldes forkert. Denne test
+                // er en stilladsering indtil da, ikke en loesning.
+                $harEncodetQuery = preg_match('/["\']query["\']\s*=>\s*rawurlencode\s*\(/', $efter);
+
+                // 🪤 Et redirect uden parametre (kun rutenavn) er harmloest.
+                $harParametre = preg_match('/,\s*\[/', $efter) || preg_match('/,\s*\$/', $efter);
+
+                if (! $harParametre) {
                     continue;
                 }
 
-                // Kraev rawurlencode PAA query-vaerdien — ikke bare et sted i kaldet.
-                if (! preg_match('/["\']query["\']\s*=>\s*rawurlencode\(/', $efter)) {
+                if (! $harNavngivetQuery || ! $harEncodetQuery) {
                     $synder[] = str_replace([$rod.'/', dirname($rod).'/'], '', $f->getPathname()).':'.$t[2];
                 }
             }

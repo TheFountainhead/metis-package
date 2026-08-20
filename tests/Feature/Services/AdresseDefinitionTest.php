@@ -38,49 +38,82 @@ it('har ingen haardkodede kopier af adresse-praedikatet', function () {
                 continue;
             }
 
-            $tokens = token_get_all(file_get_contents($f->getPathname()));
+            $kode = metisKodeTokens($f->getPathname());
 
-            // Fjern alt der ikke er kode: kommentarer, docblocks, whitespace.
-            $kode = array_values(array_filter($tokens, function ($t) {
-                return ! is_array($t)
-                    || ! in_array($t[0], [T_COMMENT, T_DOC_COMMENT, T_WHITESPACE], true);
-            }));
-
-            $iPraedikat = false;
+            // 🚨 LAAS PAA DEFINITIONEN, IKKE PAA IDENTIFIKATOREN.
+            //
+            // Foerste udkast satte undtagelsen paa ETHVERT forekomst af
+            // `adresseKanOploeses` — ogsaa korrekte KALD. Maalt: `Lookup.php`
+            // var undtaget fra linje 214 til filens slutning (45,5% af
+            // filen), netop fordi den bruger praedikatet rigtigt.
+            //
+            // 🔑 En vagt hvis daekning SKRUMPER naar koden bliver rigtig.
+            // At migrere til det korrekte API fjernede filen fra scanningen.
+            // Sjette variant af "soegefeltet er smallere end det bevogtede" —
+            // og den foerste hvor vagten belaenner adoption med blindhed.
+            //
+            // Kuren: find `function <navn>`, og undtag KUN indtil den
+            // matchende afsluttende klammeparentes.
+            $undtagne = [];
+            $dybde = 0;
+            $iKrop = false;
 
             foreach ($kode as $i => $t) {
-                // Marker praedikatets egen krop som undtaget.
-                // Begge praedikat-kroppe er undtaget — de ER definitionen.
-                if (is_array($t) && $t[0] === T_STRING
-                    && in_array($t[1], ['adresseKanOploeses', 'parsetAdresseKanOploeses'], true)) {
-                    $iPraedikat = true;
+                $tekst = is_array($t) ? $t[1] : $t;
+
+                if (! $iKrop && is_array($t) && $t[0] === T_FUNCTION) {
+                    $navn = is_array($kode[$i + 1] ?? null) ? $kode[$i + 1][1] : '';
+                    if (in_array($navn, ['adresseKanOploeses', 'parsetAdresseKanOploeses'], true)) {
+                        $iKrop = true;
+                        $dybde = 0;
+                    }
                 }
 
-                // Naeste funktionsnavn afslutter undtagelsen.
-                if (is_array($t) && $t[0] === T_STRING
-                    && in_array($t[1], ['parseAddress', 'fetchProperty', 'post'], true)) {
-                    $iPraedikat = false;
-                }
+                if ($iKrop) {
+                    $undtagne[$i] = true;
 
-                // Moenstret vi jager: en 'zip'-opslagsnoegle i kode.
-                if (! is_array($t) || $t[0] !== T_CONSTANT_ENCAPSED_STRING || $t[1] !== "'zip'") {
+                    if ($tekst === '{') {
+                        $dybde++;
+                    } elseif ($tekst === '}') {
+                        $dybde--;
+                        if ($dybde === 0) {
+                            $iKrop = false;
+                        }
+                    }
+                }
+            }
+
+            foreach ($kode as $i => $t) {
+                if (isset($undtagne[$i])) {
                     continue;
                 }
 
-                // Er den brugt i en TILSTANDS-test (empty/!/if), eller blot
-                // laest som en vaerdi? Kun det foerste er en kopi af reglen.
-                $foran = '';
-                for ($j = max(0, $i - 8); $j < $i; $j++) {
-                    $foran .= is_array($kode[$j]) ? $kode[$j][1] : $kode[$j];
-                }
-
-                if ($iPraedikat) {
+                // 🪤 Normalisér anfoerselstegn: `"zip"` slap forbi et
+                // literal-match paa `'zip'` (maalt).
+                if (! is_array($t) || $t[0] !== T_CONSTANT_ENCAPSED_STRING) {
                     continue;
                 }
 
-                if (str_contains($foran, 'empty') || str_contains($foran, 'isset')) {
-                    $linje = is_array($t) ? $t[2] : 0;
-                    $synder[] = basename($f->getPathname()).':'.$linje;
+                if (trim($t[1], "\"'") !== 'zip') {
+                    continue;
+                }
+
+                // 🪤 Bredere end `empty|isset`: `! $p['zip']`, `=== ''`,
+                // `== null` og `strlen(...) === 0` er alle samme regel skrevet
+                // om. Vi ser derfor paa OMGIVELSERNE, ikke kun paa et
+                // noegleord — og paa flere tokens end de oprindelige 8.
+                $omkring = '';
+                for ($j = max(0, $i - 14); $j < min(count($kode), $i + 8); $j++) {
+                    $omkring .= is_array($kode[$j]) ? $kode[$j][1] : $kode[$j];
+                }
+
+                $erTilstandstest = preg_match(
+                    '/(empty|isset|array_key_exists|strlen|!|===|==|!==|!=)/',
+                    $omkring
+                );
+
+                if ($erTilstandstest) {
+                    $synder[] = basename($f->getPathname()).':'.($t[2] ?? 0);
                 }
             }
         }
