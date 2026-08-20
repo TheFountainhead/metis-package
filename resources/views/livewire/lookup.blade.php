@@ -13,7 +13,42 @@
         </a>
     </div>
 
-    @if($gated)
+    @if($ufuldstaendigAdresse)
+        {{-- 🚨 ADRESSE UDEN POSTNUMMER. Sektionerne maa IKKE renderes: de er
+             `lazy` og ville hver isaer kalde registry-api med den ufuldstaendige
+             adresse — praecis de 422'er guarden findes for at undgaa (Flare
+             #9104992). Samme grund som ved kvote-gaten nedenfor: et flag alene
+             stopper ikke et `lazy`-kald.
+
+             Og "ingen data" maa ALDRIG staa her: vi ved ikke om ejendommen har
+             pantebreve — vi ved ikke hvilken ejendom brugeren mener. --}}
+        <div class="max-w-2xl mx-auto py-12">
+            <h2 class="text-lg font-bold text-ink-800 mb-2">{{ __('Adressen mangler et postnummer') }}</h2>
+            <p class="text-sm text-ink-600 mb-6">
+                {{ __('Den samme vejadresse findes flere steder i landet, så vi kan ikke se hvilken ejendom du mener. Vælg den rigtige nedenfor.') }}
+            </p>
+
+            @if(count($forslag) > 0)
+                <ul class="divide-y border rounded-lg dark:divide-zinc-700 dark:border-zinc-700">
+                    {{-- Formen er allerede renset i Lookup::mount(): kun raekker
+                         med en reel `tekst` naar hertil, saa en fejl-array fra
+                         API'et ikke kan blive til opdigtede adresse-links. --}}
+                    @foreach($forslag as $f)
+                        <li>
+                            <a href="{{ route('metis.lookup', ['type' => 'address', 'query' => $f['tekst']]) }}"
+                               class="block px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition">
+                                {{ $f['tekst'] }}
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
+            @else
+                <p class="text-sm text-ink-500">
+                    {{ __('Vi fandt ingen forslag til den adresse. Prøv at søge igen med postnummer.') }}
+                </p>
+            @endif
+        </div>
+    @elseif($gated)
         {{-- 🚨 Kvote-gaten ramte. Sektionerne maa IKKE renderes: de er `lazy`,
              saa hver af dem ville selv hente sine data via en Livewire-POST og
              udlevere praecis det indhold gaten skal beskytte. Et skjult

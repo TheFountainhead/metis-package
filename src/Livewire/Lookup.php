@@ -31,6 +31,31 @@ class Lookup extends Component
     public bool $gated = false;
 
     /**
+     * Er dette et adresse-opslag uden postnummer?
+     *
+     * 🚨 DEN TREDJE DOER. `Search::search():282` har haft en postnummer-guard
+     * siden 18/8, men `/lookup/address/{query}` er en anden vej ind i samme
+     * produkt — og den havde ingen. Entry point i Flare #9104992 (117
+     * forekomster) var praecis den rute:
+     *
+     *   /lookup/address/S%C3%B8ndergade%2043A
+     *
+     * En adresse uden postnummer kan ikke opløses til én matrikel: samme
+     * gadeadresse findes typisk flere steder i landet (Søndergade 43A ligger
+     * mindst fem steder). registry-api svarer "The matrikel id field is
+     * required when street / number / zip is not present" — og saa staar alle
+     * 12 sektioner tomme.
+     *
+     * 🔑 Rettelsen 18/8 lukkede KILDEN (knappen der byggede URL'en), ikke
+     * VEJEN. Et bogmaerke, et delt link eller et nyt kaldested rammer stadig
+     * tilstanden — derfor guardes her, hos MODTAGEREN.
+     */
+    public bool $ufuldstaendigAdresse = false;
+
+    /** Autocomplete-forslag naar adressen er ufuldstaendig. */
+    public array $forslag = [];
+
+    /**
      * Et 10-cifret tal paa /lookup/cvr/ er et CPR, ikke et CVR.
      *
      * 🚨 MAALT 5/8 (Flare #9104992, n=2 -> 14 paa seks doegn, prod-trafik):
@@ -135,6 +160,52 @@ class Lookup extends Component
             // Flere eller ingen traef: send til forsiden med soegningen, hvor
             // forslagslisten kan vise valgmulighederne.
             $this->redirect(route('metis.home', ['q' => $query]), navigate: true);
+
+            return;
+        }
+
+        // 🚨 EN ADRESSE UDEN POSTNUMMER GIVER 422 — spoerg slet ikke.
+        //
+        // Samme regel som `Search::search():282`, og den genbruger BEVIDST
+        // `parseAddress()` frem for en ny regex: kodebasen har allerede betalt
+        // for den fejl med FIRE CPR-detektorer, hvor den fjerde accepterede et
+        // format de tre andre afviste.
+        //
+        // 🪤 FOER kvote-gaten. Et opslag vi ved vil fejle maa ikke koste
+        // brugeren en kvote — samme raekkefoelge-hensyn som CPR-redirecten
+        // ovenfor. Og det skal heller ikke i historikken som et rigtigt
+        // opslag.
+        //
+        // Brugeren faar autocomplete-forslagene, saa han kan vaelge den fulde
+        // adresse — praecis som i `Search`. En tom fejlbesked ville efterlade
+        // ham uden vej videre.
+        if (strtolower($type) === 'address'
+            && empty(app(RegistryApi::class)->parseAddress($query)['zip'])) {
+            $this->ufuldstaendigAdresse = true;
+
+            // 🚨 rescue() FANGER KUN EXCEPTIONS — og addressAutocomplete()
+            // kaster ikke. get() sender en RequestException gennem
+            // errorFrom(), som RETURNERER ['error' => …, 'status' => …].
+            //
+            // Uden filtret nedenfor blev den fejl-array til $forslag, og
+            // @foreach'en itererede dens VAERDIER: brugeren fik at vide
+            // "vaelg den rigtige nedenfor" og blev tilbudt to opdigtede
+            // adresser — "upstream_error" og "500" — som klikbare links.
+            //
+            // Praecis den fejlklasse kodebasen lige har lukket ét lag nede
+            // (1cdff86: "et fejlet opslag maa ikke rendere som ingen data").
+            // Behold kun raekker der faktisk BAERER en adresse.
+            $svar = rescue(
+                fn () => app(RegistryApi::class)->addressAutocomplete($query, 5),
+                []
+            ) ?? [];
+
+            $this->forslag = isset($svar['error'])
+                ? []
+                : array_values(array_filter(
+                    $svar,
+                    fn ($r) => is_array($r) && ! empty($r['tekst'])
+                ));
 
             return;
         }
