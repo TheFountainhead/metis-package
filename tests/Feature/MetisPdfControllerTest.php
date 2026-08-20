@@ -121,10 +121,21 @@ it('henter hvert CVR-felt fra sit EGET endpoint', function () {
         ->and($data['portfolio']['portfolio'])->toBe(['P'])
         ->and($data['tax']['records'][0]['income_year'])->toBe(2024);
 
-    // Hvert endpoint skal vaere ramt praecis én gang.
-    foreach (['roles', 'structure', 'portfolio', 'tax'] as $endpoint) {
-        Http::assertSent(fn ($r) => str_contains($r->url(), $endpoint));
-    }
+    // 🪤 `assertSent` betyder MINDST én gang, ikke praecis én. Kommentaren
+    // paastod kardinalitet, koden maalte eksistens: maalt overlevede en
+    // mutation med TRE portfolio-kald testen. Vi taeller nu.
+    $kald = [];
+    Http::assertSent(function ($r) use (&$kald) {
+        foreach (['roles', 'structure', 'portfolio', 'tax'] as $e) {
+            if (str_contains($r->url(), $e)) {
+                $kald[$e] = ($kald[$e] ?? 0) + 1;
+            }
+        }
+
+        return true;
+    });
+
+    expect($kald)->toBe(['roles' => 1, 'structure' => 1, 'portfolio' => 1, 'tax' => 1]);
 });
 
 it('henter begge CPR-felter fra hver sit endpoint', function () {

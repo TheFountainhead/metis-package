@@ -2,7 +2,6 @@
 
 use Illuminate\Support\Facades\Route;
 use TheFountainhead\Metis\Http\Controllers\AdminAuthController;
-use TheFountainhead\Metis\Http\Controllers\MetisPdfController;
 use TheFountainhead\Metis\Http\Middleware\MetisAdminAuth;
 use TheFountainhead\Metis\Http\Middleware\NoIndex;
 use TheFountainhead\Metis\Livewire\Admin\Dashboard;

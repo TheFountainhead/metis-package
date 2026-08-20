@@ -94,20 +94,38 @@ it('har ingen raa route(metis.lookup) uden for MetisLink', function () {
                     continue;
                 }
 
-                // 🪤 T_INLINE_HTML OGSAA. En raa `<a href="/lookup/address/…">`
-                // i en blade er ikke PHP-kode — den lander i ét stort
-                // HTML-token, og et tjek der kun ser paa strengliteraler er
-                // blind for den. Det er den mest NATURLIGE maade at skrive
-                // linket forkert paa.
-                if ($t[0] === T_INLINE_HTML) {
-                    if (preg_match('#href=["\']/lookup/#', $t[1])) {
-                        $synder[] = basename($f->getPathname()).':'.($t[2] ?? 0);
-                    }
-
+                // 🚨 TRE TOKEN-TYPER, ikke én. Soegefeltet har vaeret for
+                // smalt elleve gange i denne sag; her var dimensionen
+                // TOKEN-TYPE:
+                //
+                //   '/lookup/'.$q   => T_CONSTANT_ENCAPSED_STRING   (saas)
+                //   "/lookup/$q"    => T_ENCAPSED_AND_WHITESPACE    (BLIND)
+                //   <a href="/…">   => T_INLINE_HTML                (saas)
+                //
+                // 🪤 En /lookup/-URL indeholder ALTID en variabel, saa
+                // interpolation er den NATURLIGE maade at skrive den paa.
+                // Vagten var blind for praecis den form der betyder noget.
+                // Maalt: `@php($u = "/lookup/cpr/{$navn}")` slap igennem og
+                // omgik CPR-guarden helt.
+                //
+                // 🪤 Og `href=`-ankeret var for snaevert: `href = "…"` med
+                // mellemrum, `action="…"`, en absolut URL og Alpines
+                // `:href="'/lookup/…' + q"` (BRUGT i ownership-graph.blade)
+                // slap alle forbi. Vi matcher nu `/lookup/` hvor som helst i
+                // HTML'en.
+                if (! in_array($t[0], [
+                    T_INLINE_HTML,
+                    T_CONSTANT_ENCAPSED_STRING,
+                    T_ENCAPSED_AND_WHITESPACE,
+                ], true)) {
                     continue;
                 }
 
-                if ($t[0] !== T_CONSTANT_ENCAPSED_STRING) {
+                if ($t[0] === T_INLINE_HTML) {
+                    if (str_contains($t[1], '/lookup/')) {
+                        $synder[] = basename($f->getPathname()).':'.($t[2] ?? 0);
+                    }
+
                     continue;
                 }
 
@@ -133,4 +151,30 @@ it('har ingen raa route(metis.lookup) uden for MetisLink', function () {
 
     sort($synder);
     expect($synder)->toBe([]);
+});
+
+/*
+ * 🚨 REVIEW-FUND: `redirect(null)` er et TAVST no-op.
+ *
+ * `urlFor()` returnerer `?string`, og de fem redirect-kaldesteder sendte den
+ * direkte videre. Livewires `redirect()` typehinter loest og gemmer null uden
+ * at kaste: brugeren klikker, og INTET sker — ingen fejl, ingen besked.
+ *
+ * 🪤 Foer migrationen kastede `route()` ved tom query, saa tilstanden var
+ * SYNLIG (om end som en white-screen). Migrationen gjorde den robust og
+ * dermed TAVS. "Brugeren klikker og intet sker" er praecis den tilstand hele
+ * denne sag handler om.
+ *
+ * ⇒ Kan URL'en ikke bygges, sendes brugeren til forsiden frem for ingenting.
+ */
+it('sender til forsiden i stedet for at goere INTET naar URL en ikke kan bygges', function () {
+    expect(TheFountainhead\Metis\View\Components\MetisLink::urlForEllerHjem('cvr', ''))
+        ->toBe(route('metis.home'))
+        ->and(TheFountainhead\Metis\View\Components\MetisLink::urlForEllerHjem('address', '   '))
+        ->toBe(route('metis.home'));
+});
+
+it('urlForEllerHjem giver den RIGTIGE url naar den kan bygges', function () {
+    expect(TheFountainhead\Metis\View\Components\MetisLink::urlForEllerHjem('address', 'Bredgade 40, 1260'))
+        ->toBe(TheFountainhead\Metis\View\Components\MetisLink::urlFor('address', 'Bredgade 40, 1260'));
 });

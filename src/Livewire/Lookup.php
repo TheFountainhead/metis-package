@@ -122,7 +122,7 @@ class Lookup extends Component
         $erCpr = (new SearchDetector)->isCpr($query);
 
         if ($erCpr && strtolower($type) !== 'cpr') {
-            $this->redirect(MetisLink::urlFor('cpr', $query), navigate: true);
+            $this->redirect(MetisLink::urlForEllerHjem('cpr', $query), navigate: true);
 
             return;
         }
@@ -151,7 +151,7 @@ class Lookup extends Component
 
             if (count($traef) === 1 && ! empty($traef[0]['cvr'])) {
                 $this->redirect(
-                    MetisLink::urlFor('cvr', $traef[0]['cvr']),
+                    MetisLink::urlForEllerHjem('cvr', $traef[0]['cvr']),
                     navigate: true
                 );
 
@@ -281,7 +281,7 @@ class Lookup extends Component
         // Uden redirect ville `$gated = false` alene ikke hjaelpe: sektionerne
         // er `lazy` og blev aldrig mountet i den gatede render.
         $this->redirect(
-            MetisLink::urlFor($this->type, $this->query),
+            MetisLink::urlForEllerHjem($this->type, $this->query),
             navigate: true
         );
     }

@@ -58,6 +58,23 @@ class MetisLink extends Component
         return (new self($type, $query))->url();
     }
 
+    /**
+     * Som `urlFor()`, men falder tilbage til forsiden i stedet for `null`.
+     *
+     * 🚨 TIL REDIRECTS. `$this->redirect(null)` er et TAVST no-op: Livewire
+     * typehinter loest og gemmer null uden at kaste, saa brugeren klikker og
+     * INTET sker — ingen fejl, ingen besked.
+     *
+     * 🪤 Foer migrationen kastede `route()` ved tom query, saa tilstanden var
+     * SYNLIG (om end som en white-screen). Migrationen gjorde den robust og
+     * dermed tavs. "Brugeren klikker og intet sker" er praecis den tilstand
+     * denne sag handler om — derfor et sted at LANDE frem for ingenting.
+     */
+    public static function urlForEllerHjem(string $type, string $query): string
+    {
+        return self::urlFor($type, $query) ?? route('metis.home');
+    }
+
     public function url(): ?string
     {
         // 🚨 TOM QUERY KASTER — `UrlGenerationException: Missing required

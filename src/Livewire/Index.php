@@ -74,7 +74,7 @@ class Index extends Component
     public function selectCompany(string $cvr): void
     {
         if ($cvr) {
-            $this->redirect(MetisLink::urlFor('cvr', $cvr));
+            $this->redirect(MetisLink::urlForEllerHjem('cvr', $cvr));
         }
     }
 
@@ -112,7 +112,7 @@ class Index extends Component
             return;
         }
 
-        $this->redirect(MetisLink::urlFor($type, $query));
+        $this->redirect(MetisLink::urlForEllerHjem($type, $query));
     }
 
     public function render()

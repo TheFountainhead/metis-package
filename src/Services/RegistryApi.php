@@ -1439,7 +1439,7 @@ class RegistryApi
      */
     protected function erForventetAdresseAfvisning(RequestException $e): bool
     {
-        if ($e->response->status() !== 422) {
+        if ($e->response?->status() !== 422) {
             return false;
         }
 
