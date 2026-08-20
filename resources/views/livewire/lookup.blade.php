@@ -30,16 +30,16 @@
 
             @if(count($forslag) > 0)
                 <ul class="divide-y border rounded-lg dark:divide-zinc-700 dark:border-zinc-700">
+                    {{-- Formen er allerede renset i Lookup::mount(): kun raekker
+                         med en reel `tekst` naar hertil, saa en fejl-array fra
+                         API'et ikke kan blive til opdigtede adresse-links. --}}
                     @foreach($forslag as $f)
-                        @php $tekst = is_array($f) ? ($f['tekst'] ?? '') : $f; @endphp
-                        @if($tekst)
-                            <li>
-                                <a href="{{ route('metis.lookup', ['type' => 'address', 'query' => $tekst]) }}"
-                                   class="block px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition">
-                                    {{ $tekst }}
-                                </a>
-                            </li>
-                        @endif
+                        <li>
+                            <a href="{{ route('metis.lookup', ['type' => 'address', 'query' => $f['tekst']]) }}"
+                               class="block px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition">
+                                {{ $f['tekst'] }}
+                            </a>
+                        </li>
                     @endforeach
                 </ul>
             @else

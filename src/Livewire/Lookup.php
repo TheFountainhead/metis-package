@@ -182,10 +182,30 @@ class Lookup extends Component
         if (strtolower($type) === 'address'
             && empty(app(RegistryApi::class)->parseAddress($query)['zip'])) {
             $this->ufuldstaendigAdresse = true;
-            $this->forslag = rescue(
+
+            // 🚨 rescue() FANGER KUN EXCEPTIONS — og addressAutocomplete()
+            // kaster ikke. get() sender en RequestException gennem
+            // errorFrom(), som RETURNERER ['error' => …, 'status' => …].
+            //
+            // Uden filtret nedenfor blev den fejl-array til $forslag, og
+            // @foreach'en itererede dens VAERDIER: brugeren fik at vide
+            // "vaelg den rigtige nedenfor" og blev tilbudt to opdigtede
+            // adresser — "upstream_error" og "500" — som klikbare links.
+            //
+            // Praecis den fejlklasse kodebasen lige har lukket ét lag nede
+            // (1cdff86: "et fejlet opslag maa ikke rendere som ingen data").
+            // Behold kun raekker der faktisk BAERER en adresse.
+            $svar = rescue(
                 fn () => app(RegistryApi::class)->addressAutocomplete($query, 5),
                 []
             ) ?? [];
+
+            $this->forslag = isset($svar['error'])
+                ? []
+                : array_values(array_filter(
+                    $svar,
+                    fn ($r) => is_array($r) && ! empty($r['tekst'])
+                ));
 
             return;
         }

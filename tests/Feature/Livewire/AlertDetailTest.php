@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\AlertDetail;
 
@@ -349,6 +350,24 @@ it('does not masquerade an unknown change_kind as a new mortgage', function () {
         ->assertSee('Kreditor skiftet fra Nordea Kredit'); // description still surfaced
 });
 
+/**
+ * Traekker "Se ejendom"-linkets adresse ud og AFKODER den.
+ *
+ * 🔑 Asserter paa den streng modtageren faktisk faar, ikke paa én bestemt
+ * stavemaade af encodingen: route() lader ',' staa (lovligt sub-delim i
+ * RFC 3986), mens rawurlencode() skriver '%2C'. Begge afkoder ens, saa en
+ * assertion paa raa-formen ville vaere skrøbelig — og i mit foerste udkast
+ * faldt den, selv om koden var rigtig.
+ */
+function opslagsadresseFraLink(string $html): ?string
+{
+    if (! preg_match('#href="[^"]*/lookup/address/([^"]*)"#', $html, $m)) {
+        return null;
+    }
+
+    return rawurldecode($m[1]);
+}
+
 /*
  * 🚨 "Se ejendom" sendte adressen UDEN postnummer — og ramte 422.
  *
@@ -387,9 +406,78 @@ it('bygger "Se ejendom"-linket MED postnummer naar adressen er en ren gadelinje'
     // Asserter paa selve HREF'en, ikke paa at siden naevner postnummeret:
     // adressen staar ogsaa i overskriften, saa assertSee('2750') ville vaere
     // groen uden at linket aendrede sig.
-    Livewire::test(AlertDetail::class, ['id' => 702])
-        ->assertSet('error', null)
-        ->assertSee('href="/lookup/address/'.urlencode('Agernskrænten 33, 2750').'"', false);
+    // 🪤 REVIEW-FUND (P2): asserter IKKE med urlencode(). Foerste udkast
+    // byggede forventningen med den SAMME funktion som bladen — altsaa
+    // selv-konsistens, ikke at URL'en kan opløses. Den ville vaere groen
+    // gennem hele urlencode/+-fejlen nedenfor. Nu gaar vi gennem route(),
+    // som er den kanoniske form i resten af kodebasen.
+    $html = Livewire::test(AlertDetail::class, ['id' => 702])->html();
+
+    expect(opslagsadresseFraLink($html))->toBe('Agernskrænten 33, 2750');
+});
+
+/*
+ * 🚨 REVIEW-FUND (P1): urlencode() giver "+" for mellemrum — og "+" betyder
+ * mellemrum i en QUERY-streng, ALDRIG i et sti-segment.
+ *
+ * Ruten er `->where('query', '.*')`, saa segmentet naar frem raat:
+ *   urlencode    -> …/Agernskr%C3%A6nten+33%2C+2750 => "Agernskrænten+33,+2750"
+ *   rawurlencode -> …/Agernskr%C3%A6nten%2033%2C%202750 => "Agernskrænten 33, 2750"
+ *
+ * Og "+" oedelaegger praecis den parser rettelsen bygger paa (maalt paa prod):
+ *   'Agernskrænten 33, 2750' => street=Agernskrænten     number=33  zip=2750  ✅
+ *   'Agernskrænten+33,+2750' => street=Agernskrænten+33  number=''  zip=2750  🚨
+ *
+ * 🚨 DET VAERSTE: zip BLIVER fundet, saa den nye guard i Lookup::mount()
+ * vinker den igennem — og saa fejler kaldet med 422 paa `number` i stedet,
+ * forbi den kontrol der skulle fange det. Rettelsen ville have gjort fejlen
+ * TAVSERE, ikke vaek.
+ */
+it('bruger route() saa mellemrum ikke bliver til "+" i sti-segmentet', function () {
+    Http::fake(['*/v1/alerts/704' => Http::response(['data' => observerAlert([
+        'id' => 704,
+        'metadata' => ['address' => 'Agernskrænten 33', 'postal_code' => '2750'],
+    ])], 200)]);
+
+    $html = Livewire::test(AlertDetail::class, ['id' => 704])->html();
+
+    // '+' maa ALDRIG optraede: i et sti-segment er det et bogstaveligt plus.
+    expect($html)->not->toContain('Agernskr%C3%A6nten+33');
+    expect(opslagsadresseFraLink($html))->toBe('Agernskrænten 33, 2750');
+});
+
+/*
+ * 🚨 REVIEW-FUND (P2): adressen baerer ALLEREDE et postnummer.
+ *
+ * Repoets egen fixtur har 'Bredgade 40, 1260 København K' MED postal_code
+ * '1260' — en naiv sammensaetning gav "…København K, 1260". trim() rydder
+ * kun ENDERNE og kan ikke hjaelpe med et postnummer inde i strengen.
+ */
+it('dublerer ikke postnummeret naar adressen allerede har et', function () {
+    Http::fake(['*/v1/alerts/705' => Http::response(['data' => observerAlert([
+        'id' => 705,
+        'metadata' => ['address' => 'Bredgade 40, 1260 København K', 'postal_code' => '1260'],
+    ])], 200)]);
+
+    $html = Livewire::test(AlertDetail::class, ['id' => 705])->html();
+
+    expect(opslagsadresseFraLink($html))->toBe('Bredgade 40, 1260 København K');
+});
+
+/*
+ * 🚨 REVIEW-FUND (P3): postal_code er ekstern JSON og kan vaere hvad som
+ * helst. Et array gav "Array to string conversion" -> ViewException -> HELE
+ * alert-siden nede. Lav blast radius i sandsynlighed, hoej i konsekvens.
+ */
+it('overlever et postal_code der ikke er skalarr', function () {
+    Http::fake(['*/v1/alerts/706' => Http::response(['data' => observerAlert([
+        'id' => 706,
+        'metadata' => ['address' => 'Agernskrænten 33', 'postal_code' => ['2750']],
+    ])], 200)]);
+
+    $html = Livewire::test(AlertDetail::class, ['id' => 706])->html();
+
+    expect(opslagsadresseFraLink($html))->toBe('Agernskrænten 33');
 });
 
 /*
@@ -406,7 +494,44 @@ it('efterlader ingen haengende komma naar postnummeret mangler', function () {
         ],
     ])], 200)]);
 
-    Livewire::test(AlertDetail::class, ['id' => 703])
+    $html = Livewire::test(AlertDetail::class, ['id' => 703])->html();
+
+    expect(opslagsadresseFraLink($html))->toBe('Agernskrænten 33');
+});
+
+/*
+ * 🪤 MIT EGET REVIEW-FUND: et bart route()-kald tager siden ned.
+ *
+ * Pakken registrerer ruterne BETINGET (embedded vs standalone), saa
+ * `route('metis.lookup')` kaster RouteNotFoundException naar ruten ikke er
+ * registreret — og en ViewException i en blade tager HELE alert-siden med
+ * sig. `debt-search.blade.php:273` og `MetisLink.php:57` guarder allerede
+ * med Route::has(); jeg kopierede sammensaetningen derfra, men ikke guarden.
+ * Samme "halvdelen af kaldestederne"-fejl som hele denne PR handler om.
+ */
+it('tager ikke siden ned naar lookup-ruten ikke er registreret', function () {
+    // Fjern KUN metis.lookup — som i en host-app der ikke registrerer
+    // opslagsruten. 🪤 Foerste udkast nulstillede HELE RouteCollection og
+    // fejlede paa `default.livewire.update`: et falsk roedt der beviste noget
+    // helt andet end guarden.
+    $routes = app('router')->getRoutes();
+    $beholdte = new Illuminate\Routing\RouteCollection;
+    foreach ($routes as $r) {
+        if ($r->getName() !== 'metis.lookup') {
+            $beholdte->add($r);
+        }
+    }
+    app('router')->setRoutes($beholdte);
+
+    expect(Route::has('metis.lookup'))->toBeFalse();
+
+    Http::fake(['*/v1/alerts/707' => Http::response(['data' => observerAlert([
+        'id' => 707,
+        'metadata' => ['address' => 'Agernskrænten 33', 'postal_code' => '2750'],
+    ])], 200)]);
+
+    // Siden skal stadig rendere — bare uden "Se ejendom"-linket.
+    Livewire::test(AlertDetail::class, ['id' => 707])
         ->assertSet('error', null)
-        ->assertSee('href="/lookup/address/'.urlencode('Agernskrænten 33').'"', false);
+        ->assertDontSee('Se ejendom');
 });

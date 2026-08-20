@@ -79,3 +79,30 @@ it('viser forklaring og forslag i stedet for sektionerne', function () {
         ->assertSee('Søndergade 43A, 4653 Karise')      // forslaget er der at vaelge
         ->assertDontSee('metis-address-bbr', false);    // sektionerne renderes IKKE
 });
+
+/*
+ * 🚨 REVIEW-FUND (P1): en FEJLET autocomplete blev til opdigtede adresser.
+ *
+ * `rescue()` fanger kun exceptions — og `addressAutocomplete()` kaster ikke.
+ * `get()` sender en RequestException gennem `errorFrom()`, som RETURNERER
+ * `['error' => 'upstream_error', 'status' => 500]`. Den array havde
+ * `count() > 0`, saa @foreach'en itererede dens VAERDIER og renderede:
+ *
+ *   <a href="/lookup/address/upstream_error">upstream_error</a>
+ *   <a href="/lookup/address/500">500</a>
+ *
+ * Brugeren fik "vælg den rigtige nedenfor" og to klikbare loegne. Samme
+ * fejlklasse som 1cdff86 lige har lukket ét lag nede.
+ */
+it('viser ikke en fejl-array som adresseforslag', function () {
+    Http::fake([
+        '*/v1/map/autocomplete*' => Http::response(['message' => 'boom'], 500),
+        '*' => Http::response(['data' => []], 200),
+    ]);
+
+    Livewire::test(Lookup::class, ['type' => 'address', 'query' => 'Søndergade 43A'])
+        ->assertSet('ufuldstaendigAdresse', true)
+        ->assertSet('forslag', [])
+        ->assertDontSee('upstream_error')
+        ->assertSee('Vi fandt ingen forslag');
+});

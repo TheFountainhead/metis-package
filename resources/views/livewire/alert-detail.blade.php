@@ -122,13 +122,43 @@
             // `postal_code`) — linket nedenfor laeste det bare aldrig.
             // Flare #9104992, 117 forekomster.
             //
-            // 🪤 trim(..., ', ') er ikke pynt: ownership_change-stien
-            // (MonitoringService) sender kun `property_address` uden
-            // postnummer, og et haengende ", " ville sende en anden — og
-            // stadig ugyldig — streng afsted. Samme guardede form som
-            // debt-search.blade.php:272.
-            $opslagsadresse = $address !== null
-                ? trim($address.', '.($meta['postal_code'] ?? ''), ', ')
+            // 🪤 KUN hvis adressen ikke ALLEREDE baerer et postnummer. Repoets
+            // egen fixtur (observerAlert()) har 'Bredgade 40, 1260 København K'
+            // MED postal_code '1260' — en naiv sammensaetning ville give
+            // "…København K, 1260". Vi spoerger den SAMME parser som
+            // modtageren bruger i stedet for at gaette paa formen.
+            //
+            // 🪤 ownership_change-stien (MonitoringService) sender kun
+            // `property_address` UDEN postnummer. Saa er 422 ikke til at
+            // undgaa — men linket maa ikke faa et haengende ", ".
+            //
+            // 🪤 postal_code kommer fra ekstern JSON: cast kun det der ER
+            // skalarr. Et array ville ellers give "Array to string conversion"
+            // og tage HELE alert-siden ned med en ViewException.
+            $postnr = $meta['postal_code'] ?? null;
+            $postnr = is_scalar($postnr) ? trim((string) $postnr) : '';
+
+            $opslagsadresse = null;
+            if ($address !== null) {
+                $harPostnr = ! empty(app(\TheFountainhead\Metis\Services\RegistryApi::class)->parseAddress($address)['zip']);
+
+                $opslagsadresse = ($harPostnr || $postnr === '')
+                    ? trim($address, ', ')
+                    : trim($address, ', ').', '.$postnr;
+            }
+
+            // 🚨 route(), IKKE en haandbygget sti: urlencode() giver '+' for
+            // mellemrum, og '+' betyder mellemrum i en QUERY-streng — aldrig i
+            // et sti-segment. Modtageren fik 'Agernskrænten+33,+2750', hvor
+            // parseAddress laeser street='Agernskrænten+33' og number='' —
+            // altsaa STADIG 422, men nu forbi den guard der skulle fange det.
+            //
+            // 🪤 Route::has() foerst: pakken registrerer ruterne betinget
+            // (embedded vs standalone), saa et bart route()-kald ville kaste
+            // RouteNotFoundException og tage hele alert-siden ned. Samme guard
+            // som debt-search.blade.php:273 og MetisLink.php:57.
+            $opslagsUrl = ($opslagsadresse !== null && Route::has('metis.lookup'))
+                ? route('metis.lookup', ['type' => 'address', 'query' => $opslagsadresse])
                 : null;
 
             // Observer-path carries no before/after objects — synthesise the current
@@ -209,8 +239,8 @@
                             </p>
                         @endif
                     </div>
-                    @if($address)
-                        <a href="/lookup/address/{{ urlencode($opslagsadresse) }}"
+                    @if($opslagsUrl)
+                        <a href="{{ $opslagsUrl }}"
                            class="text-sm text-blue-600 hover:underline whitespace-nowrap">
                             {{ __('Se ejendom') }} →
                         </a>
