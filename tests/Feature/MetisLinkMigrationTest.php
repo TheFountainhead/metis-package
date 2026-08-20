@@ -90,11 +90,41 @@ it('har ingen raa route(metis.lookup) uden for MetisLink', function () {
             }
 
             foreach (metisKodeTokens($f->getPathname()) as $i => $t) {
-                if (! is_array($t) || $t[0] !== T_CONSTANT_ENCAPSED_STRING) {
+                if (! is_array($t)) {
                     continue;
                 }
 
-                if (trim($t[1], "\"'") === 'metis.lookup') {
+                // 🪤 T_INLINE_HTML OGSAA. En raa `<a href="/lookup/address/…">`
+                // i en blade er ikke PHP-kode — den lander i ét stort
+                // HTML-token, og et tjek der kun ser paa strengliteraler er
+                // blind for den. Det er den mest NATURLIGE maade at skrive
+                // linket forkert paa.
+                if ($t[0] === T_INLINE_HTML) {
+                    if (preg_match('#href=["\']/lookup/#', $t[1])) {
+                        $synder[] = basename($f->getPathname()).':'.($t[2] ?? 0);
+                    }
+
+                    continue;
+                }
+
+                if ($t[0] !== T_CONSTANT_ENCAPSED_STRING) {
+                    continue;
+                }
+
+                $vaerdi = trim($t[1], "\"'");
+
+                // 🪤 REVIEW-FUND: at binde paa RUTENAVNET alene er den
+                // snaevreste soegning endnu. Maalt — alle disse byggede den
+                // praecis samme usikre URL og slap igennem:
+                //
+                //   url()->route(…) / URL::route(…) / app('url')->route(…)
+                //   url('/lookup/address/'.$q)          strengkonkatenering
+                //   redirect()->route(…)
+                //   <a href="/lookup/address/{{ $x }}"> raa blade-anchor
+                //
+                // De to sidste er de REELLE risici — naturlige at skrive,
+                // ingen literal at fange. Vi binder derfor ogsaa paa STIEN.
+                if ($vaerdi === 'metis.lookup' || str_contains($vaerdi, '/lookup/')) {
                     $synder[] = basename($f->getPathname()).':'.($t[2] ?? 0);
                 }
             }

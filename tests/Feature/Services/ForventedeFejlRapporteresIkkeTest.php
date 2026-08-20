@@ -118,3 +118,55 @@ it('rapporterer STADIG et 404', function () {
     expect($antal)->toBe(1);
     expect($svar)->toBe(['error' => 'upstream_error', 'status' => 404]);
 });
+
+/*
+ * 🚨 REVIEW-FUND: en ARRAY-vaerdi i `message` kastede INDE I catch-blokken.
+ *
+ * `errorFrom()` koerer inde i `catch (RequestException $e)`. Et throw dér
+ * fanges af INTET — jeg gjorde en haandteret fejl til en uhaandteret, i
+ * selve koden der findes for at haandtere fejl.
+ *
+ * Maalt: `['message' => ['matrikel id field is required']]` gav
+ * `ErrorException: Array to string conversion`, og exceptionen SLAP UD af
+ * fetchProperty() i stedet for at blive til ['error' => …].
+ *
+ * 🪤 Ville ramme HVER 422, ikke kun matrikel-varianten — `json('message')`
+ * kaldes foer beskeden tjekkes. Laravel-validationssvar baerer legitimt
+ * arrays.
+ */
+it('overlever et 422 hvor message er et ARRAY', function () {
+    Http::fake(['*' => Http::response([
+        'message' => ['matrikel id field is required'],
+        'errors' => ['street' => ['required']],
+    ], 422)]);
+
+    $svar = null;
+    $antal = rapporteredeFejl(function () use (&$svar) {
+        $svar = app(RegistryApi::class)->fetchProperty(['zip' => '4653', 'street' => '', 'number' => '']);
+    });
+
+    // Maa ikke kaste — og en ikke-streng besked kan ikke matches, saa den
+    // skal rapporteres (fail-safe: hellere stoej end tavshed).
+    expect($svar)->toBe(['error' => 'upstream_error', 'status' => 422])
+        ->and($antal)->toBe(1);
+});
+
+/*
+ * 🚨 REVIEW-FUND: `str_contains` er UANKRET.
+ *
+ * Maalt: 'Your api token is invalid: matrikel id field is required'
+ * => rapporteret 0. En upstream-fejl der CITERER validerings-teksten
+ * forsvandt fra Flare — praecis det "mister signalet om at upstream afviser
+ * noget vi troede var gyldigt" som kommentaren siger den beskytter imod.
+ */
+it('rapporterer STADIG et 422 der blot CITERER matrikel-teksten', function () {
+    Http::fake(['*' => Http::response([
+        'message' => 'Your api token is invalid: matrikel id field is required',
+    ], 422)]);
+
+    $antal = rapporteredeFejl(function () {
+        app(RegistryApi::class)->fetchProperty(['zip' => '4653', 'street' => 'A', 'number' => '1']);
+    });
+
+    expect($antal)->toBe(1);
+});

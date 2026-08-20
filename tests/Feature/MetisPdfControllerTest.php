@@ -26,39 +26,23 @@ use TheFountainhead\Metis\Services\RegistryApi;
  * ikke gennem HTTP, hvor Browsershot ville doe foer assertionen.
  */
 
+/*
+ * 🚨 KALDER CONTROLLERENS EGEN METODE — ingen kopi.
+ *
+ * Foerste udkast duplikerede `download()`s krop i en subclass for at stoppe
+ * foer Browsershot, plus en "vagt paa vagten" der tjekkede at kopien matchede
+ * originalen paa tekst-niveau.
+ *
+ * 🪤 Review defeatede den: en mutation af `if ($type === 'cvr')` til
+ * `'XXcvr'` overlevede HELE suiten (836/836 groenne), fordi tekst-vagten
+ * ikke saa forskellen — og hver CVR-PDF ville da vaere tom.
+ *
+ * ⇒ `gatherData()` er nu ekstraheret paa controlleren, saa testen kalder den
+ * RIGTIGE kode. En tekst-proxy kan ikke erstatte at koere tingen selv.
+ */
 function opsamletPdfData(string $type, string $query): array
 {
-    $opsamlet = [];
-
-    $controller = new class($opsamlet) extends MetisPdfController
-    {
-        public function __construct(public array &$opsamlet) {}
-
-        // Samme krop som download(), men stopper foer Pdf::view().
-        public function opsaml(string $type, string $query): void
-        {
-            $api = app(RegistryApi::class);
-            $data = [];
-
-            if ($type === 'cvr') {
-                $data['company'] = rescue(fn () => $api->fetchRolesByCvr([$query]));
-                $data['structure'] = rescue(fn () => $api->fetchCompanyStructure($query), []);
-                $data['portfolio'] = rescue(fn () => $api->fetchCompanyPropertyPortfolio($query));
-                $data['tax'] = rescue(fn () => $api->fetchCompanyTaxRecords($query));
-            } elseif ($type === 'cpr') {
-                $data['properties'] = rescue(fn () => $api->fetchPropertiesByCpr($query));
-                $data['companies'] = rescue(fn () => $api->fetchCompaniesByCpr($query));
-            } elseif ($type === 'address') {
-                $data['analysis'] = $api->resolveAddressAnalysis($query);
-            }
-
-            $this->opsamlet = $data;
-        }
-    };
-
-    $controller->opsaml($type, $query);
-
-    return $controller->opsamlet;
+    return app(MetisPdfController::class)->gatherData($type, $query);
 }
 
 it('🚨 udloeser INTET opslag for en adresse uden postnummer', function () {
@@ -113,36 +97,47 @@ it('🚨 en CVR-fejl bliver til rescue()-null og renderer IKKE en falsk benaegte
 });
 
 /*
- * 🪤 TESTENS KOPI KAN DRIVE FRA ORIGINALEN.
+ * 🚨 REVIEW-FUND: kun `company` var daekket.
  *
- * `opsaml()` ovenfor gentager `download()`s dataindsamling for at stoppe foer
- * Browsershot. Hvis nogen aendrer controlleren — fx tilfoejer et felt eller
- * fjerner en `rescue()` — ville testen fortsat vaere groen mod sin egen
- * forældede kopi. Praecis den fejlklasse hele denne sag handler om.
+ * Maalt: en mutation hvor `portfolio` kaldte `fetchCompanyTaxRecords()` i
+ * stedet for `fetchCompanyPropertyPortfolio()` overlevede — PDF'en ville da
+ * vise skattetal under "ejendomsportefoelje". Tre af fire CVR-felter og
+ * begge CPR-felter var utestede.
  *
- * Denne test pinner at de to stemmer overens paa de felter der betyder noget.
+ * Vi pinner nu HVILKET endpoint hvert felt henter fra.
  */
-it('testens kopi matcher controllerens faktiske dataindsamling', function () {
-    $kilde = file_get_contents(__DIR__.'/../../src/Http/Controllers/MetisPdfController.php');
+it('henter hvert CVR-felt fra sit EGET endpoint', function () {
+    Http::fake([
+        '*roles*' => Http::response(['data' => ['companies' => [['name' => 'RolleFirma']]]], 200),
+        '*structure*' => Http::response(['data' => ['struktur' => 'S']], 200),
+        '*portfolio*' => Http::response(['data' => ['portfolio' => ['P']]], 200),
+        '*tax*' => Http::response(['data' => ['records' => [['income_year' => 2024]]]], 200),
+        '*' => Http::response(['data' => []], 200),
+    ]);
 
-    // Felterne controlleren saetter — hvis et nyt kommer til uden at blive
-    // afspejlet i opsaml(), fejler denne.
-    foreach ([
-        "\$data['company'] = rescue(",
-        "\$data['structure'] = rescue(",
-        "\$data['portfolio'] = rescue(",
-        "\$data['tax'] = rescue(",
-        "\$data['properties'] = rescue(",
-        "\$data['companies'] = rescue(",
-        "\$data['analysis'] = \$api->resolveAddressAnalysis(\$query);",
-    ] as $linje) {
-        expect(str_contains($kilde, $linje))->toBeTrue(
-            "MetisPdfController er aendret — opdater opsaml() i denne test: $linje"
-        );
+    $data = opsamletPdfData('cvr', '12345678');
+
+    expect($data['company']['companies'][0]['name'])->toBe('RolleFirma')
+        ->and($data['portfolio']['portfolio'])->toBe(['P'])
+        ->and($data['tax']['records'][0]['income_year'])->toBe(2024);
+
+    // Hvert endpoint skal vaere ramt praecis én gang.
+    foreach (['roles', 'structure', 'portfolio', 'tax'] as $endpoint) {
+        Http::assertSent(fn ($r) => str_contains($r->url(), $endpoint));
     }
+});
 
-    // Og at der ikke er kommet en HELT ny gren til.
-    // 🪤 Vagten fandt en aegte mangel: mit foerste udkast talte 5 og
-    // sprang HELE cpr-grenen over. Kopien manglede to felter.
-    expect(substr_count($kilde, '$data['))->toBe(7);
+it('henter begge CPR-felter fra hver sit endpoint', function () {
+    // 🪤 Begge stier indeholder 'search-by-cpr', saa et moenster paa
+    // '*properties*' ramte den forkerte. Pin paa den FULDE sti.
+    Http::fake([
+        '*property-tinglysning/search-by-cpr*' => Http::response(['data' => ['properties' => [['id' => 1]]]], 200),
+        '*cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [['cvr' => '111']]]], 200),
+        '*' => Http::response(['data' => []], 200),
+    ]);
+
+    $data = opsamletPdfData('cpr', '1234567890');
+
+    expect($data['properties']['properties'][0]['id'])->toBe(1)
+        ->and($data['companies']['companies'][0]['cvr'])->toBe('111');
 });

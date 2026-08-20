@@ -1439,13 +1439,30 @@ class RegistryApi
      */
     protected function erForventetAdresseAfvisning(RequestException $e): bool
     {
-        if ($e->response?->status() !== 422) {
+        if ($e->response->status() !== 422) {
             return false;
         }
 
-        $besked = (string) ($e->response->json('message') ?? '');
+        // 🪤 IKKE `(string) $json['message']`. Et Laravel-validationssvar kan
+        // baere et ARRAY dér, og castet gav `ErrorException: Array to string
+        // conversion` — kastet INDE I `catch (RequestException $e)`, hvor
+        // intet fanger det. En haandteret fejl blev til en uhaandteret, i
+        // selve koden der findes for at haandtere fejl. Og det ramte HVER
+        // 422, ikke kun matrikel-varianten.
+        $besked = $e->response->json('message');
 
-        return str_contains($besked, 'matrikel id field is required');
+        if (! is_string($besked)) {
+            return false;
+        }
+
+        // 🪤 ANKRET, ikke `str_contains`. Maalt: "Your api token is invalid:
+        // matrikel id field is required" blev tie-stillet — en upstream-fejl
+        // der blot CITERER validerings-teksten forsvandt fra Flare. Præcis
+        // det signal-tab kommentaren ovenfor siger den beskytter imod.
+        //
+        // registry-apis egen form (maalt mod prod 20/8) starter med feltet:
+        //   "The matrikel id field is required when street / number / zip …"
+        return str_starts_with($besked, 'The matrikel id field is required');
     }
 
     /**
