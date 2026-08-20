@@ -24,12 +24,34 @@
 
     @if($type === 'cvr')
         @php
+            $opslagsfejl = $data['company'] === null || isset($data['company']['error']);
+
             $company = $data['company']['companies'][0] ?? null;
             $roles = $company['roles'] ?? [];
             $structure = $data['structure'] ?? [];
             $portfolio = $data['portfolio']['portfolio'] ?? null;
             $tax = $data['tax']['records'] ?? [];
         @endphp
+
+        @if($opslagsfejl)
+            {{-- 🚨 SAMME FALSKE BENAEGTELSE SOM ADRESSE-GRENEN — men VAERRE.
+                 Adresse-sektionerne er `@if` uden `@else`, saa en fejl gav et
+                 TAVST dokument. Her har hver sektion et `@else`, saa en total
+                 upstream-fejl printer en BEKRAEFTENDE benaegtelse: "No roles
+                 found.", "No companies found." — en positiv paastand om et
+                 selskab eller en person, produceret naar vi intet ved.
+
+                 Maalt 20/8: fejl, aegte tom og `rescue()`-null gav
+                 BYTE-IDENTISK dokument.
+
+                 🪤 `rescue()` uden fallback giver `null`, saa fejl har TO
+                 former: `null` og `['error' => …]`. Begge er fejl. --}}
+            <h2>{{ __('Opslaget kunne ikke udføres') }}</h2>
+            <p class="empty">{{ __('Vi kunne ikke få svar fra kilden.') }}</p>
+            <p class="label">
+                {{ __('Fraværet af data er IKKE en oplysning — opslaget blev ikke udført.') }}
+            </p>
+        @else
 
         <h2>{{ __('Company Information') }}</h2>
         @if($company)
@@ -95,12 +117,38 @@
                 </tbody>
             </table>
         @endif
+        @endif
 
     @elseif($type === 'cpr')
         @php
+            $opslagsfejl = ($data['properties'] ?? null) === null
+                || isset($data['properties']['error'])
+                || ($data['companies'] ?? null) === null
+                || isset($data['companies']['error']);
+
             $properties = $data['properties']['properties'] ?? [];
             $companies = $data['companies']['companies'] ?? [];
         @endphp
+
+        @if($opslagsfejl)
+            {{-- 🚨 SAMME FALSKE BENAEGTELSE SOM ADRESSE-GRENEN — men VAERRE.
+                 Adresse-sektionerne er `@if` uden `@else`, saa en fejl gav et
+                 TAVST dokument. Her har hver sektion et `@else`, saa en total
+                 upstream-fejl printer en BEKRAEFTENDE benaegtelse: "No roles
+                 found.", "No companies found." — en positiv paastand om et
+                 selskab eller en person, produceret naar vi intet ved.
+
+                 Maalt 20/8: fejl, aegte tom og `rescue()`-null gav
+                 BYTE-IDENTISK dokument.
+
+                 🪤 `rescue()` uden fallback giver `null`, saa fejl har TO
+                 former: `null` og `['error' => …]`. Begge er fejl. --}}
+            <h2>{{ __('Opslaget kunne ikke udføres') }}</h2>
+            <p class="empty">{{ __('Vi kunne ikke få svar fra kilden.') }}</p>
+            <p class="label">
+                {{ __('Fraværet af data er IKKE en oplysning — opslaget blev ikke udført.') }}
+            </p>
+        @else
 
         <h2>{{ __('Owned Properties') }}</h2>
         @if(count($properties) > 0)
@@ -145,6 +193,7 @@
             </table>
         @else
             <p class="empty">{{ __('No companies found.') }}</p>
+        @endif
         @endif
 
     @elseif($type === 'address')
