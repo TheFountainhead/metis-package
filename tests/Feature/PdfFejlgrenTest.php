@@ -204,3 +204,39 @@ it('fanger hver af de FIRE fejlbetingelser hver for sig', function (array $data,
         'companies' => ['error' => 'upstream_error'],
     ], 'companies-error'],
 ]);
+
+/*
+ * 🚨 `empty($prop)` TESTEDE BEHOLDEREN, IKKE OM NOGET BLEV PRINTET.
+ *
+ * Maalt: en ejendom MED adresse, postnummer og matrikel-id, men uden bbr,
+ * vurdering, ejere, pantebreve, handler og selskaber, gav praecis det tavse
+ * dokument hele rettelsen findes for at forhindre — header, adresse,
+ * tidsstempel, sidefod.
+ *
+ * 🪤 Min egen test brugte `[]` som "tom": den mest BEKVEMME fixtur, ikke den
+ * realistiske. `resolveAddressAnalysis()` normaliserer kun et HELT tomt
+ * property til `[]`; et delvist udfyldt gaar lige igennem.
+ *
+ * ⇒ Maal om nogen SEKTION har indhold, ikke om beholderen er tom.
+ */
+it('siger ogsaa noget naar property findes men ingen sektion har indhold', function () {
+    $tekst = pdfTekst(['property' => [
+        'address' => 'Søndergade 43A',
+        'postal_code' => '4653',
+        'city' => 'Karise',
+        'matrikel_id' => '1a Karise By',
+    ]]);
+
+    expect($tekst)->toContain('Opslaget blev udført')
+        ->and($tekst)->toContain('Vi fandt ingen registrerede oplysninger');
+});
+
+it('viser stadig data naar bare ÉN sektion har indhold', function () {
+    $tekst = pdfTekst(['property' => [
+        'address' => 'Søndergade 43A',
+        'owners' => [['name' => 'Test Testesen', 'is_current' => true, 'share' => null]],
+    ]]);
+
+    expect($tekst)->toContain('Test Testesen')
+        ->and($tekst)->not->toContain('Vi fandt ingen registrerede oplysninger');
+});

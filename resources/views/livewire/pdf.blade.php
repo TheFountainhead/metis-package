@@ -206,6 +206,24 @@
             $mortgages = $prop['mortgages'] ?? [];
             $transactions = $prop['transactions'] ?? [];
             $companies = $prop['companies_at_address'] ?? [];
+
+            // 🚨 MAAL OM NOGEN SEKTION PRINTER — ikke om beholderen er tom.
+            // `empty($prop)` var forkert: en ejendom MED adresse, postnummer
+            // og matrikel-id men uden bbr/ejere/pantebreve gav praecis det
+            // tavse dokument denne gren findes for at forhindre.
+            // `resolveAddressAnalysis()` normaliserer kun et HELT tomt
+            // property til `[]`; et delvist udfyldt gaar lige igennem.
+            //
+            // 🪤 Listen skal daekke ALLE sektioner nedenfor. En ny sektion
+            // uden en post her ville genskabe hullet — derfor pinner
+            // `PdfFejlgrenTest` at hver enkelt af dem alene er nok.
+            $harIndhold = ! empty($bbr)
+                || ! empty($valuation)
+                || count($owners) > 0
+                || count($mortgages) > 0
+                || count($transactions) > 0
+                || count($companies) > 0
+                || ! empty($prop['street_view_url'] ?? null);
         @endphp
 
         @if($opslagsfejl)
@@ -234,7 +252,7 @@
             <p class="label">
                 {{ __('Dokumentet indeholder derfor ingen oplysninger om ejendommen. Fraværet af data er IKKE en oplysning om ejendommen.') }}
             </p>
-        @elseif(empty($prop))
+        @elseif(! $harIndhold)
             {{-- 🪤 OG DEN AEGTE TOMME TILSTAND. Fanget ved at SE dokumentet:
                  efter fejlgrenen kunne 422 skelnes fra "ingen data", men den
                  TOMME gav stadig kun header + sidefod. Opslaget LYKKEDES, og

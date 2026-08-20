@@ -23,10 +23,17 @@ use TheFountainhead\Metis\Services\RegistryApi;
  * linjeombrydning er ligegyldig fordi vi laeser tokens, ikke linjer.
  */
 it('har ingen haardkodede kopier af adresse-praedikatet', function () {
-    $rødder = [
+    // 🪤 SYVENDE VARIANT: `routes/` og `database/` laa uden for scannerens
+    // roedder. Maalt: en kopi i `routes/web.php` — filen der DEFINERER
+    // metis.lookup og allerede indeholder en closure med rigtig logik —
+    // passerede. Scope-gabet er nu paa MAPPE-niveau.
+    $rødder = array_filter([
         realpath(__DIR__.'/../../../src'),
         realpath(__DIR__.'/../../../resources'),
-    ];
+        realpath(__DIR__.'/../../../routes'),
+        realpath(__DIR__.'/../../../database'),
+        realpath(__DIR__.'/../../../config'),
+    ]);
 
     $synder = [];
 
@@ -63,7 +70,9 @@ it('har ingen haardkodede kopier af adresse-praedikatet', function () {
 
                 if (! $iKrop && is_array($t) && $t[0] === T_FUNCTION) {
                     $navn = is_array($kode[$i + 1] ?? null) ? $kode[$i + 1][1] : '';
-                    if (in_array($navn, ['adresseKanOploeses', 'parsetAdresseKanOploeses'], true)) {
+                    // `parseAddress()` DEFINERER formen (`['zip' => $zip]`),
+                    // saa dens krop er per definition ikke en kopi af reglen.
+                    if (in_array($navn, ['adresseKanOploeses', 'parsetAdresseKanOploeses', 'parseAddress'], true)) {
                         $iKrop = true;
                         $dybde = 0;
                     }
@@ -107,8 +116,31 @@ it('har ingen haardkodede kopier af adresse-praedikatet', function () {
                     $omkring .= is_array($kode[$j]) ? $kode[$j][1] : $kode[$j];
                 }
 
+                // 🪤 EFTER FEM RUNDERS UDVIDELSE MISSEDE LISTEN DEN
+                // PLAINESTE FORM: `if ($p['zip'])` har INGEN operator.
+                // Guarden var staerkest mod konstruerede former og blind for
+                // den oplagte. Vi accepterer nu ogsaa en bar sandhedstest —
+                // `if (`, `return`, `?`, `&&`, `||`, `?:` — omkring opslaget.
+                // 🔑 UDELUK VAERDI-LAESNINGER foerst. `$p['zip'] ?? ''` i en
+                // strengsammensaetning, `$x = $parsed['zip'];` og
+                // `['zip' => $zip]` LAESER vaerdien — de er ikke en kopi af
+                // reglen. Uden dette flager scanneren fire legitime steder,
+                // og en vagt der raaber ved korrekt kode bliver ignoreret.
+                $lige_efter = '';
+                for ($j = $i + 1; $j < min(count($kode), $i + 4); $j++) {
+                    $lige_efter .= is_array($kode[$j]) ? $kode[$j][1] : $kode[$j];
+                }
+
+                $erVaerdilaesning = str_starts_with(ltrim($lige_efter), ']??')
+                    || preg_match('/=>\s*$/', rtrim(substr($omkring, 0, strpos($omkring, "'zip'") ?: 0)))
+                    || preg_match('/=\s*\$[a-zA-Z_]+\[$/', rtrim(substr($omkring, 0, strpos($omkring, "'zip'") ?: 0)));
+
+                if ($erVaerdilaesning) {
+                    continue;
+                }
+
                 $erTilstandstest = preg_match(
-                    '/(empty|isset|array_key_exists|strlen|!|===|==|!==|!=)/',
+                    '/(empty|isset|array_key_exists|strlen|count|!|===|==|!==|!=|if\(|return|\?|&&|\|\|)/',
                     $omkring
                 );
 
