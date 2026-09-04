@@ -11,7 +11,8 @@ use TheFountainhead\Metis\Livewire\AlertDetail;
 use TheFountainhead\Metis\Livewire\Analytics;
 use TheFountainhead\Metis\Livewire\AlertsInbox;
 use TheFountainhead\Metis\Livewire\DebtSearch;
-use TheFountainhead\Metis\Livewire\LenderExposure;
+use TheFountainhead\Metis\Livewire\Engagement;
+use TheFountainhead\Metis\Livewire\Engagements;
 use TheFountainhead\Metis\Http\Controllers\GrantQuotaController;
 use TheFountainhead\Metis\Livewire\Lookup;
 use TheFountainhead\Metis\Livewire\PropertyExplore;
@@ -33,7 +34,14 @@ Route::middleware(NoIndex::class)->group(function () {
     Route::get('/lookup/{type}/{query}', Lookup::class)->name('metis.lookup')->where('query', '.*')->middleware('throttle:20,1');
     Route::get('/soeg', DebtSearch::class)->name('metis.debt-search')->middleware('throttle:20,1');
     Route::get('/udforsk', PropertyExplore::class)->name('metis.property-explore')->middleware('throttle:20,1');
-    Route::get('/laangiver', LenderExposure::class)->name('metis.lender-exposure')->middleware('throttle:20,1');
+    // Långiverens cockpit: kun brugerens EGNE engagementer, bundet på
+    // serversiden. Det frie CVR-opslag på /laangiver er nedlagt, fordi en
+    // søgning efter FREMMEDE långiveres pant ligger uden for tinglysningslovens
+    // § 50 c (kreditvurdering og belåning af egne engagementer). Adressen
+    // bevares som redirect, så gamle links ikke dør.
+    Route::get('/engagementer', Engagements::class)->name('metis.engagements')->middleware('throttle:20,1');
+    Route::get('/engagementer/{key}', Engagement::class)->name('metis.engagement')->middleware('throttle:20,1')->where('key', '[A-Za-z0-9+\-]+');
+    Route::redirect('/laangiver', '/engagementer', 302)->name('metis.lender-exposure');
 
     // 🔑 "Spoerg om noget" — aggregerede spoergsmaal om en POPULATION.
     // Soegefeltet finder én ting man kender navnet paa; det her afgraenser en

@@ -36,9 +36,12 @@ beforeEach(function () {
     Http::fake(['*' => Http::response(['data' => []])]);
 });
 
-it('🚨 laangiver-siden med ?cvr= baerer noindex', function () {
-    // Den konkrete side der var udaekket i prod.
-    $this->get('/laangiver?cvr=35050027')
+it('🚨 engagement-siden baerer noindex, og den gamle laangiver-adresse redirecter', function () {
+    // Den konkrete side der var udaekket i prod var /laangiver?cvr=; den er
+    // nedlagt (§ 50 c) og redirecter. Efterfoelgeren skal baere samme vaern.
+    $this->get('/laangiver?cvr=35050027')->assertRedirect('/engagementer');
+
+    $this->get('/engagementer?fra=link')
         ->assertOk()
         ->assertSee('name="robots"', false)
         ->assertSee('noindex', false);
@@ -56,7 +59,7 @@ it('enhver query-parameter udloeser noindex, ikke kun de kendte navne', function
     // 🔑 Gaten er `! empty(request()->query())`, ikke en liste af navne.
     // En liste skulle holdes synkron med hver ny side — praecis den slags
     // vedligehold der fejlede her: `?q=` var daekket, `?cvr=` var ikke.
-    foreach (['/?q=56811913', '/laangiver?cvr=35050027'] as $url) {
+    foreach (['/?q=56811913', '/engagementer?fra=link'] as $url) {
         $this->get($url)->assertSee('noindex', false);
     }
 });
