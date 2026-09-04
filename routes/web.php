@@ -41,7 +41,7 @@ Route::middleware(NoIndex::class)->group(function () {
     // bevares som redirect, så gamle links ikke dør.
     Route::get('/engagementer', Engagements::class)->name('metis.engagements')->middleware('throttle:20,1');
     Route::get('/engagementer/{key}', Engagement::class)->name('metis.engagement')->middleware('throttle:20,1')->where('key', '[A-Za-z0-9+\-]+');
-    Route::redirect('/laangiver', '/engagementer', 302)->name('metis.lender-exposure');
+    Route::permanentRedirect('/laangiver', '/engagementer')->name('metis.lender-exposure');
 
     // 🔑 "Spoerg om noget" — aggregerede spoergsmaal om en POPULATION.
     // Soegefeltet finder én ting man kender navnet paa; det her afgraenser en

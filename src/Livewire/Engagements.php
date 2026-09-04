@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Component;
+use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\LegalName;
 use TheFountainhead\Metis\Services\RegistryApi;
 
@@ -49,9 +50,22 @@ class Engagements extends Component
 
     public function load(): void
     {
+        // 🚨 Gaten skal sidde HER, ikke kun i mount(): `load` er en offentlig
+        // Livewire-metode (wire:click="load"), så en klient uden token kunne
+        // ellers kalde den direkte og trække på den delte tenant-nøgle.
+        if (! $this->hasUserToken()) {
+            return;
+        }
+
         $this->reset(['rows', 'meta', 'errorMessage', 'unbound']);
 
-        $response = app(RegistryApi::class)->fetchEngagements();
+        try {
+            $response = app(RegistryApi::class)->fetchEngagements();
+        } catch (QuotaExceededException) {
+            $this->errorMessage = __('Kvoten er brugt op. Prøv igen senere.');
+
+            return;
+        }
 
         if ($response === null || isset($response['error'])) {
             if (($response['status'] ?? null) === 403) {
@@ -65,8 +79,17 @@ class Engagements extends Component
             return;
         }
 
-        $this->rows = $response['data'] ?? [];
-        $this->meta = $response['meta'] ?? [];
+        // Et 200 uden `data`-liste eller uden måletidspunkt er IKKE "ingen
+        // engagementer": en tom tilstand er en påstand, og den må kun komme fra
+        // et svar der beviseligt har set på registret.
+        if (! is_array($response['data'] ?? null) || empty($response['meta']['measured_at'])) {
+            $this->errorMessage = __('Kunne ikke hente engagementer. Prøv igen.');
+
+            return;
+        }
+
+        $this->rows = array_values($response['data']);
+        $this->meta = $response['meta'];
     }
 
     public function sortBy(string $field): void
@@ -98,7 +121,10 @@ class Engagements extends Component
 
     public static function ownerLabel(array $engagement): string
     {
-        $labels = array_map(fn ($o) => $o['type'] === 'company' ? LegalName::format((string) $o['name']) : $o['label'], $engagement['owners'] ?? []);
+        $labels = array_map(
+            fn ($o) => ($o['type'] ?? null) === 'company' ? LegalName::format((string) ($o['name'] ?? $o['cvr'] ?? '')) : ($o['label'] ?? __('Ukendt ejer')),
+            $engagement['owners'] ?? [],
+        );
 
         if ($labels === []) {
             return __('Ejer ukendt');

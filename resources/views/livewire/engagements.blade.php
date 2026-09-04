@@ -40,7 +40,7 @@
         @php
             $totals = $meta['totals'] ?? [];
             $measured = ! empty($meta['measured_at']) ? \Carbon\Carbon::parse($meta['measured_at'])->format('d.m.Y H:i') : null;
-            $caveat = $meta['disclaimer'] ?? \TheFountainhead\Metis\Livewire\Engagements::CAVEAT_FALLBACK;
+            $caveat = ($meta['disclaimer'] ?? null) ?: __(\TheFountainhead\Metis\Livewire\Engagements::CAVEAT_FALLBACK);
         @endphp
 
         <div class="mb-2">
@@ -105,7 +105,7 @@
                     </thead>
                     <tbody class="divide-y divide-zinc-100">
                         @foreach($this->sorted as $row)
-                            <tr wire:key="engagement-{{ md5($row['key']) }}" class="{{ ($row['has_changes_since_own'] ?? false) ? 'bg-amber-50/40' : '' }}">
+                            <tr wire:key="engagement-{{ $row['key'] ?? $loop->index }}" class="{{ ($row['has_changes_since_own'] ?? false) ? 'bg-amber-50/40' : '' }}">
                                 <td class="px-4 py-2">
                                     <a href="{{ route('metis.engagement', ['key' => $row['key']]) }}" class="font-medium hover:underline">
                                         {{ \TheFountainhead\Metis\Livewire\Engagements::ownerLabel($row) }}

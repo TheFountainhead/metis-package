@@ -2,7 +2,9 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\Locked;
 use Livewire\Component;
+use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -16,6 +18,7 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class Engagement extends Component
 {
+    #[Locked]
     public string $key = '';
 
     public ?array $engagement = null;
@@ -44,22 +47,42 @@ class Engagement extends Component
 
     public function load(): void
     {
+        if (! $this->hasUserToken()) {
+            return;
+        }
+
         $this->reset(['engagement', 'meta', 'errorMessage', 'unbound', 'notFound']);
 
-        $response = app(RegistryApi::class)->fetchEngagement($this->key);
-
-        if ($response === null || isset($response['error'])) {
-            match ($response['status'] ?? null) {
-                403 => $this->unbound = true,
-                404 => $this->notFound = true,
-                default => $this->errorMessage = __('Kunne ikke hente engagementet. Prøv igen.'),
-            };
+        try {
+            $response = app(RegistryApi::class)->fetchEngagement($this->key);
+        } catch (QuotaExceededException) {
+            $this->errorMessage = __('Kvoten er brugt op. Prøv igen senere.');
 
             return;
         }
 
-        $this->engagement = $response['data'] ?? null;
-        $this->meta = $response['meta'] ?? [];
+        if ($response === null || isset($response['error'])) {
+            $status = $response['status'] ?? null;
+
+            if ($status === 403) {
+                $this->unbound = true;
+            } elseif ($status === 404) {
+                $this->notFound = true;
+            } else {
+                $this->errorMessage = __('Kunne ikke hente engagementet. Prøv igen.');
+            }
+
+            return;
+        }
+
+        if (! is_array($response['data'] ?? null) || empty($response['data']['key']) || empty($response['meta']['measured_at'])) {
+            $this->errorMessage = __('Kunne ikke hente engagementet. Prøv igen.');
+
+            return;
+        }
+
+        $this->engagement = $response['data'];
+        $this->meta = $response['meta'];
     }
 
     /**
@@ -70,7 +93,7 @@ class Engagement extends Component
         return array_values(array_filter($this->engagement['owners'] ?? [], fn ($o) => ($o['type'] ?? null) === 'company'));
     }
 
-    public function getPersonOwnersProperty(): int
+    public function getPersonOwnerCountProperty(): int
     {
         return count(array_filter($this->engagement['owners'] ?? [], fn ($o) => ($o['type'] ?? null) === 'person'));
     }

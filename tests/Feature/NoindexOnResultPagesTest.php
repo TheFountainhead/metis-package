@@ -41,10 +41,13 @@ it('🚨 engagement-siden baerer noindex, og den gamle laangiver-adresse redirec
     // nedlagt (§ 50 c) og redirecter. Efterfoelgeren skal baere samme vaern.
     $this->get('/laangiver?cvr=35050027')->assertRedirect('/engagementer');
 
-    $this->get('/engagementer?fra=link')
-        ->assertOk()
-        ->assertSee('name="robots"', false)
-        ->assertSee('noindex', false);
+    // Uden query-streng: beviser at RUTEN er dækket, ikke kun query-gaten.
+    foreach (['/engagementer', '/engagementer/c22222222'] as $url) {
+        $this->get($url)
+            ->assertOk()
+            ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
+            ->assertSee('noindex', false);
+    }
 });
 
 it('forsiden UDEN parametre indekseres stadig', function () {

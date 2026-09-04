@@ -135,7 +135,7 @@
                                     {{-- Udbytte = egenkapital der forlader selskabet; kreditrelevant for en
                                          panthaver. Mangler feltet i regnskabet, står der "ikke oplyst" —
                                          aldrig 0, for et rigtigt 0 findes også. --}}
-                                    <th class="text-left py-2 font-medium text-zinc-500">{{ __('Udbytte') }}</th>
+                                    <th class="text-left py-2 font-medium text-zinc-500">{{ __('Dividend') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -166,12 +166,12 @@
                                             {{ $pl !== null ? number_format($pl, 0, ',', '.') : '—' }}
                                         </td>
                                         @php
-                                            $hasDividend = array_key_exists('proposed_dividend', $fin);
-                                            $dv = $hasDividend ? $toTdkk($fin['proposed_dividend'], $fin) : null;
-                                            $xd = array_key_exists('extraordinary_dividend', $fin) ? $toTdkk($fin['extraordinary_dividend'], $fin) : null;
+                                            // null OG manglende nøgle = ikke oplyst; kun et tal (også 0) er oplyst.
+                                            $dv = $toTdkk($fin['proposed_dividend'] ?? null, $fin);
+                                            $xd = $toTdkk($fin['extraordinary_dividend'] ?? null, $fin);
                                         @endphp
                                         <td class="py-2">
-                                            @if($hasDividend)
+                                            @if($dv !== null)
                                                 {{ number_format($dv, 0, ',', '.') }}
                                                 @if($xd)
                                                     <span class="text-xs text-zinc-500" title="{{ __('Ekstraordinært udbytte') }}">+{{ number_format($xd, 0, ',', '.') }}</span>

@@ -36,7 +36,7 @@
         </div>
     @elseif($engagement)
         @php
-            $caveat = $meta['disclaimer'] ?? \TheFountainhead\Metis\Livewire\Engagements::CAVEAT_FALLBACK;
+            $caveat = ($meta['disclaimer'] ?? null) ?: __(\TheFountainhead\Metis\Livewire\Engagements::CAVEAT_FALLBACK);
             $kr = fn ($v) => number_format((int) $v, 0, ',', '.').' kr.';
             $dato = fn ($d) => $d ? \Carbon\Carbon::parse($d)->format('d.m.Y') : '—';
             $kindLabel = [
@@ -58,7 +58,7 @@
             @else
                 <ul class="border rounded-xl bg-white divide-y divide-zinc-100">
                     @foreach($engagement['changes'] as $change)
-                        <li wire:key="change-{{ md5(json_encode($change)) }}" class="flex items-start gap-3 px-4 py-3 text-sm">
+                        <li wire:key="change-{{ $loop->index }}-{{ md5(json_encode($change)) }}" class="flex items-start gap-3 px-4 py-3 text-sm">
                             <span class="mt-0.5 inline-block w-2 h-2 rounded-full {{ ($change['severity'] ?? 'low') === 'high' ? 'bg-red-500' : 'bg-zinc-400' }}" aria-hidden="true"></span>
                             <div class="flex-1">
                                 <div class="font-medium">
@@ -83,7 +83,7 @@
 
         {{-- PRIORITETSSTIGE PR. EJENDOM --}}
         @foreach($engagement['properties'] ?? [] as $property)
-            <section class="mb-8" wire:key="property-{{ $property['id'] }}">
+            <section class="mb-8" wire:key="property-{{ $property['id'] ?? $loop->index }}">
                 <div class="flex items-baseline justify-between mb-2">
                     <h2 class="text-base font-semibold">
                         {{ $property['address'] ?? '—' }}@if($property['postal_code'] ?? null)<span class="text-zinc-500">, {{ $property['postal_code'] }} {{ $property['city'] ?? '' }}</span>@endif
@@ -124,14 +124,14 @@
                         </thead>
                         <tbody class="divide-y divide-zinc-100">
                             @foreach($property['ladder'] ?? [] as $row)
-                                <tr wire:key="lien-{{ $property['id'] }}-{{ $row['id'] }}" class="{{ $row['is_own'] ? 'bg-emerald-50/60 font-medium' : '' }}">
+                                <tr wire:key="lien-{{ $property['id'] ?? 'p' }}-{{ $row['id'] ?? $loop->index }}" class="{{ ($row['is_own'] ?? false) ? 'bg-emerald-50/60 font-medium' : '' }}">
                                     <td class="px-3 py-2 tabular-nums">{{ $row['priority'] ?? '?' }}</td>
                                     <td class="px-3 py-2 text-xs whitespace-nowrap">
-                                        @if($row['is_own'])
+                                        @if($row['is_own'] ?? false)
                                             <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">{{ __('Mig') }}</span>
-                                        @elseif($row['is_ahead'])
+                                        @elseif($row['is_ahead'] ?? false)
                                             <span class="px-2 py-0.5 rounded-full bg-red-100 text-red-800">{{ __('Foran mig') }}</span>
-                                        @elseif($row['is_pari'])
+                                        @elseif($row['is_pari'] ?? false)
                                             <span class="px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700">{{ __('Sideordnet') }}</span>
                                         @elseif($row['priority_unknown'] ?? false)
                                             <span class="px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500">{{ __('Prioritet ukendt') }}</span>
@@ -153,24 +153,26 @@
         {{-- LÅNTAGERNE --}}
         <section class="mb-8">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500 mb-2">{{ __('Låntager') }}</h2>
-            @if($this->personOwners > 0)
+            @if($this->personOwnerCount > 0)
                 <p class="p-4 mb-4 text-sm border rounded-xl bg-white text-zinc-600">
-                    {{ trans_choice('Ejendommen ejes af en privatperson.|Ejendommen ejes af :count privatpersoner.', $this->personOwners, ['count' => $this->personOwners]) }}
+                    {{ trans_choice('Ejendommen ejes af en privatperson.|Ejendommen ejes af :count privatpersoner.', $this->personOwnerCount, ['count' => $this->personOwnerCount]) }}
                 </p>
             @endif
             @foreach($this->companyOwners as $owner)
-                <div class="mb-6" wire:key="owner-{{ $owner['cvr'] }}">
+                <div class="mb-6" wire:key="owner-{{ $owner['cvr'] ?? $loop->index }}">
                     <div class="flex items-baseline gap-3 mb-2">
-                        <x-metis-link type="cvr" :query="$owner['cvr']" class="text-base font-semibold hover:underline">
-                            {{ \TheFountainhead\Metis\Services\LegalName::format((string) $owner['name']) }}
+                        <x-metis-link type="cvr" :query="$owner['cvr'] ?? ''" class="text-base font-semibold hover:underline">
+                            {{ \TheFountainhead\Metis\Services\LegalName::format((string) ($owner['name'] ?? $owner['cvr'] ?? '')) }}
                         </x-metis-link>
-                        <span class="text-xs text-zinc-500">CVR {{ $owner['cvr'] }}@if($owner['status'] ?? null) · {{ $owner['status'] }}@endif</span>
+                        <span class="text-xs text-zinc-500">CVR {{ $owner['cvr'] ?? '—' }}@if($owner['status'] ?? null) · {{ $owner['status'] }}@endif</span>
                     </div>
                     {{-- Regnskab og roller lånes fra selskabsopslaget. `lazy="on-load"`,
                          ikke bare `lazy`: sektioner der venter på viewport hang. --}}
                     <div class="space-y-4">
-                        <livewire:metis-company-info :query="$owner['cvr']" lazy="on-load" :key="'info-'.$owner['cvr']" />
-                        <livewire:metis-company-roles :query="$owner['cvr']" lazy="on-load" :key="'roles-'.$owner['cvr']" />
+                        @if(! empty($owner['cvr']))
+                            <livewire:metis-company-info :query="$owner['cvr']" lazy="on-load" :key="'info-'.$owner['cvr']" />
+                            <livewire:metis-company-roles :query="$owner['cvr']" lazy="on-load" :key="'roles-'.$owner['cvr']" />
+                        @endif
                     </div>
                 </div>
             @endforeach
