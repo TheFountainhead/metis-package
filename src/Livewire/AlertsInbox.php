@@ -73,6 +73,12 @@ class AlertsInbox extends Component
 
     public function clearToken(): void
     {
+        // En pilot med kodeord logges helt ud (husk-mig-nøgle + identitet);
+        // ellers ville RestorePilotSession lægge tokenet tilbage ved næste request.
+        if (session('metis_pilot_account_id')) {
+            \TheFountainhead\Metis\Livewire\PilotLogin::logout();
+        }
+
         session()->forget('metis_user_token');
         $this->response = null;
         $this->watchlists = null;

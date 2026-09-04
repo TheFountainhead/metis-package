@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\HasPilotToken;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -21,6 +22,8 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class PropertyExplore extends Component
 {
+    use HasPilotToken;
+
     // Geo (at least one required)
     public ?string $postalCodeFrom = null;
     public ?string $postalCodeTo = null;
@@ -119,6 +122,12 @@ class PropertyExplore extends Component
                 return;
             }
 
+            // Gæld hører til bestilte analyser: felterne fjernes FØR svaret
+            // gemmes, så de heller ikke ligger i Livewire-snapshottet.
+            foreach ($response['data']['results'] ?? [] as $i => $row) {
+                unset($response['data']['results'][$i]['total_debt'], $response['data']['results'][$i]['weighted_rate']);
+            }
+
             $this->response = $response;
         } catch (\Throwable $e) {
             $this->error = 'Søgetjenesten er midlertidigt utilgængelig';
@@ -160,6 +169,13 @@ class PropertyExplore extends Component
 
     public function downloadCsv(): void
     {
+        // Eksporten fra registry-api bærer stadig gældskolonner; kun pilotbrugere.
+        if (! $this->hasUserToken()) {
+            $this->error = 'CSV-eksport er kun for pilotbrugere.';
+
+            return;
+        }
+
         if (! $this->hasGeoFilter()) {
             $this->missingGeo = true;
 

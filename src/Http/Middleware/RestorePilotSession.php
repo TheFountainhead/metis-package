@@ -26,6 +26,10 @@ class RestorePilotSession
 
             if ($account && $secret && $account->remember_token && Hash::check($secret, $account->remember_token)) {
                 PilotLogin::attach($account);
+            } else {
+                // En cookie der ikke passer (roteret nøgle, logget ud, anden
+                // enhed) skal væk, ellers koster den en hash-sammenligning pr. request.
+                cookie()->queue(cookie()->forget(PilotLogin::REMEMBER_COOKIE));
             }
         }
 

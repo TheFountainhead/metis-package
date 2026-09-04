@@ -127,6 +127,10 @@ class MetisServiceProvider extends ServiceProvider
         }
 
         // Admin components
+        // Husk-mig genskabes også på Livewire-opdateringer (/livewire/update), så
+        // en side ikke flipper til "Kun for pilotbrugere" midt i en session.
+        Livewire::addPersistentMiddleware([\TheFountainhead\Metis\Http\Middleware\RestorePilotSession::class]);
+
         Livewire::component('metis-lookup-title', \TheFountainhead\Metis\Livewire\LookupTitle::class);
         Livewire::component('metis-admin-dashboard', \TheFountainhead\Metis\Livewire\Admin\Dashboard::class);
         Livewire::component('metis-admin-leads', \TheFountainhead\Metis\Livewire\Admin\Leads::class);

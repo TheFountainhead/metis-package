@@ -67,8 +67,9 @@ it('husk-mig-cookien genskaber sessionen, og log-ud fjerner den', function () {
 
     expect(session('metis_user_token'))->toBe('19|registry-token-abc');
 
-    $this->get('/log-ud')->assertRedirect(route('metis.home'));
+    $this->post('/log-ud')->assertRedirect(route('metis.home'));
     expect(session('metis_user_token'))->toBeNull()
+        ->and(session('metis_verified_email'))->toBeNull()
         ->and($account->fresh()->remember_token)->toBeNull();
 
     // Cookien alene kan ikke logge ind igen efter log-ud.
@@ -85,16 +86,35 @@ it('en forkert eller manipuleret husk-mig-cookie giver ingen session', function 
     expect(session('metis_user_token'))->toBeNull();
 });
 
-it('metis:pilot-account opretter kontoen med hashet kodeord og krypteret token, og kræver token ved oprettelse', function () {
+it('metis:pilot-account: token fra pilot_users, kodeord vises én gang, opdatering bevarer kodeordet, rotation nulstiller husk-mig', function () {
+    config()->set('metis.gating.pilot_users', 'ny@laangiver.test:20|tok');
+
     $this->artisan('metis:pilot-account', ['email' => 'ny@laangiver.test'])->assertFailed();
 
-    $this->artisan('metis:pilot-account', ['email' => 'Ny@Laangiver.test', '--token' => '20|tok', '--password' => 'valgt-kodeord', '--name' => 'Ny Pilot'])
-        ->expectsOutputToContain('Kodeord: valgt-kodeord')
+    $this->artisan('metis:pilot-account', ['email' => 'Ny@Laangiver.test', '--token-from-pilot-users' => true, '--name' => 'Ny Pilot'])
+        ->expectsOutputToContain('Kodeord: ')
         ->assertSuccessful();
 
     $a = MetisPilotAccount::first();
+    $hash = $a->password;
     expect($a->email)->toBe('ny@laangiver.test')
-        ->and(Hash::check('valgt-kodeord', $a->password))->toBeTrue()
         ->and($a->registry_token)->toBe('20|tok')
         ->and($a->getRawOriginal('registry_token'))->not->toContain('20|tok');
+
+    // Opdatering af navnet alene rører hverken kodeord eller husk-mig.
+    $a->forceFill(['remember_token' => 'husk'])->save();
+    $this->artisan('metis:pilot-account', ['email' => 'ny@laangiver.test', '--name' => 'Nyt Navn'])->assertSuccessful();
+    expect($a->fresh()->password)->toBe($hash)->and($a->fresh()->remember_token)->toBe('husk');
+
+    // Nyt kodeord nulstiller husk-mig.
+    $this->artisan('metis:pilot-account', ['email' => 'ny@laangiver.test', '--reset-password' => true])->expectsOutputToContain('Kodeord: ')->assertSuccessful();
+    expect($a->fresh()->password)->not->toBe($hash)->and($a->fresh()->remember_token)->toBeNull();
+});
+
+it('login holder lead-rækken ajour, så piloten forudfyldes og ses i admin', function () {
+    pilotAccount();
+
+    Livewire::test(PilotLogin::class)->set('email', 'rasmus@laangiver.test')->set('password', 'hemmeligt-kodeord')->call('login');
+
+    expect(\TheFountainhead\Metis\Models\MetisLead::where('email', 'rasmus@laangiver.test')->value('name'))->toBe('Rasmus Test');
 });

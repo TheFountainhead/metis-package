@@ -53,7 +53,7 @@
                         @endphp
                         <li>
                             <a href="{{ $href }}"
-                               @if($isDisabled) onclick="alert('{{ __('Kun for pilotbrugere. Bekræft din arbejdsmail først.') }}'); return false;" @endif
+                               @if($isDisabled) onclick="alert('{{ __('Kun for pilotbrugere. Log ind, eller bekræft din arbejdsmail.') }}'); return false;" @endif
                                class="flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors
                                       {{ $isCurrent
                                          ? 'bg-blue-100 text-blue-700 font-medium'
@@ -95,7 +95,10 @@
             <a href="{{ route('metis.login') }}" class="block px-3 py-2 text-xs text-zinc-700 border rounded hover:bg-zinc-50">{{ __('Log ind (pilot)') }}</a>
         @endif
         @if(session('metis_pilot_account_id') && Route::has('metis.logout'))
-            <a href="{{ route('metis.logout') }}" class="block px-3 py-1 text-xs text-zinc-500 hover:underline">{{ __('Log ud') }}</a>
+            <form method="POST" action="{{ route('metis.logout') }}">
+                @csrf
+                <button type="submit" class="px-3 py-1 text-xs text-zinc-500 hover:underline">{{ __('Log ud') }}</button>
+            </form>
         @endif
         @if($hasUserToken)
             <div class="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-blue-700">

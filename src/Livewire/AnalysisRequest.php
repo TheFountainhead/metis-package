@@ -8,6 +8,7 @@ use Livewire\Component;
 use TheFountainhead\Metis\Mail\AnalysisRequestNotification;
 use TheFountainhead\Metis\Models\MetisAnalysisRequest;
 use TheFountainhead\Metis\Models\MetisLead;
+use TheFountainhead\Metis\Services\DisposableEmail;
 use TheFountainhead\Metis\Services\FreeEmailDetector;
 
 /**
@@ -74,13 +75,19 @@ class AnalysisRequest extends Component
             return;
         }
 
+        if ((new DisposableEmail)->isDisposable($this->email)) {
+            $this->error = __('Brug en arbejdsmail, så vi kan se hvilket selskab bestillingen kommer fra.');
+
+            return;
+        }
+
         $key = 'metis-analysis-request:'.strtolower($this->email);
-        if (RateLimiter::tooManyAttempts($key, 5)) {
+        $ipKey = 'metis-analysis-request-ip:'.request()->ip();
+        if (RateLimiter::tooManyAttempts($key, 5) || RateLimiter::tooManyAttempts($ipKey, 20)) {
             $this->error = __('Du har sendt fem bestillinger i dag. Skriv til os direkte, hvis der er flere.');
 
             return;
         }
-        RateLimiter::hit($key, 86400);
 
         $request = MetisAnalysisRequest::create([
             'email' => strtolower(trim($this->email)),
@@ -93,8 +100,13 @@ class AnalysisRequest extends Component
             'ip' => request()->ip(),
         ]);
 
+        RateLimiter::hit($key, 86400);
+        RateLimiter::hit($ipKey, 86400);
+
+        // Bestillingen er gemt; en mailfejl må ikke koste kunden den (samme
+        // regel som EmailGate). Fejlen logges, og rækken kan findes i tabellen.
         if ($to = config('metis.admin.notify_email')) {
-            Mail::to($to)->send(new AnalysisRequestNotification($request));
+            rescue(fn () => Mail::to($to)->send(new AnalysisRequestNotification($request)), report: true);
         }
 
         $this->sent = true;

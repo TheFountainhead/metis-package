@@ -82,3 +82,15 @@ it('højst fem bestillinger pr. mail pr. dag', function () {
 
     expect(MetisAnalysisRequest::count())->toBe(5);
 });
+
+it('en mailfejl koster ikke kunden bestillingen: rækken gemmes og siden siger tak', function () {
+    Mail::shouldReceive('to')->andThrow(new RuntimeException('smtp nede'));
+
+    $c = Livewire::test(AnalysisRequest::class);
+    foreach (analysisFields() as $k => $v) {
+        $c->set($k, $v);
+    }
+    $c->call('submit')->assertSet('sent', true);
+
+    expect(MetisAnalysisRequest::count())->toBe(1);
+});

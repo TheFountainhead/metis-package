@@ -55,14 +55,9 @@ Route::middleware([NoIndex::class, RestorePilotSession::class])->group(function 
 
     // Pilot-login med kodeord (kontoen bærer registry-api-tokenet).
     Route::get('/log-ind', PilotLogin::class)->name('metis.login')->middleware('throttle:20,1');
-    Route::get('/log-ud', function () {
-        // Husk-mig-nøglen ugyldiggøres på serveren, så en kopi af cookien
-        // ikke kan logge ind igen efter log-ud.
-        if ($id = session('metis_pilot_account_id')) {
-            \TheFountainhead\Metis\Models\MetisPilotAccount::whereKey($id)->update(['remember_token' => null]);
-        }
-        session()->forget(['metis_user_token', 'metis_pilot_account_id']);
-        cookie()->queue(cookie()->forget(PilotLogin::REMEMBER_COOKIE));
+    // POST, ikke GET: en tilstandsændring skal ikke kunne udløses af et link.
+    Route::post('/log-ud', function () {
+        PilotLogin::logout();
 
         return redirect()->route('metis.home');
     })->name('metis.logout')->middleware('throttle:20,1');

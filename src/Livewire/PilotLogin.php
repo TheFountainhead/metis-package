@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Livewire\Component;
+use TheFountainhead\Metis\Models\MetisLead;
 use TheFountainhead\Metis\Models\MetisPilotAccount;
 
 /**
@@ -42,8 +43,10 @@ class PilotLogin extends Component
 
         $email = strtolower(trim($this->email));
         $key = 'metis-pilot-login:'.$email.'|'.request()->ip();
+        $ipKey = 'metis-pilot-login-ip:'.request()->ip();
 
-        if (RateLimiter::tooManyAttempts($key, 5)) {
+        // Pr. mail+ip mod gætteri på én konto; pr. ip mod spraying på tværs af mails.
+        if (RateLimiter::tooManyAttempts($key, 5) || RateLimiter::tooManyAttempts($ipKey, 20)) {
             $this->error = __('For mange forsøg. Prøv igen om et kvarter.');
 
             return;
@@ -54,6 +57,7 @@ class PilotLogin extends Component
         // Samme svar uanset om mailen findes: ingen liste over pilotkonti.
         if (! $account || ! Hash::check($this->password, $account->password)) {
             RateLimiter::hit($key, 900);
+            RateLimiter::hit($ipKey, 900);
             $this->error = __('Mail eller kodeord passer ikke.');
 
             return;
@@ -64,12 +68,17 @@ class PilotLogin extends Component
 
         $remember = Str::random(60);
         $account->forceFill(['remember_token' => Hash::make($remember), 'last_login_at' => now()])->save();
-        cookie()->queue(self::REMEMBER_COOKIE, $account->id.'|'.$remember, self::REMEMBER_MINUTES, null, null, true, true);
+        // secure = null følger session.secure, så husk-mig også virker på http lokalt.
+        cookie()->queue(self::REMEMBER_COOKIE, $account->id.'|'.$remember, self::REMEMBER_MINUTES, null, null, null, true);
 
         $this->redirect($this->destination());
     }
 
-    /** Hæfter kontoens token og mail på sessionen. Deles med RestorePilotSession. */
+    /**
+     * Hæfter kontoens token og mail på sessionen. Deles med RestorePilotSession.
+     * Gør det samme som EmailGate::verifyCode gør for en pilot: lead-rækken
+     * holdes ajour, så piloten ses i admin og forudfyldes i formularer.
+     */
     public static function attach(MetisPilotAccount $account): void
     {
         session()->regenerate();
@@ -78,6 +87,27 @@ class PilotLogin extends Component
             'metis_verified_email' => $account->email,
             'metis_pilot_account_id' => $account->id,
         ]);
+
+        MetisLead::updateOrCreate(
+            ['email' => $account->email],
+            ['name' => $account->name, 'domain' => strtolower(substr($account->email, strrpos($account->email, '@') + 1)), 'last_active_at' => now()],
+        );
+        cookie()->queue('metis_email', $account->email, self::REMEMBER_MINUTES);
+    }
+
+    /**
+     * Log ud: husk-mig-nøglen ugyldiggøres på serveren, cookien og HELE
+     * pilot-identiteten fjernes fra sessionen. Ellers ville næste person ved
+     * samme browser arve "verificeret"-status uden gate.
+     */
+    public static function logout(): void
+    {
+        if ($id = session('metis_pilot_account_id')) {
+            MetisPilotAccount::whereKey($id)->update(['remember_token' => null]);
+        }
+        session()->forget(['metis_user_token', 'metis_pilot_account_id', 'metis_verified_email']);
+        cookie()->queue(cookie()->forget(self::REMEMBER_COOKIE));
+        cookie()->queue(cookie()->forget('metis_email'));
     }
 
     private function destination(): string

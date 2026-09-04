@@ -169,10 +169,12 @@
             @elseif(! empty($response['data']['results'] ?? []))
                 <div class="flex items-center justify-between mb-3">
                     <span class="text-sm text-zinc-500">{{ count($response['data']['results']) }} {{ __('ejendomme på denne side') }}</span>
-                    <button wire:click="downloadCsv" type="button"
-                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
-                        ↓ {{ __('Eksportér CSV') }}
-                    </button>
+                    @if($this->hasUserToken())
+                        <button wire:click="downloadCsv" type="button"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
+                            ↓ {{ __('Eksportér CSV') }}
+                        </button>
+                    @endif
                 </div>
 
                 <div class="overflow-x-auto border rounded-lg">
