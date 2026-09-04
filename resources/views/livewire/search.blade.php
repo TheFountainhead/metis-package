@@ -61,7 +61,7 @@
                      ruten findes, men ingen ville finde den. --}}
                 <a href="{{ Route::has('metis.analytics') ? route('metis.analytics') : '/spoerg' }}"
                    class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
-                    Spørg om markedet
+                    Bestil en analyse
                 </a>
                 @if(! empty(session('metis_user_token')))
                     <a href="{{ Route::has('metis.alerts') ? route('metis.alerts') : '/alerts' }}"

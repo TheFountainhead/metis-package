@@ -293,28 +293,6 @@ class RegistryApi
         ]];
     }
 
-    /**
-     * Stil et aggregeret spoergsmaal om en POPULATION af ejendomme.
-     *
-     * 🔑 Et ANDET produkt end opslaget: soegning finder én ting man kender
-     * navnet paa; det her afgraenser en maengde og taeller. Frederiks idé 9/8.
-     *
-     * 🚨 SVARET BAERER SIN DAEKNING i `meta.daekning` — maalt paa prod 10/8:
-     * kun ~70 % af pantebrevene i et typisk postnummer har en kendt rentesats,
-     * og resten er `variabel`/`kontantlaan`, som HAR en rente vi ikke kender.
-     * Et praecist tal uden det forbehold kan foere til en forkert
-     * kreditbeslutning. UI'et SKAL vise `daekning`.
-     *
-     * @return array{data?: array<string,mixed>, meta?: array<string,mixed>, error?: mixed}
-     */
-    public function askAnalytics(string $spoergsmaal): array
-    {
-        // 🪤 `postEnvelope`, ikke `post`: svaret baerer sin daekning i `meta`,
-        // og `post()` kasserer alt uden for `data`. Praecis den fejlklasse
-        // `getEnvelope()` blev lavet for at undgaa paa laangiver-siden.
-        return $this->postEnvelope('/v1/analytics/ask', ['spoergsmaal' => $spoergsmaal])
-            ?? ['error' => 'no_response'];
-    }
 
     public function fetchPropertyByAddress(string $address): array
     {

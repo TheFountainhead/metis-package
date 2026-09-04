@@ -74,6 +74,8 @@ it('viser tom-tilstand når ingen ejendomme matcher', function () {
 });
 
 it('downloadCsv dispatcher download-event med signeret URL', function () {
+    // Eksporten bærer gældskolonner fra registry-api: kun pilotbrugere.
+    session(['metis_user_token' => '19|abc']);
     Http::fake([
         '*/v1/property-explore/export-link' => Http::response(['url' => 'https://api.test/property-explore.csv?sig=abc']),
         '*/v1/property-explore' => Http::response(fakeExploreResponse()), // set() trigger også search()
@@ -168,13 +170,30 @@ it('at skrive postnr rydder en tegnet polygon (+ beder kortet rydde)', function 
         ->assertDispatched('property-explore:clear-map');
 });
 
-it('viser tinglyst gæld + rente-kolonner i tabellen', function () {
+it('viser IKKE gæld eller rente i Udforsk: tværgående pant hører til bestilte analyser', function () {
     Http::fake(['*/v1/property-explore' => Http::response(fakeExploreResponse())]);
 
     Livewire::test(PropertyExplore::class)
         ->set('postalCodeFrom', '1260')
-        ->assertSee('Tinglyst gæld')
-        ->assertSee('Rente')
-        ->assertSee('12.000.000 kr.')
-        ->assertSee('2,50 %');
+        ->assertDontSee('Tinglyst gæld')
+        ->assertDontSee('12.000.000 kr.')
+        ->assertDontSee('Kun ejendomme med tinglyst gæld')
+        // Felterne må heller ikke ligge i Livewire-snapshottet (view-source).
+        ->assertDontSee('total_debt', false)
+        ->assertDontSee('weighted_rate', false)
+        ->assertDontSee('Eksportér CSV');
+
+    Http::assertSent(fn ($r) => ! array_key_exists('has_debt', $r->data()) || $r->data()['has_debt'] === null);
+});
+
+it('CSV-eksport i Udforsk er kun for pilotbrugere', function () {
+    Http::fake();
+
+    Livewire::test(PropertyExplore::class)
+        ->set('postalCodeFrom', '1260')
+        ->call('downloadCsv')
+        ->assertSet('error', 'CSV-eksport er kun for pilotbrugere.')
+        ->assertNotDispatched('property-explore:download');
+
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'export-link'));
 });
