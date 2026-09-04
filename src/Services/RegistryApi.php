@@ -525,6 +525,27 @@ class RegistryApi
         return ($response['data'] ?? []) + ['meta' => $response['meta'] ?? []];
     }
 
+    /**
+     * Långiverens cockpit: brugerens EGNE engagementer. Intet CVR sendes;
+     * hvilket selskab det er, afgør registry-api ud fra brugerens binding.
+     * Hele svaret returneres: `data` (engagementer) OG `meta` (forbehold,
+     * måletidspunkt, totaler), fordi et tal uden sit forbehold ikke må vises.
+     *
+     * @return array{data: array<int, array<string, mixed>>, meta: array<string, mixed>}|array{error: string, status?: int}|null
+     */
+    public function fetchEngagements(): ?array
+    {
+        return $this->getEnvelope('/v1/engagements');
+    }
+
+    /**
+     * @return array{data: array<string, mixed>, meta: array<string, mixed>}|array{error: string, status?: int}|null
+     */
+    public function fetchEngagement(string $key): ?array
+    {
+        return $this->getEnvelope('/v1/engagements/'.rawurlencode($key));
+    }
+
     public function getMapLayers(): array
     {
         return $this->get('/v1/map/layers') ?? [];
