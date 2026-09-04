@@ -1626,8 +1626,27 @@ class RegistryApi
      * Debt-search endpoint returns the response shape at the root (not under 'data'),
      * so we bypass the get()/post() helpers which extract that key.
      */
+    /**
+     * Gældssøgning på tværs af registret kræver pilot-token (tinglysningslovens
+     * § 50 c). Gaten ligger HER og ikke kun i DebtSearch-komponenten, fordi
+     * client() er det punkt alle kald deler: en ny kalder uden token skal
+     * ikke kunne trække pantebreve på den delte tenant-nøgle.
+     */
+    private function pilotRequiredError(): ?array
+    {
+        if (config('metis.gating.enabled', true) && empty(session('metis_user_token'))) {
+            return ['error' => 'pilot_required', 'status' => 403];
+        }
+
+        return null;
+    }
+
     public function debtSearch(array $filters, ?string $source = null): array
     {
+        if ($blocked = $this->pilotRequiredError()) {
+            return $blocked;
+        }
+
         $request = $this->client();
         if ($source !== null) {
             $request = $request->withHeaders(['X-Search-Source' => $source]);
@@ -1644,6 +1663,10 @@ class RegistryApi
 
     public function createDebtSearchCsvLink(array $filters): array
     {
+        if ($blocked = $this->pilotRequiredError()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()
                 ->post('/v1/debt-search/export-link', $filters)

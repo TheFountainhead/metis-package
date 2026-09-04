@@ -50,10 +50,13 @@
         <div class="mt-10 text-center">
             <p class="text-sm text-sand-300 mb-3">Eller spring direkte til:</p>
             <div class="flex flex-wrap justify-center gap-2">
-                <a href="{{ Route::has('metis.debt-search') ? route('metis.debt-search') : '/soeg' }}"
-                   class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
-                    Søg gæld
-                </a>
+                @if(! empty(session('metis_user_token')))
+                    {{-- Kun for pilotbrugere (tinglysningslovens § 50 c). --}}
+                    <a href="{{ Route::has('metis.debt-search') ? route('metis.debt-search') : '/soeg' }}"
+                       class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
+                        Søg gæld
+                    </a>
+                @endif
                 {{-- 🔑 Uden en indgang her ville "spørg om noget" være usynlig:
                      ruten findes, men ingen ville finde den. --}}
                 <a href="{{ Route::has('metis.analytics') ? route('metis.analytics') : '/spoerg' }}"

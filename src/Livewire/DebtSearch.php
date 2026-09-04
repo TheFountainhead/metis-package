@@ -2,7 +2,9 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\On;
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\HasPilotToken;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -21,6 +23,8 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class DebtSearch extends Component
 {
+    use HasPilotToken;
+
     public ?float $minRate = 8.0;
     public ?float $maxRate = 25.0;
     public string $ownerType = 'company';
@@ -75,15 +79,27 @@ class DebtSearch extends Component
      * Kun for pilotbrugere. Søgning på tværs af alle tinglyste pantebreve er
      * afgrænset til brugere vi kender og har aftale med (tinglysningslovens
      * § 50 c: tingbogsdata til kreditvurdering og belåning, ikke til at finde
-     * nye kunder). Gaten sidder i HVER offentlig metode, ikke kun i mount():
-     * `search`/`downloadCsv` kan kaldes direkte af klienten.
+     * nye kunder).
+     *
+     * Gaten sidder ved de to metoder der kalder API'et, `search()` og
+     * `downloadCsv()`, og igen i RegistryApi::debtSearch() selv. mount() og
+     * updated() når kun API'et gennem search(). Prædikatet bor i HasPilotToken.
      */
-    public function hasUserToken(): bool
+    public function mount(): void
     {
-        return ! empty(session('metis_user_token'));
+        if ($this->hasNonDefaultFilters()) {
+            $this->search();
+        }
     }
 
-    public function mount(): void
+    /**
+     * Når pilotbrugeren bekræfter sin arbejdsmail på selve siden, hæfter
+     * EmailGate tokenet på sessionen og sender denne event. Uden lytteren ville
+     * siden stå med "Kun for pilotbrugere" til næste genindlæsning (samme
+     * blindgyde som Lookup fandt 9/8).
+     */
+    #[On('email-verified')]
+    public function onEmailVerified(): void
     {
         if ($this->hasUserToken() && $this->hasNonDefaultFilters()) {
             $this->search();
@@ -92,10 +108,6 @@ class DebtSearch extends Component
 
     public function updated(string $name): void
     {
-        if (! $this->hasUserToken()) {
-            return;
-        }
-
         if (in_array($name, ['cursor', 'cursorHistory', 'response', 'csvUrl', 'loading', 'error', 'hasSearched', 'quotaExceeded'], true)) {
             return;
         }

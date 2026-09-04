@@ -7,7 +7,7 @@
             'label' => null,
             'items' => [
                 ['route' => 'metis.home', 'label' => __('Hjem'), 'icon' => 'home'],
-                ['route' => 'metis.debt-search', 'label' => __('Søg gæld'), 'icon' => 'search-debt'],
+                ['route' => 'metis.debt-search', 'label' => __('Søg gæld'), 'icon' => 'search-debt', 'requires_token' => true],
                 ['route' => 'metis.property-explore', 'label' => __('Udforsk'), 'icon' => 'map-pin'],
                 ['route' => 'metis.alerts', 'label' => __('Mine alerts'), 'icon' => 'bell', 'requires_token' => true],
             ],
@@ -52,7 +52,7 @@
                         @endphp
                         <li>
                             <a href="{{ $href }}"
-                               @if($isDisabled) onclick="alert('{{ __('Indtast din personal token først via Mine alerts.') }}'); return false;" @endif
+                               @if($isDisabled) onclick="alert('{{ __('Kun for pilotbrugere. Bekræft din arbejdsmail først.') }}'); return false;" @endif
                                class="flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors
                                       {{ $isCurrent
                                          ? 'bg-blue-100 text-blue-700 font-medium'
