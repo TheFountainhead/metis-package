@@ -1,8 +1,12 @@
 <?php
 
+
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\DebtSearch;
+
+// /soeg er kun for pilotbrugere: testene simulerer en pilot-session.
+beforeEach(fn () => session(['metis_user_token' => '19|abc']));
 
 // Søge-fakes bruger '*/v1/debt-search?*' og IKKE '*/v1/debt-search*'.
 // Det brede mønster matcher nemlig også '/v1/debt-search/export-link', og
@@ -329,4 +333,20 @@ it('shows CSV export as a coming-soon teaser, not an active button', function ()
         ->set('minRate', 8.0)
         ->assertSee('kommer snart')
         ->assertDontSeeHtml('wire:click="downloadCsv"');
+});
+
+it('🚨 uden pilot-token: ingen filtre, ingen resultater, og API-et kaldes ikke, heller ikke ved direkte kald', function () {
+    session()->forget('metis_user_token');
+    Http::fake();
+
+    Livewire::withQueryParams(['rate_min' => 9, 'rate_max' => 12])
+        ->test(DebtSearch::class)
+        ->assertSee('Kun for pilotbrugere')
+        ->assertDontSee('Filtre')
+        ->call('search')
+        ->call('downloadCsv')
+        ->set('minRate', 10.0)
+        ->assertSet('hasSearched', false);
+
+    Http::assertNothingSent();
 });

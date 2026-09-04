@@ -71,15 +71,31 @@ class DebtSearch extends Component
         'registeredTo' => ['as' => 'reg_to'],
     ];
 
+    /**
+     * Kun for pilotbrugere. Søgning på tværs af alle tinglyste pantebreve er
+     * afgrænset til brugere vi kender og har aftale med (tinglysningslovens
+     * § 50 c: tingbogsdata til kreditvurdering og belåning, ikke til at finde
+     * nye kunder). Gaten sidder i HVER offentlig metode, ikke kun i mount():
+     * `search`/`downloadCsv` kan kaldes direkte af klienten.
+     */
+    public function hasUserToken(): bool
+    {
+        return ! empty(session('metis_user_token'));
+    }
+
     public function mount(): void
     {
-        if ($this->hasNonDefaultFilters()) {
+        if ($this->hasUserToken() && $this->hasNonDefaultFilters()) {
             $this->search();
         }
     }
 
     public function updated(string $name): void
     {
+        if (! $this->hasUserToken()) {
+            return;
+        }
+
         if (in_array($name, ['cursor', 'cursorHistory', 'response', 'csvUrl', 'loading', 'error', 'hasSearched', 'quotaExceeded'], true)) {
             return;
         }
@@ -91,6 +107,10 @@ class DebtSearch extends Component
 
     public function search(): void
     {
+        if (! $this->hasUserToken()) {
+            return;
+        }
+
         $this->loading = true;
         $this->error = null;
         $this->quotaExceeded = false;
@@ -193,6 +213,10 @@ class DebtSearch extends Component
      */
     public function downloadCsv(): void
     {
+        if (! $this->hasUserToken()) {
+            return;
+        }
+
         $api = app(RegistryApi::class);
         $result = $api->createDebtSearchCsvLink($this->filters());
 
