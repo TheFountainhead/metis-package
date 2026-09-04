@@ -34,8 +34,6 @@ class PropertyExplore extends Component
     public ?int $valuationMax = null;
     public ?int $yearBuiltFrom = null;
     public ?int $yearBuiltTo = null;
-    public bool $hasDebt = false;
-
     /** id_asc|id_desc|year_asc|year_desc */
     public string $sort = 'id_asc';
 
@@ -189,7 +187,6 @@ class PropertyExplore extends Component
         $this->valuationMax = null;
         $this->yearBuiltFrom = null;
         $this->yearBuiltTo = null;
-        $this->hasDebt = false;
         $this->sort = 'id_asc';
         $this->cursor = null;
         $this->cursorHistory = [];
@@ -221,7 +218,6 @@ class PropertyExplore extends Component
             'valuation_max' => $this->valuationMax,
             'year_built_from' => $this->yearBuiltFrom,
             'year_built_to' => $this->yearBuiltTo,
-            'has_debt' => $this->hasDebt ? true : null,
             'sort' => $this->sort,
         ], fn ($v) => $v !== null && $v !== '');
 

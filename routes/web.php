@@ -4,17 +4,19 @@ use Illuminate\Support\Facades\Route;
 use TheFountainhead\Metis\Http\Controllers\AdminAuthController;
 use TheFountainhead\Metis\Http\Middleware\MetisAdminAuth;
 use TheFountainhead\Metis\Http\Middleware\NoIndex;
+use TheFountainhead\Metis\Http\Middleware\RestorePilotSession;
 use TheFountainhead\Metis\Livewire\Admin\Dashboard;
 use TheFountainhead\Metis\Livewire\Admin\Leads;
 use TheFountainhead\Metis\Livewire\Admin\Logs;
 use TheFountainhead\Metis\Livewire\AlertDetail;
-use TheFountainhead\Metis\Livewire\Analytics;
+use TheFountainhead\Metis\Livewire\AnalysisRequest;
 use TheFountainhead\Metis\Livewire\AlertsInbox;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 use TheFountainhead\Metis\Livewire\Engagement;
 use TheFountainhead\Metis\Livewire\Engagements;
 use TheFountainhead\Metis\Http\Controllers\GrantQuotaController;
 use TheFountainhead\Metis\Livewire\Lookup;
+use TheFountainhead\Metis\Livewire\PilotLogin;
 use TheFountainhead\Metis\Livewire\PropertyExplore;
 use TheFountainhead\Metis\Livewire\Search;
 
@@ -29,7 +31,10 @@ use TheFountainhead\Metis\Livewire\Search;
  * testsuite. Paa gruppen foelger beskyttelsen ruterne uanset hvem der
  * indlaeser filen.
  */
-Route::middleware(NoIndex::class)->group(function () {
+// RestorePilotSession sidder HER af samme grund som NoIndex: testsuiten
+// indlæser routes-filen direkte, så middleware på provideren ville ikke være
+// dækket af tests. Cookien genskaber en pilotsession, når værtens session er udløbet.
+Route::middleware([NoIndex::class, RestorePilotSession::class])->group(function () {
     Route::get('/', Search::class)->name('metis.home')->middleware('throttle:20,1');
     Route::get('/lookup/{type}/{query}', Lookup::class)->name('metis.lookup')->where('query', '.*')->middleware('throttle:20,1');
     Route::get('/soeg', DebtSearch::class)->name('metis.debt-search')->middleware('throttle:20,1');
@@ -43,11 +48,24 @@ Route::middleware(NoIndex::class)->group(function () {
     Route::get('/engagementer/{key}', Engagement::class)->name('metis.engagement')->middleware('throttle:20,1')->where('key', '[A-Za-z0-9+\-]+');
     Route::permanentRedirect('/laangiver', '/engagementer')->name('metis.lender-exposure');
 
-    // 🔑 "Spoerg om noget" — aggregerede spoergsmaal om en POPULATION.
-    // Soegefeltet finder én ting man kender navnet paa; det her afgraenser en
-    // maengde og taeller. Samme kvote-gate som opslagene: et analyse-svar kan
-    // afdaekke en hel population og maa ikke vaere vejen udenom betalingen.
-    Route::get('/spoerg', Analytics::class)->name('metis.analytics')->middleware('throttle:20,1');
+    // Bestil en analyse: spørgsmål på tværs af registret besvares som en opgave,
+    // vurderet på formål og prissat fra gang til gang (tinglysningslovens § 50 c).
+    // Adressen /spoerg og rutenavnet bevares, så gamle links lander rigtigt.
+    Route::get('/spoerg', AnalysisRequest::class)->name('metis.analytics')->middleware('throttle:20,1');
+
+    // Pilot-login med kodeord (kontoen bærer registry-api-tokenet).
+    Route::get('/log-ind', PilotLogin::class)->name('metis.login')->middleware('throttle:20,1');
+    Route::get('/log-ud', function () {
+        // Husk-mig-nøglen ugyldiggøres på serveren, så en kopi af cookien
+        // ikke kan logge ind igen efter log-ud.
+        if ($id = session('metis_pilot_account_id')) {
+            \TheFountainhead\Metis\Models\MetisPilotAccount::whereKey($id)->update(['remember_token' => null]);
+        }
+        session()->forget(['metis_user_token', 'metis_pilot_account_id']);
+        cookie()->queue(cookie()->forget(PilotLogin::REMEMBER_COOKIE));
+
+        return redirect()->route('metis.home');
+    })->name('metis.logout')->middleware('throttle:20,1');
     Route::get('/alerts', AlertsInbox::class)->name('metis.alerts')->middleware('throttle:60,1');
     Route::get('/alerts/{id}', AlertDetail::class)->name('metis.alert.detail')->middleware('throttle:60,1')->whereNumber('id');
 

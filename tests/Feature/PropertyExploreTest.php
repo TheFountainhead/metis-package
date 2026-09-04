@@ -168,13 +168,14 @@ it('at skrive postnr rydder en tegnet polygon (+ beder kortet rydde)', function 
         ->assertDispatched('property-explore:clear-map');
 });
 
-it('viser tinglyst gæld + rente-kolonner i tabellen', function () {
+it('viser IKKE gæld eller rente i Udforsk: tværgående pant hører til bestilte analyser', function () {
     Http::fake(['*/v1/property-explore' => Http::response(fakeExploreResponse())]);
 
     Livewire::test(PropertyExplore::class)
         ->set('postalCodeFrom', '1260')
-        ->assertSee('Tinglyst gæld')
-        ->assertSee('Rente')
-        ->assertSee('12.000.000 kr.')
-        ->assertSee('2,50 %');
+        ->assertDontSee('Tinglyst gæld')
+        ->assertDontSee('12.000.000 kr.')
+        ->assertDontSee('Kun ejendomme med tinglyst gæld');
+
+    Http::assertSent(fn ($r) => ! array_key_exists('has_debt', $r->data()) || $r->data()['has_debt'] === null);
 });

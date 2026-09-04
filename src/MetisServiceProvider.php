@@ -53,6 +53,7 @@ class MetisServiceProvider extends ServiceProvider
         }
 
         $this->commands([
+            \TheFountainhead\Metis\Console\Commands\PilotAccount::class,
             \TheFountainhead\Metis\Console\Commands\PruneMetisLookups::class,
             \TheFountainhead\Metis\Console\Commands\GrantLookupQuota::class,
             \TheFountainhead\Metis\Console\Commands\ReportAbandonedVerifications::class,
@@ -171,7 +172,8 @@ class MetisServiceProvider extends ServiceProvider
 
         // Core components
         Livewire::component('metis-search', \TheFountainhead\Metis\Livewire\Search::class);
-        Livewire::component('metis-analytics', \TheFountainhead\Metis\Livewire\Analytics::class);
+        Livewire::component('metis-analysis-request', \TheFountainhead\Metis\Livewire\AnalysisRequest::class);
+        Livewire::component('metis-pilot-login', \TheFountainhead\Metis\Livewire\PilotLogin::class);
         Livewire::component('metis-email-gate', \TheFountainhead\Metis\Livewire\EmailGate::class);
         Livewire::component('metis-index', \TheFountainhead\Metis\Livewire\Index::class);
         Livewire::component('metis-lookup', \TheFountainhead\Metis\Livewire\Lookup::class);
