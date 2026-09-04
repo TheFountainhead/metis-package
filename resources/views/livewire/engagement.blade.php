@@ -86,8 +86,7 @@
             <section class="mb-8" wire:key="property-{{ $property['id'] }}">
                 <div class="flex items-baseline justify-between mb-2">
                     <h2 class="text-base font-semibold">
-                        {{ $property['address'] ?? '—' }}
-                        @if($property['postal_code'] ?? null)<span class="text-zinc-500">, {{ $property['postal_code'] }} {{ $property['city'] ?? '' }}</span>@endif
+                        {{ $property['address'] ?? '—' }}@if($property['postal_code'] ?? null)<span class="text-zinc-500">, {{ $property['postal_code'] }} {{ $property['city'] ?? '' }}</span>@endif
                     </h2>
                     <div class="text-xs text-zinc-500">
                         BFE {{ $property['bfe'] ?? '—' }} · {{ __('Mit pant siden') }} {{ $dato($property['own_since'] ?? null) }}
@@ -114,24 +113,20 @@
                         <thead class="text-xs uppercase tracking-wide text-zinc-500 border-b">
                             <tr>
                                 <th class="px-3 py-2 text-left font-medium" title="{{ __('Prioritetsnummer fra Tinglysningsretten, lavere = bedre') }}">Pri</th>
+                                {{-- Status står FORREST, så den er synlig på mobil uden at rulle vandret. --}}
+                                <th class="px-3 py-2 text-left font-medium"></th>
                                 <th class="px-3 py-2 text-left font-medium">{{ __('Type') }}</th>
                                 <th class="px-3 py-2 text-left font-medium">{{ __('Kreditor') }}</th>
                                 <th class="px-3 py-2 text-left font-medium">{{ __('Underpanthaver') }}</th>
                                 <th class="px-3 py-2 text-right font-medium">{{ __('Hovedstol') }}</th>
                                 <th class="px-3 py-2 text-left font-medium">{{ __('Tinglyst') }}</th>
-                                <th class="px-3 py-2 text-left font-medium"></th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-zinc-100">
                             @foreach($property['ladder'] ?? [] as $row)
                                 <tr wire:key="lien-{{ $property['id'] }}-{{ $row['id'] }}" class="{{ $row['is_own'] ? 'bg-emerald-50/60 font-medium' : '' }}">
                                     <td class="px-3 py-2 tabular-nums">{{ $row['priority'] ?? '?' }}</td>
-                                    <td class="px-3 py-2 text-zinc-600">{{ $row['type'] ?? '—' }}</td>
-                                    <td class="px-3 py-2">{{ $row['creditor'] ?? '—' }}</td>
-                                    <td class="px-3 py-2 text-zinc-600">{{ implode(', ', $row['pledgees'] ?? []) ?: '—' }}</td>
-                                    <td class="px-3 py-2 text-right tabular-nums">{{ $kr($row['amount_kr'] ?? 0) }}</td>
-                                    <td class="px-3 py-2 text-zinc-600">{{ $dato($row['registered_at'] ?? null) }}</td>
-                                    <td class="px-3 py-2 text-xs">
+                                    <td class="px-3 py-2 text-xs whitespace-nowrap">
                                         @if($row['is_own'])
                                             <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">{{ __('Mig') }}</span>
                                         @elseif($row['is_ahead'])
@@ -142,6 +137,11 @@
                                             <span class="px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500">{{ __('Prioritet ukendt') }}</span>
                                         @endif
                                     </td>
+                                    <td class="px-3 py-2 text-zinc-600">{{ $row['type'] ?? '—' }}</td>
+                                    <td class="px-3 py-2">{{ $row['creditor'] ?? '—' }}</td>
+                                    <td class="px-3 py-2 text-zinc-600">{{ implode(', ', $row['pledgees'] ?? []) ?: '—' }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums">{{ $kr($row['amount_kr'] ?? 0) }}</td>
+                                    <td class="px-3 py-2 text-zinc-600">{{ $dato($row['registered_at'] ?? null) }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
