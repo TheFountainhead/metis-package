@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\HasPilotToken;
 use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\LegalName;
 use TheFountainhead\Metis\Services\RegistryApi;
@@ -21,6 +22,8 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class Engagements extends Component
 {
+    use HasPilotToken;
+
     public const CAVEAT_FALLBACK = 'Beløbet er hvad långiveren står anført for i Tinglysningen. '
         .'En panthaver kan optræde på vegne af andre kreditorer, så tallet er ikke nødvendigvis egen finansiering.';
 
@@ -41,11 +44,6 @@ class Engagements extends Component
         if ($this->hasUserToken()) {
             $this->load();
         }
-    }
-
-    public function hasUserToken(): bool
-    {
-        return ! empty(session('metis_user_token'));
     }
 
     public function load(): void

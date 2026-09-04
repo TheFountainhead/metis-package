@@ -4,6 +4,7 @@ namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\HasPilotToken;
 use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\RegistryApi;
 
@@ -18,6 +19,8 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class Engagement extends Component
 {
+    use HasPilotToken;
+
     #[Locked]
     public string $key = '';
 
@@ -38,11 +41,6 @@ class Engagement extends Component
         if ($this->hasUserToken()) {
             $this->load();
         }
-    }
-
-    public function hasUserToken(): bool
-    {
-        return ! empty(session('metis_user_token'));
     }
 
     public function load(): void

@@ -1,7 +1,11 @@
 <?php
+
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\DebtSearch;
+
+// /soeg er kun for pilotbrugere: testene simulerer en pilot-session.
+beforeEach(fn () => session(['metis_user_token' => '19|abc']));
 
 it('uses advisor terminology and formats large debt as mia', function () {
     Http::fake(['*/v1/debt-search?*' => Http::response([

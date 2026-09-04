@@ -15,6 +15,20 @@
         @endif
     </div>
 
+    @if(! $this->hasUserToken())
+        {{-- Søgning på tværs af registret er kun for pilotbrugere. Uden token
+             vises hverken filtre eller resultater, og API'et kaldes ikke. --}}
+        <div class="max-w-xl p-6 bg-white border rounded-xl">
+            <h2 class="text-lg font-semibold mb-2">{{ __('Kun for pilotbrugere') }}</h2>
+            <p class="text-sm text-zinc-600 mb-4">
+                {{ __('Søgning på tværs af tinglyste pantebreve er forbeholdt brugere, vi har en aftale med. Bekræft din arbejdsmail, hvis du er pilotbruger.') }}
+            </p>
+            <button type="button" wire:click="$dispatch('show-email-gate')"
+                    class="px-4 py-2 text-sm font-medium text-white bg-zinc-900 rounded-lg hover:bg-zinc-700 transition">
+                {{ __('Bekræft arbejdsmail') }}
+            </button>
+        </div>
+    @else
     <div class="grid grid-cols-1 lg:grid-cols-[20rem_1fr] gap-6">
         <aside class="space-y-4">
             <div class="p-4 border rounded-lg bg-white dark:bg-zinc-800 dark:border-zinc-700 space-y-4">
@@ -349,4 +363,5 @@
             @endif
         </main>
     </div>
+    @endif
 </div>
