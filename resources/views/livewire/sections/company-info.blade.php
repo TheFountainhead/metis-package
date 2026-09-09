@@ -131,7 +131,11 @@
                                     <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Net Equity') }}</th>
                                     <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Total Assets') }}</th>
                                     <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Liabilities') }}</th>
-                                    <th class="text-left py-2 font-medium text-zinc-500">{{ __('Result') }}</th>
+                                    <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Result') }}</th>
+                                    {{-- Udbytte = egenkapital der forlader selskabet; kreditrelevant for en
+                                         panthaver. Mangler feltet i regnskabet, står der "ikke oplyst" —
+                                         aldrig 0, for et rigtigt 0 findes også. --}}
+                                    <th class="text-left py-2 font-medium text-zinc-500">{{ __('Dividend') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -158,8 +162,23 @@
                                         <td class="py-2 pr-4">
                                             {{ $li !== null ? number_format($li, 0, ',', '.') : '—' }}
                                         </td>
-                                        <td class="py-2 {{ ($pl ?? 0) < 0 ? 'text-red-600' : ($pl !== null ? 'text-green-600' : '') }}">
+                                        <td class="py-2 pr-4 {{ ($pl ?? 0) < 0 ? 'text-red-600' : ($pl !== null ? 'text-green-600' : '') }}">
                                             {{ $pl !== null ? number_format($pl, 0, ',', '.') : '—' }}
+                                        </td>
+                                        @php
+                                            // null OG manglende nøgle = ikke oplyst; kun et tal (også 0) er oplyst.
+                                            $dv = $toTdkk($fin['proposed_dividend'] ?? null, $fin);
+                                            $xd = $toTdkk($fin['extraordinary_dividend'] ?? null, $fin);
+                                        @endphp
+                                        <td class="py-2">
+                                            @if($dv !== null)
+                                                {{ number_format($dv, 0, ',', '.') }}
+                                                @if($xd)
+                                                    <span class="text-xs text-zinc-500" title="{{ __('Ekstraordinært udbytte') }}">+{{ number_format($xd, 0, ',', '.') }}</span>
+                                                @endif
+                                            @else
+                                                <span class="text-zinc-400">{{ __('ikke oplyst') }}</span>
+                                            @endif
                                         </td>
                                     </tr>
                                 @endforeach

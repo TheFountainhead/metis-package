@@ -7,10 +7,11 @@
             'label' => null,
             'items' => [
                 ['route' => 'metis.home', 'label' => __('Hjem'), 'icon' => 'home'],
-                ['route' => 'metis.debt-search', 'label' => __('Søg gæld'), 'icon' => 'search-debt'],
+                ['route' => 'metis.debt-search', 'label' => __('Søg gæld'), 'icon' => 'search-debt', 'requires_token' => true],
                 ['route' => 'metis.property-explore', 'label' => __('Udforsk'), 'icon' => 'map-pin'],
                 ['route' => 'metis.company-segmentation', 'label' => __('Segmentering'), 'icon' => 'chart-bar'],
                 ['route' => 'metis.alerts', 'label' => __('Mine alerts'), 'icon' => 'bell', 'requires_token' => true],
+                ['route' => 'metis.engagements', 'label' => __('Mine engagementer'), 'icon' => 'bell', 'requires_token' => true],
             ],
         ],
     ];
@@ -53,7 +54,7 @@
                         @endphp
                         <li>
                             <a href="{{ $href }}"
-                               @if($isDisabled) onclick="alert('{{ __('Indtast din personal token først via Mine alerts.') }}'); return false;" @endif
+                               @if($isDisabled) onclick="alert('{{ __('Kun for pilotbrugere. Log ind, eller bekræft din arbejdsmail.') }}'); return false;" @endif
                                class="flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors
                                       {{ $isCurrent
                                          ? 'bg-blue-100 text-blue-700 font-medium'
@@ -94,6 +95,15 @@
     </nav>
 
     <div class="px-3 py-3 border-t border-zinc-200 text-xs text-zinc-400 space-y-1">
+        @if(! $hasUserToken && Route::has('metis.login'))
+            <a href="{{ route('metis.login') }}" class="block px-3 py-2 text-xs text-zinc-700 border rounded hover:bg-zinc-50">{{ __('Log ind (pilot)') }}</a>
+        @endif
+        @if(session('metis_pilot_account_id') && Route::has('metis.logout'))
+            <form method="POST" action="{{ route('metis.logout') }}">
+                @csrf
+                <button type="submit" class="px-3 py-1 text-xs text-zinc-500 hover:underline">{{ __('Log ud') }}</button>
+            </form>
+        @endif
         @if($hasUserToken)
             <div class="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-blue-700">
                 {{ __('Personal token aktiv') }}

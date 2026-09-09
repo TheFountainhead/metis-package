@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\HasPilotToken;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -21,6 +22,8 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class PropertyExplore extends Component
 {
+    use HasPilotToken;
+
     // Geo (at least one required)
     public ?string $postalCodeFrom = null;
     public ?string $postalCodeTo = null;
@@ -34,8 +37,6 @@ class PropertyExplore extends Component
     public ?int $valuationMax = null;
     public ?int $yearBuiltFrom = null;
     public ?int $yearBuiltTo = null;
-    public bool $hasDebt = false;
-
     /** id_asc|id_desc|year_asc|year_desc */
     public string $sort = 'id_asc';
 
@@ -121,6 +122,12 @@ class PropertyExplore extends Component
                 return;
             }
 
+            // Gæld hører til bestilte analyser: felterne fjernes FØR svaret
+            // gemmes, så de heller ikke ligger i Livewire-snapshottet.
+            foreach ($response['data']['results'] ?? [] as $i => $row) {
+                unset($response['data']['results'][$i]['total_debt'], $response['data']['results'][$i]['weighted_rate']);
+            }
+
             $this->response = $response;
         } catch (\Throwable $e) {
             $this->error = 'Søgetjenesten er midlertidigt utilgængelig';
@@ -162,6 +169,13 @@ class PropertyExplore extends Component
 
     public function downloadCsv(): void
     {
+        // Eksporten fra registry-api bærer stadig gældskolonner; kun pilotbrugere.
+        if (! $this->hasUserToken()) {
+            $this->error = 'CSV-eksport er kun for pilotbrugere.';
+
+            return;
+        }
+
         if (! $this->hasGeoFilter()) {
             $this->missingGeo = true;
 
@@ -189,7 +203,6 @@ class PropertyExplore extends Component
         $this->valuationMax = null;
         $this->yearBuiltFrom = null;
         $this->yearBuiltTo = null;
-        $this->hasDebt = false;
         $this->sort = 'id_asc';
         $this->cursor = null;
         $this->cursorHistory = [];
@@ -221,7 +234,6 @@ class PropertyExplore extends Component
             'valuation_max' => $this->valuationMax,
             'year_built_from' => $this->yearBuiltFrom,
             'year_built_to' => $this->yearBuiltTo,
-            'has_debt' => $this->hasDebt ? true : null,
             'sort' => $this->sort,
         ], fn ($v) => $v !== null && $v !== '');
 

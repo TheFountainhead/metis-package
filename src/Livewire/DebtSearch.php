@@ -2,7 +2,9 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\On;
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\HasPilotToken;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -21,6 +23,8 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class DebtSearch extends Component
 {
+    use HasPilotToken;
+
     public ?float $minRate = 8.0;
     public ?float $maxRate = 25.0;
     public string $ownerType = 'company';
@@ -71,9 +75,33 @@ class DebtSearch extends Component
         'registeredTo' => ['as' => 'reg_to'],
     ];
 
+    /**
+     * Kun for pilotbrugere. Søgning på tværs af alle tinglyste pantebreve er
+     * afgrænset til brugere vi kender og har aftale med (tinglysningslovens
+     * § 50 c: tingbogsdata til kreditvurdering og belåning, ikke til at finde
+     * nye kunder).
+     *
+     * Gaten sidder ved de to metoder der kalder API'et, `search()` og
+     * `downloadCsv()`, og igen i RegistryApi::debtSearch() selv. mount() og
+     * updated() når kun API'et gennem search(). Prædikatet bor i HasPilotToken.
+     */
     public function mount(): void
     {
         if ($this->hasNonDefaultFilters()) {
+            $this->search();
+        }
+    }
+
+    /**
+     * Når pilotbrugeren bekræfter sin arbejdsmail på selve siden, hæfter
+     * EmailGate tokenet på sessionen og sender denne event. Uden lytteren ville
+     * siden stå med "Kun for pilotbrugere" til næste genindlæsning (samme
+     * blindgyde som Lookup fandt 9/8).
+     */
+    #[On('email-verified')]
+    public function onEmailVerified(): void
+    {
+        if ($this->hasUserToken() && $this->hasNonDefaultFilters()) {
             $this->search();
         }
     }
@@ -91,6 +119,10 @@ class DebtSearch extends Component
 
     public function search(): void
     {
+        if (! $this->hasUserToken()) {
+            return;
+        }
+
         $this->loading = true;
         $this->error = null;
         $this->quotaExceeded = false;
@@ -193,6 +225,10 @@ class DebtSearch extends Component
      */
     public function downloadCsv(): void
     {
+        if (! $this->hasUserToken()) {
+            return;
+        }
+
         $api = app(RegistryApi::class);
         $result = $api->createDebtSearchCsvLink($this->filters());
 

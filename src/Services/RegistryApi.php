@@ -293,28 +293,6 @@ class RegistryApi
         ]];
     }
 
-    /**
-     * Stil et aggregeret spoergsmaal om en POPULATION af ejendomme.
-     *
-     * 🔑 Et ANDET produkt end opslaget: soegning finder én ting man kender
-     * navnet paa; det her afgraenser en maengde og taeller. Frederiks idé 9/8.
-     *
-     * 🚨 SVARET BAERER SIN DAEKNING i `meta.daekning` — maalt paa prod 10/8:
-     * kun ~70 % af pantebrevene i et typisk postnummer har en kendt rentesats,
-     * og resten er `variabel`/`kontantlaan`, som HAR en rente vi ikke kender.
-     * Et praecist tal uden det forbehold kan foere til en forkert
-     * kreditbeslutning. UI'et SKAL vise `daekning`.
-     *
-     * @return array{data?: array<string,mixed>, meta?: array<string,mixed>, error?: mixed}
-     */
-    public function askAnalytics(string $spoergsmaal): array
-    {
-        // 🪤 `postEnvelope`, ikke `post`: svaret baerer sin daekning i `meta`,
-        // og `post()` kasserer alt uden for `data`. Praecis den fejlklasse
-        // `getEnvelope()` blev lavet for at undgaa paa laangiver-siden.
-        return $this->postEnvelope('/v1/analytics/ask', ['spoergsmaal' => $spoergsmaal])
-            ?? ['error' => 'no_response'];
-    }
 
     /**
      * Aggregeret segmentering af selskabspopulationen: taellinger grupperet
@@ -568,6 +546,27 @@ class RegistryApi
         }
 
         return ($response['data'] ?? []) + ['meta' => $response['meta'] ?? []];
+    }
+
+    /**
+     * Långiverens cockpit: brugerens EGNE engagementer. Intet CVR sendes;
+     * hvilket selskab det er, afgør registry-api ud fra brugerens binding.
+     * Hele svaret returneres: `data` (engagementer) OG `meta` (forbehold,
+     * måletidspunkt, totaler), fordi et tal uden sit forbehold ikke må vises.
+     *
+     * @return array{data: array<int, array<string, mixed>>, meta: array<string, mixed>}|array{error: string, status?: int}|null
+     */
+    public function fetchEngagements(): ?array
+    {
+        return $this->getEnvelope('/v1/engagements');
+    }
+
+    /**
+     * @return array{data: array<string, mixed>, meta: array<string, mixed>}|array{error: string, status?: int}|null
+     */
+    public function fetchEngagement(string $key): ?array
+    {
+        return $this->getEnvelope('/v1/engagements/'.rawurlencode($key));
     }
 
     public function getMapLayers(): array
@@ -1650,8 +1649,27 @@ class RegistryApi
      * Debt-search endpoint returns the response shape at the root (not under 'data'),
      * so we bypass the get()/post() helpers which extract that key.
      */
+    /**
+     * Gældssøgning på tværs af registret kræver pilot-token (tinglysningslovens
+     * § 50 c). Gaten ligger HER og ikke kun i DebtSearch-komponenten, fordi
+     * client() er det punkt alle kald deler: en ny kalder uden token skal
+     * ikke kunne trække pantebreve på den delte tenant-nøgle.
+     */
+    private function pilotRequiredError(): ?array
+    {
+        if (config('metis.gating.enabled', true) && empty(session('metis_user_token'))) {
+            return ['error' => 'pilot_required', 'status' => 403];
+        }
+
+        return null;
+    }
+
     public function debtSearch(array $filters, ?string $source = null): array
     {
+        if ($blocked = $this->pilotRequiredError()) {
+            return $blocked;
+        }
+
         $request = $this->client();
         if ($source !== null) {
             $request = $request->withHeaders(['X-Search-Source' => $source]);
@@ -1668,6 +1686,10 @@ class RegistryApi
 
     public function createDebtSearchCsvLink(array $filters): array
     {
+        if ($blocked = $this->pilotRequiredError()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()
                 ->post('/v1/debt-search/export-link', $filters)
