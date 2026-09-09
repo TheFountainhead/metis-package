@@ -11,6 +11,7 @@ use TheFountainhead\Metis\Livewire\Admin\Logs;
 use TheFountainhead\Metis\Livewire\AlertDetail;
 use TheFountainhead\Metis\Livewire\AnalysisRequest;
 use TheFountainhead\Metis\Livewire\AlertsInbox;
+use TheFountainhead\Metis\Livewire\CompanySegmentation;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 use TheFountainhead\Metis\Livewire\Engagement;
 use TheFountainhead\Metis\Livewire\Engagements;
@@ -47,6 +48,11 @@ Route::middleware([NoIndex::class, RestorePilotSession::class])->group(function 
     Route::get('/engagementer', Engagements::class)->name('metis.engagements')->middleware('throttle:20,1');
     Route::get('/engagementer/{key}', Engagement::class)->name('metis.engagement')->middleware('throttle:20,1')->where('key', '[A-Za-z0-9+\-]+');
     Route::permanentRedirect('/laangiver', '/engagementer')->name('metis.lender-exposure');
+
+    // 🔑 Segmentering af selskabspopulationen: taellinger fordelt paa kommune,
+    // branche eller selskabsform. TAELLINGER, ikke raekker — derfor ikke under
+    // raekke-kvoten, men throttlet som de oevrige soegninger.
+    Route::get('/segmentering', CompanySegmentation::class)->name('metis.company-segmentation')->middleware('throttle:20,1');
 
     // Bestil en analyse: spørgsmål på tværs af registret besvares som en opgave,
     // vurderet på formål og prissat fra gang til gang (tinglysningslovens § 50 c).

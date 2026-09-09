@@ -21,6 +21,7 @@ Route::prefix('metis')->middleware(['auth', NoIndex::class])->group(function () 
     Route::get('/', Index::class)->name('metis.index');
     Route::get('/soeg', DebtSearch::class)->name('metis.debt-search');
     Route::get('/udforsk', PropertyExplore::class)->name('metis.property-explore');
+    Route::get('/segmentering', \TheFountainhead\Metis\Livewire\CompanySegmentation::class)->name('metis.company-segmentation');
     Route::get('/alerts', AlertsInbox::class)->name('metis.alerts');
     Route::get('/alerts/{id}', AlertDetail::class)->name('metis.alert.detail')->whereNumber('id');
     Route::get('/{type}/{query}', Lookup::class)->name('metis.lookup')->where('query', '.*');
