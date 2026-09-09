@@ -10,6 +10,7 @@ use TheFountainhead\Metis\Livewire\Admin\Logs;
 use TheFountainhead\Metis\Livewire\AlertDetail;
 use TheFountainhead\Metis\Livewire\Analytics;
 use TheFountainhead\Metis\Livewire\AlertsInbox;
+use TheFountainhead\Metis\Livewire\CompanySegmentation;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 use TheFountainhead\Metis\Livewire\LenderExposure;
 use TheFountainhead\Metis\Http\Controllers\GrantQuotaController;
@@ -34,6 +35,11 @@ Route::middleware(NoIndex::class)->group(function () {
     Route::get('/soeg', DebtSearch::class)->name('metis.debt-search')->middleware('throttle:20,1');
     Route::get('/udforsk', PropertyExplore::class)->name('metis.property-explore')->middleware('throttle:20,1');
     Route::get('/laangiver', LenderExposure::class)->name('metis.lender-exposure')->middleware('throttle:20,1');
+
+    // 🔑 Segmentering af selskabspopulationen: taellinger fordelt paa kommune,
+    // branche eller selskabsform. TAELLINGER, ikke raekker — derfor ikke under
+    // raekke-kvoten, men throttlet som de oevrige soegninger.
+    Route::get('/segmentering', CompanySegmentation::class)->name('metis.company-segmentation')->middleware('throttle:20,1');
 
     // 🔑 "Spoerg om noget" — aggregerede spoergsmaal om en POPULATION.
     // Soegefeltet finder én ting man kender navnet paa; det her afgraenser en

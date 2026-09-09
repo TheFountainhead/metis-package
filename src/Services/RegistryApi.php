@@ -316,6 +316,51 @@ class RegistryApi
             ?? ['error' => 'no_response'];
     }
 
+    /**
+     * Aggregeret segmentering af selskabspopulationen: taellinger grupperet
+     * paa kommune, branche eller selskabsform, med valgfri filtre.
+     *
+     * 🔑 TAELLINGER, IKKE RAEKKER. Derfor ikke under raekke-kvoten — men svaret
+     * baerer sin `meta.total`, saa en gruppeliste aldrig laeses som om den var
+     * hele populationen. `limit` afkorter listen; totalen goer det ikke.
+     *
+     * 🪤 `postEnvelope`, ikke `post`: `meta` baerer `total` og de anvendte
+     * filtre, og `post()` kasserer alt uden for `data`. Uden `total` kunne en
+     * afkortet top-100 laeses som facit.
+     *
+     * @param  array<string, mixed>  $filtre
+     * @return array{data?: array<int,mixed>, meta?: array<string,mixed>, error?: mixed}
+     */
+    public function segmentCompanies(string $groupBy, array $filtre = [], int $limit = 100): array
+    {
+        return $this->postEnvelope('/v1/company-segmentation', [
+            'group_by' => $groupBy,
+            'limit' => $limit,
+        ] + $filtre) ?? ['error' => 'no_response'];
+    }
+
+    /**
+     * Hent et KORTLIVET, signeret download-link til segmenterings-CSV'en.
+     *
+     * 🚨 CSV-ruten er auth-fri og beskyttet af signaturen ALENE. Derfor hentes
+     * linket her paa serveren med vores API-noegle, og browseren faar kun det
+     * signerede resultat. Et direkte link fra klienten ville enten give 401
+     * eller kraeve at noeglen laa i HTML'en.
+     *
+     * 🪤 Linket lever 60 sekunder. Det skal derfor hentes NAAR brugeren
+     * klikker, ikke naar siden renderes — ellers er det udloebet.
+     *
+     * @param  array<string, mixed>  $filtre
+     */
+    public function segmentationExportLink(string $groupBy, array $filtre = []): ?string
+    {
+        $svar = $this->postEnvelope('/v1/company-segmentation/export-link', [
+            'group_by' => $groupBy,
+        ] + $filtre);
+
+        return $svar['url'] ?? null;
+    }
+
     public function fetchPropertyByAddress(string $address): array
     {
         $parsed = $this->parseAddress($address);
