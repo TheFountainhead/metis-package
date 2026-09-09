@@ -4,6 +4,7 @@ namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -27,7 +28,7 @@ class CompanySegmentation extends Component
 {
     /** Gruppering: municipality_code | industry_code | company_type */
     #[Url(as: 'grupper', except: 'municipality_code')]
-    public string $groupBy = 'municipality_code';
+    public $groupBy = 'municipality_code';
 
     #[Url(as: 'ivaerksaetter', except: false)]
     public bool $ivaerksaetter = false;
@@ -36,22 +37,26 @@ class CompanySegmentation extends Component
     public bool $excludeHolding = false;
 
     #[Url(as: 'branche', except: '')]
-    public string $industryPrefix = '';
+    public $industryPrefix = '';
 
     #[Url(as: 'kommune', except: '')]
-    public string $municipalityCode = '';
+    public $municipalityCode = '';
 
     #[Url(as: 'stiftet_fra', except: '')]
-    public string $foundedFrom = '';
+    public $foundedFrom = '';
 
     #[Url(as: 'stiftet_til', except: '')]
-    public string $foundedTo = '';
+    public $foundedTo = '';
 
-    public ?int $fteMin = null;
+    /**
+     * 🪤 OGSAA `#[Url]`. Uden det ville et delt link vise en BREDERE population
+     * end den afsenderen saa, uden at modtageren kunne se det.
+     */
+    #[Url(as: 'aarsvaerk_min', except: null)]
+    public $fteMin = null;
 
-    public ?int $fteMax = null;
-
-    public bool $indlaeser = false;
+    #[Url(as: 'aarsvaerk_maks', except: null)]
+    public $fteMax = null;
 
     /** @var array<int, array{key: string, label: ?string, count: int}> */
     public array $grupper = [];
@@ -116,6 +121,9 @@ class CompanySegmentation extends Component
         'other' => 'Øvrige selskabsformer',
     ];
 
+    /** 🔑 Samme loft i visning og eksport — ellers viser CSV'en en anden population. */
+    public const GRUPPE_LOFT = 100;
+
     public const GRUPPERINGER = [
         'municipality_code' => 'Kommune',
         'industry_code' => 'Branche (DB07)',
@@ -124,10 +132,44 @@ class CompanySegmentation extends Component
 
     public function mount(): void
     {
+        $this->normaliser();
         $this->segmentér();
     }
 
-    public function opdateretGroupBy(): void
+    /**
+     * 🚨 `#[Url]`-properties er BRUGERINPUT fra query-strengen og kan vaere hvad
+     * som helst — ogsaa et array (`?kommune[]=a&kommune[]=b`). Med typede
+     * properties gav det en TypeError, altsaa en 500-side, foer en linje af
+     * vores egen logik naaede at koere. Derfor utypede properties + ét sted
+     * hvor alt tvinges til den form resten af klassen regner med.
+     */
+    private function normaliser(): void
+    {
+        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'foundedFrom', 'foundedTo'] as $felt) {
+            $this->{$felt} = is_scalar($this->{$felt}) ? (string) $this->{$felt} : '';
+        }
+
+        foreach (['fteMin', 'fteMax'] as $felt) {
+            $this->{$felt} = is_numeric($this->{$felt}) ? (int) $this->{$felt} : null;
+        }
+
+        if (! array_key_exists($this->groupBy, self::GRUPPERINGER)) {
+            $this->groupBy = 'municipality_code';
+        }
+    }
+
+    /** Livewire-hook: kaldes automatisk naar $groupBy aendres. */
+    public function updatedGroupBy(): void
+    {
+        $this->segmentér();
+    }
+
+    public function updatedIvaerksaetter(): void
+    {
+        $this->segmentér();
+    }
+
+    public function updatedExcludeHolding(): void
     {
         $this->segmentér();
     }
@@ -143,28 +185,56 @@ class CompanySegmentation extends Component
 
     public function segmentér(): void
     {
-        $this->indlaeser = true;
         $this->fejl = null;
 
-        $svar = app(RegistryApi::class)->segmentCompanies(
-            $this->groupBy,
-            $this->filtre(),
-            100,
-        );
+        $this->normaliser();
 
-        $this->indlaeser = false;
-        $this->harSoegt = true;
-
-        if (isset($svar['error'])) {
+        try {
+            $svar = app(RegistryApi::class)->segmentCompanies(
+                $this->groupBy,
+                $this->filtre(),
+                self::GRUPPE_LOFT,
+            );
+        } catch (QuotaExceededException) {
+            // 🚨 `client()` kaster FOER HTTP-kaldet naar den frie kvote er brugt,
+            // og `postEnvelope()` fanger kun transportfejl. Uden dette ville
+            // enhver besoegende med opbrugt kvote faa en 500 paa siden, fordi
+            // `mount()` kalder herind ved hver page load.
+            $this->harSoegt = true;
             $this->grupper = [];
             $this->total = null;
-            $this->fejl = 'Segmenteringen kunne ikke hentes. Prøv igen, eller skriv til support@frankston.io.';
+            $this->fejl = 'Du har brugt dine gratis opslag. Skriv til support@frankston.io for adgang.';
 
             return;
         }
 
-        $this->grupper = $svar['data'] ?? [];
-        $this->total = $svar['meta']['total'] ?? null;
+        $this->harSoegt = true;
+
+        // 🚨 ET SVAR VI IKKE FORSTAAR ER IKKE "DER ER INGEN DATA".
+        // `postEnvelope()` returnerer 422-kroppen RAAT (uden `error`-noegle),
+        // saa en ugyldig dato eller branchekode ville ellers falde igennem til
+        // succes-grenen og blive vist som "ingen selskaber matcher" — en
+        // paastand om populationen, hvor sandheden er at inputtet blev afvist.
+        // Derfor kraeves `meta.total`: kun et svar der BAERER sin total er et
+        // gyldigt resultat.
+        if (isset($svar['error']) || ! isset($svar['meta']['total'])) {
+            $this->grupper = [];
+            $this->total = null;
+            $this->fejl = match (true) {
+                ($svar['error'] ?? null) === 'quota_exceeded' => 'Du har brugt dine gratis opslag. Skriv til support@frankston.io for adgang.',
+                isset($svar['message']) => (string) $svar['message'],
+                default => 'Segmenteringen kunne ikke hentes. Prøv igen, eller skriv til support@frankston.io.',
+            };
+
+            return;
+        }
+
+        // 🪤 `data` er IKKE garanteret et array. Uden dette tjek giver et
+        // malformet 200-svar en TypeError inde i render — altsaa en 500 —
+        // i stedet for en fejlbesked.
+        $data = $svar['data'] ?? [];
+        $this->grupper = is_array($data) ? $data : [];
+        $this->total = (int) $svar['meta']['total'];
     }
 
     /** @return array<string, mixed> */
@@ -215,9 +285,23 @@ class CompanySegmentation extends Component
      */
     public function hentCsv()
     {
-        $url = app(RegistryApi::class)->segmentationExportLink($this->groupBy, $this->filtre());
+        // 🪤 Eksportér ALDRIG filtre der ikke er vist. Har den seneste
+        // segmentering fejlet, ville CSV'en beskrive en population brugeren
+        // aldrig har set paa skaermen.
+        if ($this->total === null) {
+            $this->fejl = 'Hent et resultat frem først.';
 
-        if ($url === null) {
+            return null;
+        }
+
+        $url = app(RegistryApi::class)->segmentationExportLink($this->groupBy, $this->filtre(), self::GRUPPE_LOFT);
+
+        // 🚨 REDIRECT ALDRIG BLINDT TIL EN URL FRA ET SVAR. Kompromitteres
+        // eller MITM'es registry-api'et, ville brugeren blive sendt hvor som
+        // helst hen. Vi redirecter kun til vores egen vaert.
+        $base = rtrim((string) config('metis.registry_api.url'), '/');
+
+        if ($url === null || $base === '' || ! str_starts_with($url, $base.'/')) {
             $this->fejl = 'Udtrækket kunne ikke dannes. Prøv igen, eller skriv til support@frankston.io.';
 
             return null;
@@ -228,7 +312,19 @@ class CompanySegmentation extends Component
 
     public function render()
     {
-        return view('metis::livewire.company-segmentation')
+        $view = view('metis::livewire.company-segmentation')
             ->title('Selskabssegmentering — Metis');
+
+        // 🚨 UDEN DETTE ER SIDEN 500 i standalone. Livewire falder tilbage paa
+        // vaerts-appens default-layout (`components.layouts.app`), som ikke
+        // findes i denne pakke. Alle 11 andre sidekomponenter goer det samme.
+        //
+        // 🪤 `Livewire::test()` renderer UDEN layout og kan derfor ALDRIG blive
+        // roed af denne fejl. Det er derfor der ogsaa er en rute-smoketest.
+        if (config('metis.mode') === 'standalone') {
+            return $view->layout('metis::layouts.standalone');
+        }
+
+        return $view;
     }
 }

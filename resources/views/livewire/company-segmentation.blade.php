@@ -16,7 +16,7 @@
         {{-- Filtre --}}
         <aside class="bg-sand-50 border border-sand-200 rounded-xl p-4 h-fit">
             <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3">{{ __('Fordel på') }}</h2>
-            <select wire:model.live="groupBy" wire:change="segmentér"
+            <select wire:model.live="groupBy"
                     class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-5"
                     aria-label="{{ __('Gruppering') }}">
                 @foreach($this::GRUPPERINGER as $vaerdi => $navn)
@@ -27,7 +27,7 @@
             <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3">{{ __('Afgræns') }}</h2>
 
             <label class="flex items-start gap-2 mb-3 cursor-pointer">
-                <input type="checkbox" wire:model.live="ivaerksaetter" wire:change="segmentér"
+                <input type="checkbox" wire:model.live="ivaerksaetter"
                        class="mt-0.5 rounded border-sand-300 text-warm-500 focus:ring-warm-500/30">
                 <span class="text-sm text-ink-800">
                     {{ __('Kun iværksættervirksomheder') }}
@@ -36,7 +36,7 @@
             </label>
 
             <label class="flex items-start gap-2 mb-4 cursor-pointer">
-                <input type="checkbox" wire:model.live="excludeHolding" wire:change="segmentér"
+                <input type="checkbox" wire:model.live="excludeHolding"
                        class="mt-0.5 rounded border-sand-300 text-warm-500 focus:ring-warm-500/30">
                 <span class="text-sm text-ink-800">{{ __('Uden holdingselskaber') }}</span>
             </label>

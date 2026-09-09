@@ -330,10 +330,13 @@ class RegistryApi
      *
      * @param  array<string, mixed>  $filtre
      */
-    public function segmentationExportLink(string $groupBy, array $filtre = []): ?string
+    public function segmentationExportLink(string $groupBy, array $filtre = [], int $limit = 100): ?string
     {
+        // 🪤 SAMME `limit` som visningen. Uden det ville CSV'en kunne indeholde
+        // et andet antal grupper end den tabel brugeren sad og kiggede paa.
         $svar = $this->postEnvelope('/v1/company-segmentation/export-link', [
             'group_by' => $groupBy,
+            'limit' => $limit,
         ] + $filtre);
 
         return $svar['url'] ?? null;

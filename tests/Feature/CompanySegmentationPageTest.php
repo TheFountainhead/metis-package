@@ -4,6 +4,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\CompanySegmentation;
+use TheFountainhead\Metis\Services\QuotaExceededException;
 
 uses(RefreshDatabase::class);
 
@@ -134,5 +135,122 @@ it('siger fra naar udtraekket ikke kan dannes', function () {
 
     Livewire::test(CompanySegmentation::class)
         ->call('hentCsv')
+        ->assertSee('kunne ikke dannes');
+});
+
+it('🚨 viser en besked i stedet for at crashe naar kvoten er opbrugt', function () {
+    // `client()` kaster FOER HTTP-kaldet, og `mount()` kalder segmentér() ved
+    // hver page load. Uden en catch her ville siden give 500 for enhver
+    // besoegende med opbrugt kvote.
+    config()->set('metis.gating.enabled', true);
+    config()->set('metis.gating.free_lookups', 0);
+    Http::fake(['*' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
+
+    $this->mock(\TheFountainhead\Metis\Services\RegistryApi::class, function ($m) {
+        $m->shouldReceive('segmentCompanies')->andThrow(new QuotaExceededException);
+    });
+
+    Livewire::test(CompanySegmentation::class)
+        ->assertOk()
+        ->assertSee('gratis opslag');
+});
+
+it('🚨 kalder et 422 for en AFVIST forespoergsel — ikke "ingen selskaber"', function () {
+    // postEnvelope() returnerer 422-kroppen RAAT uden `error`-noegle. Falder
+    // den igennem til succes-grenen, faar brugeren at vide at populationen er
+    // tom, hvor sandheden er at inputtet blev afvist.
+    Http::fake([
+        '*/company-segmentation' => Http::response([
+            'message' => 'Ugyldig stiftelsesdato.',
+            'errors' => ['founded_from' => ['Ugyldig dato']],
+        ], 422),
+    ]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->assertSee('Ugyldig stiftelsesdato')
+        ->assertDontSee('Ingen selskaber matcher');
+});
+
+it('🚨 afviser et svar UDEN meta.total — 0 over en fyldt tabel er selvmodsigende', function () {
+    Http::fake([
+        '*/company-segmentation' => Http::response([
+            'data' => [['key' => '101', 'label' => null, 'count' => 22724]],
+        ]),
+    ]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->assertSee('kunne ikke hentes')
+        ->assertDontSee('22.724');
+});
+
+it('🪤 falder tilbage til standard-gruppering ved ugyldig ?grupper i URL-en', function () {
+    fakeSegmentering([], 0);
+
+    $c = Livewire::test(CompanySegmentation::class)
+        ->set('groupBy', 'noget-opdigtet')
+        ->call('segmentér');
+
+    expect($c->instance()->groupBy)->toBe('municipality_code');
+});
+
+it('eksporterer ikke foer der ER et resultat paa skaermen', function () {
+    Http::fake(['*/company-segmentation' => Http::response([], 500)]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->call('hentCsv')
+        ->assertSee('Hent et resultat frem');
+});
+
+it('🪤 eksporterer med SAMME gruppe-loft som visningen', function () {
+    Http::fake([
+        '*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 5]]),
+        '*/export-link' => Http::response(['url' => 'https://registry.test/csv?signature=abc']),
+    ]);
+
+    Livewire::test(CompanySegmentation::class)->call('hentCsv');
+
+    Http::assertSent(fn ($r) => ! str_contains($r->url(), 'export-link')
+        || ($r->data()['limit'] ?? null) === CompanySegmentation::GRUPPE_LOFT);
+});
+
+/**
+ * 🚨 RUTE-SMOKETEST. Alle de øvrige tests bruger `Livewire::test()`, som
+ * renderer komponenten UDEN layout og derfor aldrig kan blive rød af et
+ * manglende layout-kald. Målt: siden gav 500 i standalone, mens 16 grønne
+ * komponent-tests sagde god for den. Se leverancen i FORBRUGSLAGET.
+ */
+it('🚨 svarer 200 paa selve ruten — ikke kun i komponent-testen', function () {
+    config()->set('metis.mode', 'standalone');
+    fakeSegmentering([], 0);
+
+    $this->get('/segmentering')->assertOk();
+});
+
+it('🪤 crasher ikke paa et array i query-strengen', function () {
+    // ?kommune[]=a&kommune[]=b gav TypeError paa en typed property = 500,
+    // før en linje af vores egen logik nåede at køre.
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class, ['municipalityCode' => ['a', 'b']])
+        ->assertOk();
+});
+
+it('🪤 crasher ikke paa et malformet 200-svar hvor data ikke er en liste', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => 'ups', 'meta' => ['total' => 3]])]);
+
+    Livewire::test(CompanySegmentation::class)->assertOk();
+});
+
+it('🚨 redirecter ALDRIG til en fremmed vaert', function () {
+    // Kompromitteres registry-api'et, maa et svar ikke kunne sende brugeren
+    // hvor som helst hen.
+    Http::fake([
+        '*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 5]]),
+        '*/export-link' => Http::response(['url' => 'https://ondsindet.example.com/pwn']),
+    ]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->call('hentCsv')
+        ->assertNoRedirect()
         ->assertSee('kunne ikke dannes');
 });
