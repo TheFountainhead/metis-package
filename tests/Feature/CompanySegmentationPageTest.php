@@ -254,3 +254,19 @@ it('🚨 redirecter ALDRIG til en fremmed vaert', function () {
         ->assertNoRedirect()
         ->assertSee('kunne ikke dannes');
 });
+
+it('🪤 laegger ALDRIG to w-full felter i samme flex-raekke', function () {
+    // `w-full` er 100 % af foraelderen. To af dem side om side kraever 200 %
+    // plus gap. Flex ville normalt krympe dem, men `type="date"` har en
+    // iboende min-bredde fra datovaelgeren og kan ikke krympe under den — saa
+    // det hoejre felt flyder ud af rammen. Maalt i Word-eksporten 10/9.
+    $blade = file_get_contents(__DIR__.'/../../resources/views/livewire/company-segmentation.blade.php');
+
+    preg_match_all('/<div class="flex gap-\d+[^"]*">(.*?)<\/div>/s', $blade, $m);
+
+    foreach ($m[1] as $raekke) {
+        $antal = substr_count($raekke, 'class="w-full');
+        expect($antal)->toBeLessThan(2,
+            'To eller flere w-full felter i samme flex-raekke flyder ud af rammen. Brug flex-1 min-w-0.');
+    }
+})->group('layout');
