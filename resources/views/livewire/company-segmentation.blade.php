@@ -52,22 +52,27 @@
                    aria-label="{{ __('Kommunekode') }}">
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Stiftet mellem') }}</label>
+            {{-- 🪤 `w-full` paa to felter i samme flex-raekke kraever 200 % + gap.
+                 Normalt krymper flex dem, men `type="date"` har en IBOENDE
+                 min-bredde fra datovaelgeren og kan ikke krympe under den —
+                 saa det hoejre felt flyder ud af rammen. `min-w-0` ophaever
+                 flex-elementers default `min-width: auto` og lader dem krympe. --}}
             <div class="flex gap-2 mb-4">
                 <input wire:model.blur="foundedFrom" wire:change="segmentér" type="date"
-                       class="w-full bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
                        aria-label="{{ __('Stiftet fra') }}">
                 <input wire:model.blur="foundedTo" wire:change="segmentér" type="date"
-                       class="w-full bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
                        aria-label="{{ __('Stiftet til') }}">
             </div>
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Årsværk') }}</label>
             <div class="flex gap-2 mb-5">
                 <input wire:model.blur="fteMin" wire:change="segmentér" type="number" min="0" placeholder="{{ __('min') }}"
-                       class="w-full bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
+                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
                        aria-label="{{ __('Mindste antal årsværk') }}">
                 <input wire:model.blur="fteMax" wire:change="segmentér" type="number" min="0" placeholder="{{ __('maks') }}"
-                       class="w-full bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
+                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
                        aria-label="{{ __('Højeste antal årsværk') }}">
             </div>
 
