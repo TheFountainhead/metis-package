@@ -36,12 +36,18 @@
                 <table class="w-full text-sm">
                     <thead>
                         <tr class="border-b border-zinc-200 dark:border-zinc-700">
-                            <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Dato') }}</th>
-                            <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Hændelse') }}</th>
-                            <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Beløb') }}</th>
-                            <th class="text-right py-2 pr-4 font-medium text-zinc-500" title="{{ __('Hele kapitalen prissat til rundens kurs') }}">{{ __('Implied valuation') }}</th>
-                            <th class="text-right py-2 pr-4 font-medium text-zinc-500">{{ __('Kapital') }}</th>
-                            <th class="text-left py-2 font-medium text-zinc-500">{{ __('Ejer-ændringer samme dato') }}</th>
+                            {{-- 🪤 UDEN eksplicitte bredder fordeler browseren efter INDHOLD.
+                                 De fem foerste kolonner har `whitespace-nowrap` og kan ikke brydes,
+                                 saa de tager den plads de kraever — og ejer-kolonnen, den eneste med
+                                 brydbar tekst, absorberer hele underskuddet. Resultatet var
+                                 investornavne brudt over 4-6 linjer ved siden af tomme talkolonner.
+                                 Maalt i Word-eksporten af ERST-tilbuddet 10/9. --}}
+                            <th class="text-left py-2 pr-4 font-medium text-zinc-500 w-[9%]">{{ __('Dato') }}</th>
+                            <th class="text-left py-2 pr-4 font-medium text-zinc-500 w-[11%]">{{ __('Hændelse') }}</th>
+                            <th class="text-right py-2 pr-4 font-medium text-zinc-500 w-[15%]">{{ __('Beløb') }}</th>
+                            <th class="text-right py-2 pr-4 font-medium text-zinc-500 w-[17%]" title="{{ __('Hele kapitalen prissat til rundens kurs') }}">{{ __('Implied valuation') }}</th>
+                            <th class="text-right py-2 pr-4 font-medium text-zinc-500 w-[14%]">{{ __('Kapital') }}</th>
+                            <th class="text-left py-2 font-medium text-zinc-500 w-[34%]">{{ __('Ejer-ændringer samme dato') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -91,13 +97,15 @@
                                 </td>
                                 <td class="py-2 text-xs text-zinc-500 align-top">
                                     @forelse($round['owner_changes'] ?? [] as $oc)
-                                        <div>
+                                        {{-- 🪤 Procenten maa ALDRIG rives fra sit navn: en linje der
+                                             begynder med "→ 15%" hoerer visuelt til ejeren OVENOVER.
+                                             `whitespace-nowrap` paa pilen+tallet holder dem samlet. --}}
+                                        <div class="mb-0.5 last:mb-0">
                                             @if($oc['cvr'] ?? null)
                                                 <x-metis-link type="cvr" :query="$oc['cvr']" :label="$oc['owner']" />
                                             @else
                                                 <x-metis-link type="person" :query="$oc['owner']" />
-                                            @endif
-                                            → {{ number_format($oc['share_pct'], $oc['share_pct'] == (int) $oc['share_pct'] ? 0 : 2, ',', '.') }}%
+                                            @endif<span class="whitespace-nowrap"> → {{ number_format($oc['share_pct'], $oc['share_pct'] == (int) $oc['share_pct'] ? 0 : 2, ',', '.') }}%</span>
                                         </div>
                                     @empty
                                         -
