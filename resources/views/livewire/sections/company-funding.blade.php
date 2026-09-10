@@ -42,12 +42,12 @@
                                  brydbar tekst, absorberer hele underskuddet. Resultatet var
                                  investornavne brudt over 4-6 linjer ved siden af tomme talkolonner.
                                  Maalt i Word-eksporten af ERST-tilbuddet 10/9. --}}
-                            <th class="text-left py-2 pr-4 font-medium text-zinc-500 w-[9%]">{{ __('Dato') }}</th>
-                            <th class="text-left py-2 pr-4 font-medium text-zinc-500 w-[11%]">{{ __('Hændelse') }}</th>
-                            <th class="text-right py-2 pr-4 font-medium text-zinc-500 w-[15%]">{{ __('Beløb') }}</th>
-                            <th class="text-right py-2 pr-4 font-medium text-zinc-500 w-[17%]" title="{{ __('Hele kapitalen prissat til rundens kurs') }}">{{ __('Implied valuation') }}</th>
+                            <th class="text-left py-2 pr-4 font-medium text-zinc-500 w-[8%]">{{ __('Dato') }}</th>
+                            <th class="text-left py-2 pr-4 font-medium text-zinc-500 w-[9%]">{{ __('Hændelse') }}</th>
+                            <th class="text-right py-2 pr-4 font-medium text-zinc-500 w-[13%]">{{ __('Beløb') }}</th>
+                            <th class="text-right py-2 pr-4 font-medium text-zinc-500 w-[12%]" title="{{ __('Hele kapitalen prissat til rundens kurs') }}">{{ __('Implied valuation') }}</th>
                             <th class="text-right py-2 pr-4 font-medium text-zinc-500 w-[14%]">{{ __('Kapital') }}</th>
-                            <th class="text-left py-2 font-medium text-zinc-500 w-[34%]">{{ __('Ejer-ændringer samme dato') }}</th>
+                            <th class="text-left py-2 font-medium text-zinc-500 w-[44%]">{{ __('Ejer-ændringer samme dato') }}</th>
                         </tr>
                     </thead>
                     <tbody>
