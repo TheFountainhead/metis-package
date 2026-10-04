@@ -117,18 +117,68 @@
             @endif
         </div>
 
-        {{-- Financial history bars (full width below) --}}
+        {{-- Udvikling i nøgletal: graf eller tabel over op til seks år --}}
         @if(count($financialHistory) > 0)
-            <div class="bg-white rounded-xl border border-zinc-200 p-4">
-                <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">{{ __('Financial history (3 years)') }}</div>
-                <div
-                    x-data='companyOverviewFinancials(@json($financialHistory))'
-                    x-init="init()"
-                    wire:ignore
-                    style="height: 260px;"
-                >
-                    <canvas x-ref="canvas"></canvas>
+            <div class="bg-white rounded-xl border border-zinc-200 p-4" x-data="{ view: 'chart' }">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="text-xs text-zinc-500 uppercase tracking-wide">{{ __('Key figures over time') }}</div>
+                    <div class="inline-flex rounded-md border border-zinc-200 text-xs overflow-hidden" role="group">
+                        <button type="button" class="px-2 py-1" :class="view === 'chart' ? 'bg-zinc-100 font-medium' : 'text-zinc-500'" @click="view = 'chart'">{{ __('Chart') }}</button>
+                        <button type="button" class="px-2 py-1 border-l border-zinc-200" :class="view === 'table' ? 'bg-zinc-100 font-medium' : 'text-zinc-500'" @click="view = 'table'">{{ __('Table') }}</button>
+                    </div>
                 </div>
+
+                <div x-show="view === 'chart'">
+                    <div
+                        x-data='companyOverviewFinancials(@json($financialHistory), @json($this->keyFigureLabels()))'
+                        x-init="init()"
+                        wire:ignore
+                        wire:key="financial-history-{{ substr(md5(json_encode($financialHistory)), 0, 12) }}"
+                        style="height: 280px;"
+                    >
+                        <canvas x-ref="canvas"></canvas>
+                    </div>
+                </div>
+
+                <div x-show="view === 'table'" x-cloak class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-zinc-200">
+                                <th class="text-left py-2 pr-4 font-medium text-zinc-500">{{ __('Amounts in t.DKK') }}</th>
+                                @foreach($financialHistory as $year)
+                                    <th class="text-right py-2 pl-4 font-medium text-zinc-500 whitespace-nowrap">
+                                        {{ $year['year'] }}@if($year['comparative'])<sup>*</sup>@endif
+                                        @if($year['irregular_period'])
+                                            <div class="text-[10px] font-normal text-zinc-400">{{ number_format($year['months'], 1, ',', '.') }} {{ __('mo.') }}</div>
+                                        @endif
+                                        @if($year['consolidated'])
+                                            <div class="text-[10px] font-normal text-zinc-400">{{ __('group') }}</div>
+                                        @endif
+                                    </th>
+                                @endforeach
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($this->keyFigureLabels() as $key => $label)
+                                <tr class="border-b border-zinc-100">
+                                    <td class="py-2 pr-4 text-zinc-600 whitespace-nowrap">{{ $label }}</td>
+                                    @foreach($financialHistory as $year)
+                                        <td class="py-2 pl-4 text-right tabular-nums {{ ($year[$key] ?? 0) < 0 ? 'text-red-600' : '' }}">
+                                            {{ $year[$key] === null ? '–' : number_format(round($year[$key] / 1000), 0, ',', '.') }}
+                                        </td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+
+                    <div class="mt-3 text-[11px] text-zinc-400 space-y-0.5">
+                        @if(collect($financialHistory)->contains('comparative', true))<div>* {{ __('Comparative figures from the following year\'s annual report.') }}</div>@endif
+                        @if(collect($financialHistory)->contains('irregular_period', true))<div>{{ __('Fiscal years that are not twelve months long are shown with their length in months.') }}</div>@endif
+                        @if(collect($financialHistory)->contains('consolidated', true))<div>{{ __('Group figures where the company prepares consolidated accounts.') }}</div>@endif
+                        <div>{{ __('EBITDA is shown only where the annual report states depreciation and amortisation.') }}</div>
+                    </div>
             </div>
         @endif
     @endif

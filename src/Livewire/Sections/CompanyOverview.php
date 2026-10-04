@@ -44,7 +44,7 @@ class CompanyOverview extends MetisSection
         $info = rescue(fn () => $api->fetchCompanyInfo($query)) ?? [];
         $this->companyName = $info['name'] ?? null;
         $this->employees = isset($info['employees']) ? (int) $info['employees'] : null;
-        $this->financialHistory = $this->buildFinancialHistory($info['financials'] ?? []);
+        $this->financialHistory = $this->buildFinancialHistory($info['financial_history'] ?? $info['financials'] ?? []);
 
         $portfolioResp = rescue(fn () => $api->fetchCompanyPropertyPortfolio($query, limit: 500));
         $portfolio = $portfolioResp['portfolio'] ?? null;
@@ -82,22 +82,54 @@ class CompanyOverview extends MetisSection
         $this->mapPins = $this->buildMapPins($properties);
     }
 
+    /** The key figures in the development chart and table, in display order. */
+    public const KEY_FIGURES = ['profit_loss', 'gross_profit', 'operating_profit', 'ebitda', 'equity', 'assets'];
+
+    /** @return array<string, string> key figure => label, for the chart legend and the table rows */
+    public function keyFigureLabels(): array
+    {
+        return [
+            'profit_loss' => __('Result'),
+            'gross_profit' => __('Gross profit'),
+            'operating_profit' => __('Operating profit (EBIT)'),
+            'ebitda' => 'EBITDA',
+            'equity' => __('Net Equity'),
+            'assets' => __('Total Assets'),
+        ];
+    }
+
     /**
      * Newest-first input → oldest-first output (chronological for the chart).
-     * Keeps last 3 years only — anything further back is rarely meaningful.
+     *
+     * Reads registry-api's financial_history (own years plus comparative years,
+     * with EBIT/EBITDA and the period length) and falls back to the plain
+     * financials list from an older registry-api. Up to six years.
+     *
+     * PDF years arrive in t.DKK, XBRL years in kroner (the 1000× trap the
+     * company-info table also handles), so everything is normalised to kroner here.
      */
-    protected function buildFinancialHistory(array $financials): array
+    protected function buildFinancialHistory(array $years): array
     {
-        return collect($financials)
-            ->take(3)
+        return collect($years)
+            ->take(6)
             ->reverse()
             ->values()
-            ->map(fn ($f) => [
-                'year' => (string) ($f['year'] ?? ''),
-                'equity' => isset($f['equity']) ? (int) $f['equity'] : null,
-                'assets' => isset($f['assets']) ? (int) $f['assets'] : null,
-                'profit_loss' => isset($f['profit_loss']) ? (int) $f['profit_loss'] : null,
-            ])
+            ->map(function (array $year) {
+                $unit = ($year['source'] ?? '') === 'pdf' ? 1000 : 1;
+                $months = isset($year['months']) ? (float) $year['months'] : null;
+
+                return [
+                    'year' => (string) ($year['year'] ?? ''),
+                    'months' => $months,
+                    // Kortere eller længere end et år, typisk det første regnskabsår.
+                    'irregular_period' => $months !== null && abs($months - 12) > 0.5,
+                    'comparative' => (bool) ($year['comparative'] ?? false),
+                    'consolidated' => ($year['scope'] ?? null) === 'consolidated',
+                    ...collect(self::KEY_FIGURES)->mapWithKeys(fn (string $key) => [
+                        $key => isset($year[$key]) ? (int) $year[$key] * $unit : null,
+                    ])->all(),
+                ];
+            })
             ->toArray();
     }
 

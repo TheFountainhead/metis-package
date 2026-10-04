@@ -214,3 +214,89 @@ it('renders component with section-title', function () {
         ->assertSee('Mimo Invest ApS')
         ->assertSee('Tonsbakken 12');
 });
+
+it('builds the key-figure history from financial_history incl. comparative years, EBIT and EBITDA', function () {
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo([
+            'financial_history' => [
+                ['year' => '2025', 'months' => 12.0, 'profit_loss' => -14_546_770, 'gross_profit' => 13_891_344, 'operating_profit' => -19_059_189, 'equity' => 14_320_268, 'assets' => 23_206_845],
+                ['year' => '2024', 'months' => 6.7, 'comparative' => true, 'profit_loss' => -2_132_962, 'gross_profit' => 0, 'operating_profit' => -2_193_063, 'equity' => 18_867_038, 'assets' => 19_621_543],
+            ],
+        ])]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => fakePortfolio()]]),
+    ]);
+
+    $history = Livewire::test(CompanyOverview::class, ['query' => '44892723'])->get('financialHistory');
+
+    expect($history)->toHaveCount(2)
+        ->and($history[0])->toMatchArray(['year' => '2024', 'months' => 6.7, 'irregular_period' => true, 'comparative' => true, 'operating_profit' => -2_193_063, 'ebitda' => null])
+        ->and($history[1])->toMatchArray(['year' => '2025', 'irregular_period' => false, 'comparative' => false, 'profit_loss' => -14_546_770, 'consolidated' => false]);
+});
+
+it('keeps up to six years and marks group figures', function () {
+    $years = collect(range(2025, 2019))->map(fn ($y) => ['year' => (string) $y, 'months' => 12.0, 'equity' => $y, 'scope' => $y === 2025 ? 'consolidated' : null])->all();
+
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo(['financial_history' => $years])]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => fakePortfolio()]]),
+    ]);
+
+    $history = Livewire::test(CompanyOverview::class, ['query' => '28963610'])->get('financialHistory');
+
+    expect(collect($history)->pluck('year')->all())->toBe(['2020', '2021', '2022', '2023', '2024', '2025'])
+        ->and($history[5]['consolidated'])->toBeTrue();
+});
+
+it('renders the key-figure table with years as columns, short periods and comparative years marked', function () {
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo([
+            'financial_history' => [
+                ['year' => '2025', 'months' => 12.0, 'profit_loss' => -14_546_770, 'ebitda' => 1_234_000],
+                ['year' => '2024', 'months' => 6.7, 'comparative' => true, 'profit_loss' => -2_132_962],
+            ],
+        ])]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => fakePortfolio()]]),
+    ]);
+
+    Livewire::test(CompanyOverview::class, ['query' => '44892723'])
+        ->assertSeeInOrder(['2024', '2025'])
+        ->assertSee('6,7')
+        ->assertSee('-14.547')
+        ->assertSee('-2.133')
+        ->assertSee('1.234')
+        ->assertSee('Key figures over time');
+});
+
+it('normalises PDF years (already in t.DKK) to kroner like the XBRL years', function () {
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo([
+            'financial_history' => [
+                ['year' => '2025', 'months' => 12.0, 'equity' => 14_320_268],
+                ['year' => '2024', 'months' => 12.0, 'equity' => 12_500, 'source' => 'pdf'],
+            ],
+        ])]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => fakePortfolio()]]),
+    ]);
+
+    $history = Livewire::test(CompanyOverview::class, ['query' => '44892723'])->get('financialHistory');
+
+    expect($history[0]['equity'])->toBe(12_500_000)
+        ->and($history[1]['equity'])->toBe(14_320_268);
+});
+
+it('marks a long first fiscal year as irregular too, not only short ones', function () {
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo([
+            'financial_history' => [
+                ['year' => '2025', 'months' => 12.0, 'equity' => 1],
+                ['year' => '2024', 'months' => 17.9, 'equity' => 1],
+            ],
+        ])]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => fakePortfolio()]]),
+    ]);
+
+    $history = Livewire::test(CompanyOverview::class, ['query' => '44958945'])->get('financialHistory');
+
+    expect($history[0]['irregular_period'])->toBeTrue()
+        ->and($history[1]['irregular_period'])->toBeFalse();
+});
