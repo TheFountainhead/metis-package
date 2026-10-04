@@ -121,7 +121,8 @@ class CompanyOverview extends MetisSection
                 return [
                     'year' => (string) ($year['year'] ?? ''),
                     'months' => $months,
-                    'short_period' => $months !== null && $months < 11.5,
+                    // Kortere eller længere end et år, typisk det første regnskabsår.
+                    'irregular_period' => $months !== null && abs($months - 12) > 0.5,
                     'comparative' => (bool) ($year['comparative'] ?? false),
                     'consolidated' => ($year['scope'] ?? null) === 'consolidated',
                     ...collect(self::KEY_FIGURES)->mapWithKeys(fn (string $key) => [

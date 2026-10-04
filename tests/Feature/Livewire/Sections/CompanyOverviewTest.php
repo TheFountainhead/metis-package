@@ -229,8 +229,8 @@ it('builds the key-figure history from financial_history incl. comparative years
     $history = Livewire::test(CompanyOverview::class, ['query' => '44892723'])->get('financialHistory');
 
     expect($history)->toHaveCount(2)
-        ->and($history[0])->toMatchArray(['year' => '2024', 'months' => 6.7, 'short_period' => true, 'comparative' => true, 'operating_profit' => -2_193_063, 'ebitda' => null])
-        ->and($history[1])->toMatchArray(['year' => '2025', 'short_period' => false, 'comparative' => false, 'profit_loss' => -14_546_770, 'consolidated' => false]);
+        ->and($history[0])->toMatchArray(['year' => '2024', 'months' => 6.7, 'irregular_period' => true, 'comparative' => true, 'operating_profit' => -2_193_063, 'ebitda' => null])
+        ->and($history[1])->toMatchArray(['year' => '2025', 'irregular_period' => false, 'comparative' => false, 'profit_loss' => -14_546_770, 'consolidated' => false]);
 });
 
 it('keeps up to six years and marks group figures', function () {
@@ -282,4 +282,21 @@ it('normalises PDF years (already in t.DKK) to kroner like the XBRL years', func
 
     expect($history[0]['equity'])->toBe(12_500_000)
         ->and($history[1]['equity'])->toBe(14_320_268);
+});
+
+it('marks a long first fiscal year as irregular too, not only short ones', function () {
+    Http::fake([
+        '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo([
+            'financial_history' => [
+                ['year' => '2025', 'months' => 12.0, 'equity' => 1],
+                ['year' => '2024', 'months' => 17.9, 'equity' => 1],
+            ],
+        ])]]),
+        '*property-portfolio*' => Http::response(['data' => ['portfolio' => fakePortfolio()]]),
+    ]);
+
+    $history = Livewire::test(CompanyOverview::class, ['query' => '44958945'])->get('financialHistory');
+
+    expect($history[0]['irregular_period'])->toBeTrue()
+        ->and($history[1]['irregular_period'])->toBeFalse();
 });

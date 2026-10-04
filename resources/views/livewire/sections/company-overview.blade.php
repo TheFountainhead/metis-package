@@ -148,7 +148,7 @@
                                 @foreach($financialHistory as $year)
                                     <th class="text-right py-2 pl-4 font-medium text-zinc-500 whitespace-nowrap">
                                         {{ $year['year'] }}@if($year['comparative'])<sup>*</sup>@endif
-                                        @if($year['short_period'])
+                                        @if($year['irregular_period'])
                                             <div class="text-[10px] font-normal text-zinc-400">{{ number_format($year['months'], 1, ',', '.') }} {{ __('mo.') }}</div>
                                         @endif
                                         @if($year['consolidated'])
@@ -175,7 +175,7 @@
 
                     <div class="mt-3 text-[11px] text-zinc-400 space-y-0.5">
                         @if(collect($financialHistory)->contains('comparative', true))<div>* {{ __('Comparative figures from the following year\'s annual report.') }}</div>@endif
-                        @if(collect($financialHistory)->contains('short_period', true))<div>{{ __('Short fiscal years are shown with their length in months.') }}</div>@endif
+                        @if(collect($financialHistory)->contains('irregular_period', true))<div>{{ __('Fiscal years that are not twelve months long are shown with their length in months.') }}</div>@endif
                         @if(collect($financialHistory)->contains('consolidated', true))<div>{{ __('Group figures where the company prepares consolidated accounts.') }}</div>@endif
                         <div>{{ __('EBITDA is shown only where the annual report states depreciation and amortisation.') }}</div>
                     </div>
