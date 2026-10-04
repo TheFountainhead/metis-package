@@ -114,7 +114,7 @@
                 $toTdkk = function($value, $fin) {
                     if ($value === null) return null;
                     // PDF source values are already small (t.DKK), API values are large (DKK)
-                    return ($fin['source'] ?? '') === 'pdf' ? (int) $value : (int) ($value / 1000);
+                    return ($fin['source'] ?? '') === 'pdf' ? (int) $value : (int) round($value / 1000);
                 };
             @endphp
             @if(count($financials) > 0)
