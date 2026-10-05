@@ -63,21 +63,21 @@
                 <div>
                     <div class="text-xs text-zinc-400">Egenkapital ({{ $year }})</div>
                     <div class="font-medium {{ $equity < 0 ? 'text-red-600' : '' }}">
-                        {{ number_format($equity / 100, 0, ',', '.') }} kr.
+                        {{ number_format($equity, 0, ',', '.') }} kr.
                     </div>
                 </div>
             @endif
             @if($assets !== null)
                 <div>
                     <div class="text-xs text-zinc-400">Aktiver</div>
-                    <div class="font-medium">{{ number_format($assets / 100, 0, ',', '.') }} kr.</div>
+                    <div class="font-medium">{{ number_format($assets, 0, ',', '.') }} kr.</div>
                 </div>
             @endif
             @if($profitLoss !== null)
                 <div>
                     <div class="text-xs text-zinc-400">Resultat</div>
                     <div class="font-medium {{ $profitLoss < 0 ? 'text-red-600' : 'text-green-600' }}">
-                        {{ number_format($profitLoss / 100, 0, ',', '.') }} kr.
+                        {{ number_format($profitLoss, 0, ',', '.') }} kr.
                     </div>
                 </div>
             @endif

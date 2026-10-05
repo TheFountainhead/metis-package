@@ -185,8 +185,8 @@
                             <td>{{ $c['cvr'] ?? '-' }}</td>
                             <td>{{ $cRoles->first()['title'] ?? $cRoles->first()['role'] ?? '-' }}</td>
                             <td class="text-right">{{ $cOwnership ? number_format($cOwnership['ownership_share'], 0) . '%' : '-' }}</td>
-                            <td class="text-right">{{ $cFinancials && isset($cFinancials['equity']) ? number_format($cFinancials['equity'] / 100, 0, ',', '.') . ' kr.' : '-' }}</td>
-                            <td class="text-right">{{ $cFinancials && isset($cFinancials['profit_loss']) ? number_format($cFinancials['profit_loss'] / 100, 0, ',', '.') . ' kr.' : '-' }}</td>
+                            <td class="text-right">{{ $cFinancials && isset($cFinancials['equity']) ? number_format($cFinancials['equity'], 0, ',', '.') . ' kr.' : '-' }}</td>
+                            <td class="text-right">{{ $cFinancials && isset($cFinancials['profit_loss']) ? number_format($cFinancials['profit_loss'], 0, ',', '.') . ' kr.' : '-' }}</td>
                         </tr>
                     @endforeach
                 </tbody>

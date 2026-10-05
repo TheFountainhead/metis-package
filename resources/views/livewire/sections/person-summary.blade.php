@@ -88,7 +88,7 @@
                             @if($val['implied_valuation'])
                                 <div class="text-right">
                                     <div class="text-lg font-bold text-amber-700 dark:text-amber-400">
-                                        {{ number_format($val['implied_valuation'] / 100 / 1000000, 1, ',', '.') }}M kr.
+                                        {{ number_format($val['implied_valuation'] / 1000000, 1, ',', '.') }}M kr.
                                     </div>
                                     <div class="text-xs text-amber-600/70 dark:text-amber-400/70">Implied valuation</div>
                                 </div>
@@ -97,26 +97,26 @@
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                             <div>
                                 <div class="text-xs text-zinc-400">Kapital før</div>
-                                <div>{{ number_format($val['capital_before'] / 100, 0, ',', '.') }} kr.</div>
+                                <div>{{ number_format($val['capital_before'], 0, ',', '.') }} kr.</div>
                             </div>
                             <div>
                                 <div class="text-xs text-zinc-400">Kapital efter</div>
-                                <div>{{ number_format($val['capital_after'] / 100, 0, ',', '.') }} kr.</div>
+                                <div>{{ number_format($val['capital_after'], 0, ',', '.') }} kr.</div>
                             </div>
                             <div>
                                 <div class="text-xs text-zinc-400">Forhøjelse</div>
-                                <div class="text-amber-700 dark:text-amber-400">+{{ number_format($val['capital_increase'] / 100, 0, ',', '.') }} kr.</div>
+                                <div class="text-amber-700 dark:text-amber-400">+{{ number_format($val['capital_increase'], 0, ',', '.') }} kr.</div>
                             </div>
                             @if($val['capital_injection'])
                                 <div>
                                     <div class="text-xs text-zinc-400">Samlet indskud</div>
-                                    <div>{{ number_format($val['capital_injection'] / 100, 0, ',', '.') }} kr.</div>
+                                    <div>{{ number_format($val['capital_injection'], 0, ',', '.') }} kr.</div>
                                 </div>
                             @endif
                         </div>
                         @if($val['share_premium'])
                             <div class="mt-2 text-xs text-zinc-500">
-                                Overkurs: {{ number_format($val['share_premium'] / 100, 0, ',', '.') }} kr.
+                                Overkurs: {{ number_format($val['share_premium'], 0, ',', '.') }} kr.
                             </div>
                         @endif
                     </div>

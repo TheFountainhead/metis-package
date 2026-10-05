@@ -87,7 +87,8 @@ class PersonSummary extends MetisSection
                 ->max('ownership_share');
 
             if ($equity && $ownershipShare) {
-                $this->totalEquityShare += ($equity / 100) * ($ownershipShare / 100);
+                // registry-api leverer kroner (aldrig øre): kun ejerandelen er i procent.
+                $this->totalEquityShare += $equity * ($ownershipShare / 100);
             }
         }
 
