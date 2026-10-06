@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Livewire\Concerns\GatesLookups;
@@ -14,8 +15,26 @@ class Lookup extends Component
 {
     use GatesLookups;
 
+    /*
+     * 🚨 #[Locked] paa alt der styrer HVAD bladen renderer (6/10-2026).
+     *
+     * Bladen renderer de lazy sektioner for `$type`/`$query` naar hverken
+     * `$gated`, `$kraeverLogin` eller `$ufuldstaendigAdresse` er sat. Uden
+     * Locked kunne klienten sende en `updates`-payload til `/livewire/update`
+     * (fx `query` = en ny adresse, eller `gated` = false) og faa sektionerne,
+     * og dermed friske lazy-payloads, for et opslag `mount()` aldrig godkendte.
+     * Datalagets kvote er sessionsbaseret og ser det som sessionens eget
+     * opslag, saa gratis-proeven ville vaere ubegraenset i én session.
+     *
+     * 🪤 Locked er sikkert HER, fordi `Lookup` er en fuld side, ikke en lazy
+     * sektion. PersonStructure:200 beskriver hvorfor Locked braekkede en
+     * LAZY komponent; den mekanisme gaelder ikke en komponent der mountes ved
+     * sidevisningen.
+     */
+    #[Locked]
     public string $type;
 
+    #[Locked]
     public string $query;
 
     /**
@@ -29,7 +48,20 @@ class Lookup extends Component
      * Prod samme dag: 8.259 raekker i `metis_lookups`, 0 brugere, 0 raekker i
      * kvote-taelleren. Produktet blev udleveret gratis og anonymt.
      */
+    #[Locked]
     public bool $gated = false;
+
+    /**
+     * Er dette et person- eller CPR-opslag fra en anonym besoegende?
+     *
+     * 🚨 Frederik 6/10-2026: person- og CPR-opslag kraever en identificeret
+     * bruger. Maalt paa prod samme dag: en anonym ny session kunne hente
+     * personroller og (ud fra koden) selskaber og ejendomme bag et CPR.
+     * Gaten her er SIDEN; datalaget (`RegistryApi::loginKraevetFejl()`)
+     * haandhaever det samme for sektionerne, som kan kaldes uden om siden.
+     */
+    #[Locked]
+    public bool $kraeverLogin = false;
 
     /**
      * Er dette et adresse-opslag uden postnummer?
@@ -51,9 +83,11 @@ class Lookup extends Component
      * VEJEN. Et bogmaerke, et delt link eller et nyt kaldested rammer stadig
      * tilstanden — derfor guardes her, hos MODTAGEREN.
      */
+    #[Locked]
     public bool $ufuldstaendigAdresse = false;
 
     /** Autocomplete-forslag naar adressen er ufuldstaendig. */
+    #[Locked]
     public array $forslag = [];
 
     /**
@@ -181,6 +215,20 @@ class Lookup extends Component
         // adresse — praecis som i `Search`. En tom fejlbesked ville efterlade
         // ham uden vej videre.
 
+        // 🚨 LOGIN-GATEN for person og CPR. FOER kvote-gaten: et opslag der
+        // aldrig vises, maa ikke bruge af den anonymes ene gratis opslag —
+        // ellers ville et klik paa en person koste adresseopslaget bagefter.
+        //
+        // Samme dialog som kvote-gaten (`show-email-gate` -> `EmailGate`):
+        // tilmelding er navn + arbejdsmail, og efter verifikationen genindlaeser
+        // `onEmailVerified()` siden med sektionerne.
+        if ($this->kraeverIdentifikation($type)) {
+            $this->kraeverLogin = true;
+            $this->dispatch('show-email-gate');
+
+            return;
+        }
+
         // 🚨 KVOTE-GATEN. Maalt paa prod 9/8: den fandtes KUN i
         // `Search::performSearch()`, saa et direkte kald til
         // `/lookup/cvr/12345678` omgik den fuldstaendigt.
@@ -273,9 +321,16 @@ class Lookup extends Component
      * allerede-verificeret bruger slipper ind, ikke at man KAN blive det.
      */
     #[On('email-verified')]
-    public function onEmailVerified(string $email): void
+    public function onEmailVerified(?string $email = null): void
     {
-        session(['metis_verified_email' => $email]);
+        // 🚨 SKRIV IKKE `$email` I SESSIONEN (rettet 6/10-2026). Metoden er
+        // offentlig og kan kaldes direkte over `/livewire/update` med en
+        // vilkaarlig parameter. Den skrev tidligere parameteren som
+        // `metis_verified_email` — altsaa kunne enhver anonym udnaevne sig
+        // selv til verificeret og slippe forbi baade kvoten og login-gaten til
+        // person- og CPR-opslag. `EmailGate::verifyCode()` har ALLEREDE sat
+        // sessionen paa serveren, efter at koden var tjekket, foer eventet
+        // blev sendt. Her genindlaeses kun.
 
         // Genindlaes ruten, saa sektionerne mountes paa ny med kvoten aabnet.
         // Uden redirect ville `$gated = false` alene ikke hjaelpe: sektionerne

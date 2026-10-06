@@ -95,6 +95,11 @@ it('🚨 en person-soegning spoerger BAADE navn og roller', function () {
     // En person soegt i company-mode spurgte altsaa aldrig person-roles.
     // Brugeren fik at vide at personen ingen roller har — hvor sandheden er
     // at vi aldrig spurgte. Det er en falsk autoritativ benaegtelse.
+    //
+    // 🔑 Identificeret bruger: anonyme spoerges bevidst IKKE om personer
+    // (6/10-2026) og faar det at vide i stedet — se AnonymAdgangTest.
+    $this->withSession(['metis_verified_email' => 'pilot@frankston.io']);
+
     $urls = [];
     Http::fake(function ($request) use (&$urls) {
         $urls[] = parse_url($request->url(), PHP_URL_PATH);

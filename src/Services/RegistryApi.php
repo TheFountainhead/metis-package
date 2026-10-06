@@ -71,19 +71,66 @@ class RegistryApi
      */
     protected function kvoteOpbrugt(): bool
     {
-        if (! config('metis.gating.enabled', true)) {
-            return false;
+        // 🔑 Reglen bor i `LookupAccess`, saa siden, sektionerne og datalaget
+        // ikke kan drive fra hinanden. Foer 6/10 stod den her som `> 1`,
+        // mens siden brugte `>= 1` — samme regel, men to kopier.
+        return app(LookupAccess::class)->anonymKvoteOverskredet();
+    }
+
+    /**
+     * Kvote-gaten som én linje, til ALLE veje ud af klassen.
+     *
+     * 🚨 MAALT 6/10: `client()` var ikke det eneste punkt alle kald deler.
+     * `fetchCompanyInfosPooled()` og `fetchCompanyStructuresPooled()` byggede
+     * deres egne `Http::pool`-requests, og otte metoder svarede fra CACHEN
+     * foer de naaede `client()` (bl.a. `resolveAddressAnalysis()` med ejere og
+     * pantebreve i 24 timer). En session med opbrugt kvote fik altsaa alt der
+     * var slaaet op inden for cache-vinduet. Derfor kaldes gaten nu af
+     * `client()`, af de to pools og af `fraCache()`.
+     */
+    protected function kraevKvote(): void
+    {
+        if ($this->kvoteOpbrugt()) {
+            throw new QuotaExceededException;
+        }
+    }
+
+    /** `Cache::get()` bag kvote-gaten. Al cache-LAESNING i klassen gaar herigennem. */
+    protected function fraCache(string $key): mixed
+    {
+        $this->kraevKvote();
+
+        return Cache::get($key);
+    }
+
+    /**
+     * Person- og CPR-data kraever en identificeret bruger (Frederik 6/10-2026).
+     *
+     * 🔑 HER, i datalaget, og ikke kun paa `/lookup/person` og `/lookup/cpr`.
+     * Sektionerne er selvstaendige Livewire-komponenter; et lazy-payload kan
+     * sendes direkte til `/livewire/update`, og Livewires checksum er bundet
+     * til APP_KEY, ikke til sessionen. Et payload en identificeret bruger fik,
+     * virker altsaa ogsaa for en anonym. Kun en gate dér hvor dataene hentes,
+     * stopper det (lektionen fra #185).
+     *
+     * Samme form som `pilotRequiredError()`: et fejl-array, som alle
+     * kaldesteder i forvejen behandler som "opslaget fejlede" — aldrig som
+     * "ingen data".
+     *
+     * 🪤 FOER cache-opslaget i hver metode, ellers udleveres en identificeret
+     * brugers cachede CPR-svar til den naeste anonyme.
+     *
+     * 🪤 Baggrundsjob uden session rammes ikke, af samme grund som kvoten.
+     */
+    protected function loginKraevetFejl(): ?array
+    {
+        $adgang = app(LookupAccess::class);
+
+        if ($adgang->gatingAktiv() && $adgang->harSession() && ! $adgang->erIdentificeret()) {
+            return ['error' => 'login_required', 'status' => 401];
         }
 
-        if (! app()->bound('session') || ! session()->isStarted()) {
-            return false;
-        }
-
-        if (session('metis_user_token') || session('metis_verified_email')) {
-            return false;
-        }
-
-        return session('metis_lookup_count', 0) > config('metis.gating.free_lookups', 1);
+        return null;
     }
 
     protected function client()
@@ -93,11 +140,11 @@ class RegistryApi
         // to direkte `$this->client()`-kald. En gate i `get()` alene ville
         // altsaa lade netop de tunge, pooled opslag slippe igennem.
         //
-        // `client()` er det ENESTE punkt alle kald deler, ogsaa fremtidige.
-        // Se `kvoteOpbrugt()` for den maalte exploit.
-        if ($this->kvoteOpbrugt()) {
-            throw new QuotaExceededException;
-        }
+        // 🪤 Kommentaren her paastod indtil 6/10 at `client()` var det ENESTE
+        // punkt alle kald deler. Det holdt ikke: de to `Http::pool()`-fan-outs
+        // bygger egne requests, og cache-hits naar aldrig hertil. Se
+        // `kraevKvote()` for de andre steder gaten nu sidder.
+        $this->kraevKvote();
 
         // F1 pilot — if user has set personal token in session (via /alerts
         // token-input form), use it. Otherwise fall back to shared tenant key.
@@ -608,7 +655,7 @@ class RegistryApi
         $sorted = collect($cvrs)->map(fn ($cvr) => (string) $cvr)->unique()->sort()->values()->all();
         $cacheKey = 'metis:cross_ownership:'.sha1(implode(',', $sorted));
 
-        if (! is_null($cached = Cache::get($cacheKey))) {
+        if (! is_null($cached = $this->fraCache($cacheKey))) {
             return $cached;
         }
 
@@ -623,6 +670,11 @@ class RegistryApi
 
     public function fetchRolesByCvr(array $cvrs, ?string $excludeCpr = null): array
     {
+        // Med et CPR er det et personopslag (PersonRelations), ikke et selskabsopslag.
+        if ($excludeCpr && ($blocked = $this->loginKraevetFejl())) {
+            return $blocked;
+        }
+
         $payload = ['cvr_numbers' => $cvrs];
         if ($excludeCpr) {
             $payload['exclude_cpr'] = $excludeCpr;
@@ -635,7 +687,7 @@ class RegistryApi
     {
         $cacheKey = $this->companyInfoCacheKey($cvr);
 
-        if (! is_null($cached = Cache::get($cacheKey))) {
+        if (! is_null($cached = $this->fraCache($cacheKey))) {
             return $cached;
         }
 
@@ -677,6 +729,10 @@ class RegistryApi
             return [];
         }
 
+        // 🚨 Poolen gaar uden om `client()`, saa gaten skal staa her selv —
+        // og FOER cache-loekken nedenfor.
+        $this->kraevKvote();
+
         $cvrs = array_values(array_unique($cvrs));
 
         $results = [];
@@ -685,7 +741,7 @@ class RegistryApi
         foreach ($cvrs as $cvr) {
             $cacheKey = $this->companyInfoCacheKey($cvr);
 
-            if (! is_null($cached = Cache::get($cacheKey))) {
+            if (! is_null($cached = $this->fraCache($cacheKey))) {
                 $results[$cvr] = $cached;
             } else {
                 $missing[] = $cvr;
@@ -749,7 +805,7 @@ class RegistryApi
         $results = [];
 
         foreach (array_unique($cvrs) as $cvr) {
-            $cached = Cache::get($this->companyInfoCacheKey((string) $cvr));
+            $cached = $this->fraCache($this->companyInfoCacheKey((string) $cvr));
 
             if (! is_null($cached)) {
                 $results[(string) $cvr] = $cached;
@@ -798,7 +854,7 @@ class RegistryApi
      */
     public function fetchCompanyStructureCached(string $cvr): array
     {
-        if (! is_null($cached = Cache::get(self::structureCacheKey($cvr)))) {
+        if (! is_null($cached = $this->fraCache(self::structureCacheKey($cvr)))) {
             return $cached;
         }
 
@@ -818,7 +874,7 @@ class RegistryApi
      */
     public function fetchCompanyStructureFromCache(string $cvr): ?array
     {
-        return Cache::get(self::structureCacheKey($cvr));
+        return $this->fraCache(self::structureCacheKey($cvr));
     }
 
     /**
@@ -872,6 +928,9 @@ class RegistryApi
         if (empty($cvrs)) {
             return [];
         }
+
+        // 🚨 Poolen gaar uden om `client()`, saa gaten skal staa her selv.
+        $this->kraevKvote();
 
         $cvrs = array_values(array_unique($cvrs));
 
@@ -978,7 +1037,7 @@ class RegistryApi
      */
     public function fetchCompanyPropertyPortfolioCached(string $cvr, int $limit = 25, int $offset = 0): ?array
     {
-        return Cache::get(self::propertyPortfolioCacheKey($cvr, $limit, $offset));
+        return $this->fraCache(self::propertyPortfolioCacheKey($cvr, $limit, $offset));
     }
 
     protected static function propertyPortfolioCacheKey(string $cvr, int $limit, int $offset): string
@@ -990,7 +1049,7 @@ class RegistryApi
     {
         $cacheKey = self::propertyPortfolioCacheKey($cvr, $limit, $offset);
 
-        if ($cached = Cache::get($cacheKey)) {
+        if ($cached = $this->fraCache($cacheKey)) {
             return $cached;
         }
 
@@ -1040,7 +1099,7 @@ class RegistryApi
     ): ?array {
         $cacheKey = "metis:tinglysning_overview:{$cvr}:" . md5(json_encode([$filters, $cursor]));
 
-        if ($cached = Cache::get($cacheKey)) {
+        if ($cached = $this->fraCache($cacheKey)) {
             return $cached;
         }
 
@@ -1101,6 +1160,10 @@ class RegistryApi
 
     public function fetchCompaniesByCpr(string $cpr): ?array
     {
+        if ($blocked = $this->loginKraevetFejl()) {
+            return $blocked;
+        }
+
         return $this->post('/v1/cvr/search-by-cpr', ['cpr' => $cpr]);
     }
 
@@ -1131,6 +1194,10 @@ class RegistryApi
      */
     public function fetchCompaniesByName(string $name): ?array
     {
+        if ($blocked = $this->loginKraevetFejl()) {
+            return $blocked;
+        }
+
         $result = $this->post('/v1/cvr/person-companies-by-name', ['name' => $name]);
 
         // 'status' alone is not a safe discriminator: it's already a business
@@ -1154,9 +1221,13 @@ class RegistryApi
      */
     public function fetchCompaniesByCprCached(string $cpr): ?array
     {
+        if ($blocked = $this->loginKraevetFejl()) {
+            return $blocked;
+        }
+
         $cacheKey = 'metis:companies_by_cpr:'.sha1($cpr);
 
-        if (! is_null($cached = Cache::get($cacheKey))) {
+        if (! is_null($cached = $this->fraCache($cacheKey))) {
             return $cached;
         }
 
@@ -1175,11 +1246,19 @@ class RegistryApi
 
     public function fetchPropertiesByCpr(string $cpr): ?array
     {
+        if ($blocked = $this->loginKraevetFejl()) {
+            return $blocked;
+        }
+
         return $this->post('/v1/property-tinglysning/search-by-cpr', ['cpr' => $cpr]);
     }
 
     public function fetchPersonRoles(string $query): ?array
     {
+        if ($blocked = $this->loginKraevetFejl()) {
+            return $blocked;
+        }
+
         return $this->post('/v1/cvr/person-roles', ['name' => $query]);
     }
 
@@ -1209,6 +1288,12 @@ class RegistryApi
      */
     public function fetchPersonPropertyPortfolio(string $name): ?array
     {
+        // null, ikke et fejl-array: `Search::loadPersonProperties()` laeser et
+        // array uden `companies` som "ingen ejendomme" — en falsk benaegtelse.
+        if ($this->loginKraevetFejl()) {
+            return null;
+        }
+
         try {
             $response = $this->client()
                 ->timeout(60)
@@ -1238,6 +1323,10 @@ class RegistryApi
 
     public function fetchPersonPropertyPortfolioByCpr(string $cpr): ?array
     {
+        if ($blocked = $this->loginKraevetFejl()) {
+            return $blocked;
+        }
+
         return $this->post('/v1/person/property-portfolio', ['cpr' => $cpr]);
     }
 
@@ -1252,9 +1341,13 @@ class RegistryApi
      */
     public function fetchPersonPropertyPortfolioByCprCached(string $cpr): ?array
     {
+        if ($blocked = $this->loginKraevetFejl()) {
+            return $blocked;
+        }
+
         $cacheKey = self::personPropertyPortfolioCacheKey($cpr);
 
-        if (! is_null($cached = Cache::get($cacheKey))) {
+        if (! is_null($cached = $this->fraCache($cacheKey))) {
             return $cached;
         }
 
@@ -1281,7 +1374,12 @@ class RegistryApi
      */
     public function fetchPersonPropertyPortfolioByCprFromCache(string $cpr): ?array
     {
-        return Cache::get(self::personPropertyPortfolioCacheKey($cpr));
+        // Cache-only: null er "ikke i cachen", som kalderen allerede haandterer.
+        if ($this->loginKraevetFejl()) {
+            return null;
+        }
+
+        return $this->fraCache(self::personPropertyPortfolioCacheKey($cpr));
     }
 
     /** sha1'd so a raw CPR never lands in a cache key, a log line or a dump. */
@@ -1324,7 +1422,7 @@ class RegistryApi
     {
         $cacheKey = 'metis:address_analysis:'.md5($address);
 
-        if (! is_null($cached = Cache::get($cacheKey))) {
+        if (! is_null($cached = $this->fraCache($cacheKey))) {
             return $cached;
         }
 
@@ -1389,6 +1487,9 @@ class RegistryApi
         $postalCode = $parsed['zip'];
 
         $cacheKey = "metis_comparison_{$postalCode}_{$address}";
+
+        // Cache-hit maa ikke springe kvote-gaten over.
+        $this->kraevKvote();
 
         return Cache::remember($cacheKey, 3600, function () use ($address, $postalCode) {
             // Kun ConnectionException kan kastes her — se noten ved
@@ -1760,6 +1861,10 @@ class RegistryApi
      */
     public function disambiguatePerson(string $name, int $limit = 20): array
     {
+        if ($blocked = $this->loginKraevetFejl()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()
                 ->get('/v1/cvr/person-disambiguate', ['name' => $name, 'limit' => $limit])

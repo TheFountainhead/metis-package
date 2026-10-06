@@ -4,6 +4,15 @@ use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\Search;
 
+/*
+ * 🔑 Personsoegning kraever en identificeret bruger (6/10-2026, se
+ * AnonymAdgangTest). Testene her handler om hvad en identificeret bruger
+ * SER, saa sessionen baerer en verificeret mail som efter EmailGate.
+ */
+beforeEach(function () {
+    $this->withSession(['metis_verified_email' => 'pilot@frankston.io']);
+});
+
 /**
  * "Slå op" på en ejendom i personens portefølje sendte adressen ALENE.
  *

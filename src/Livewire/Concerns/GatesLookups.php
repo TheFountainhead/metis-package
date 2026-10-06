@@ -2,6 +2,8 @@
 
 namespace TheFountainhead\Metis\Livewire\Concerns;
 
+use TheFountainhead\Metis\Services\LookupAccess;
+
 /**
  * Kvote-gaten for opslag — ÉT sted, brugt af begge indgange.
  *
@@ -24,10 +26,12 @@ namespace TheFountainhead\Metis\Livewire\Concerns;
  * allerede betalt for den fejl med FIRE CPR-detektorer, hvor den fjerde
  * accepterede et format de tre andre afviste.
  *
- * 🪤 Sessionsbaseret, ikke IP-baseret. Det er bevidst: en delt IP (kontor,
- * mobilnet) ville ellers laase hele huset ude efter ét opslag. En bruger der
- * rydder cookies faar nye gratis opslag — det er prisen for ikke at ramme
- * uskyldige, og den samme afvejning `Search` allerede traf.
+ * 🔑 SESSION OG IP, ikke kun session (Frederik 6/10-2026). Foer var kvoten
+ * bevidst sessionsbaseret for ikke at laase en delt kontor-IP ude. Maalt paa
+ * prod 6/10: en ny cookie gav et nyt gratis opslag med ejernavne og
+ * pantebreve, saa i praksis var proeven ubegraenset og anonym. Afvejningen er
+ * nu den modsatte: et kontor bag én IP deler ét gratis opslag pr. doegn, og
+ * vejen videre er tilmelding med arbejdsmail. Reglen bor i `LookupAccess`.
  */
 trait GatesLookups
 {
@@ -61,7 +65,23 @@ trait GatesLookups
             return $this->kvoteOpbrugtForEmail($email);
         }
 
-        return session('metis_lookup_count', 0) >= config('metis.gating.free_lookups', 1);
+        // 🔑 Samme taerskel som datalaget, via `LookupAccess`: siden spoerger
+        // om det opslag den er ved at STARTE. Det hoejeste af session- og
+        // IP-taellingen afgoer, saa ryddede cookies ikke nulstiller proeven.
+        return ! app(LookupAccess::class)->anonymtOpslagTilladt();
+    }
+
+    /**
+     * Kraever denne opslagstype en identificeret bruger, som brugeren ikke er?
+     *
+     * Person- og CPR-opslag (Frederik 6/10-2026). Datalaget haandhaever det
+     * samme i `RegistryApi::loginKraevetFejl()`; dette er siden, som skal vise
+     * tilmeldingen frem for en raekke fejlede sektioner.
+     */
+    protected function kraeverIdentifikation(string $type): bool
+    {
+        return in_array(strtolower($type), ['person', 'cpr'], true)
+            && ! app(LookupAccess::class)->erIdentificeret();
     }
 
     /**
@@ -113,6 +133,9 @@ trait GatesLookups
     protected function taelOpslag(): void
     {
         session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
+
+        // Kun anonyme taelles paa IP'en; verificerede har deres lead-kvote.
+        app(LookupAccess::class)->taelAnonymtOpslagPaaIp();
 
         if (! session('metis_lookup_window_start')) {
             session(['metis_lookup_window_start' => now()->timestamp]);

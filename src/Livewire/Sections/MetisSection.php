@@ -185,14 +185,8 @@ abstract class MetisSection extends Component
 
     protected function kvoteOpbrugt(): bool
     {
-        if (! config('metis.gating.enabled', true)) {
-            return false;
-        }
-
-        if (session('metis_user_token') || session('metis_verified_email')) {
-            return false;
-        }
-
-        return session('metis_lookup_count', 0) > config('metis.gating.free_lookups', 1);
+        // Samme regel som `RegistryApi::kvoteOpbrugt()`, fra samme sted.
+        // Foer 6/10 var det en tredje kopi af taersklen.
+        return app(\TheFountainhead\Metis\Services\LookupAccess::class)->anonymKvoteOverskredet();
     }
 }

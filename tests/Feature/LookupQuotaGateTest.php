@@ -56,16 +56,22 @@ it('🚨 gatede opslag renderer INGEN datasektioner', function () {
 it('🚨 gater ogsaa CPR-ruten', function () {
     // CPR-opslaget logges bevidst ikke, men det skal stadig KOSTE. Ellers ville
     // netop den rute der baerer persondata vaere gratis og ubegraenset.
+    //
+    // 🔑 Siden 6/10-2026 kommer en anonym slet ikke saa langt: CPR kraever
+    // tilmelding (AnonymAdgangTest). Kvoten gaelder stadig den tilmeldte.
     $this->withSession(['metis_lookup_count' => 1]);
 
     $this->get('/lookup/cpr/311278-1234')
         ->assertOk()
-        ->assertSee('Du har brugt dine gratis opslag');
+        ->assertSee('Personopslag kræver at du er tilmeldt')
+        ->assertDontSee('metis-person-summary', false);
 });
 
 it('🚨 et CPR-opslag TAELLER, selv om det ikke gemmes i historikken', function () {
     // 🪤 Logning og kvote er to forskellige spoergsmaal. Taelleren staar uden
-    // for `if (! $erCpr)` netop derfor.
+    // for `if (! $erCpr)` netop derfor. Tilmeldt bruger: anonyme naar ikke hertil.
+    $this->withSession(['metis_verified_email' => 'test@frankston.io']);
+
     $this->get('/lookup/cpr/311278-1234')->assertOk();
 
     expect(session('metis_lookup_count'))->toBe(1);
@@ -167,8 +173,14 @@ it('🚨 email-verifikation er ikke en blindgyde', function () {
         'type' => 'cvr', 'query' => '37792594',
     ]);
 
+    // 🪤 `EmailGate::verifyCode()` saetter sessionen paa serveren FOER den
+    // sender eventet; lytteren genindlaeser kun. Foer 6/10 skrev lytteren
+    // selv eventets mail i sessionen — det var et hul (en anonym kunne kalde
+    // den med en opdigtet mail), se AnonymAdgangTest. Testen gengiver derfor
+    // den rigtige raekkefoelge: sessionen er sat, saa kommer eventet.
+    session(['metis_verified_email' => 'test@frankston.io']);
+
     $c->dispatch('email-verified', email: 'test@frankston.io');
 
-    expect(session('metis_verified_email'))->toBe('test@frankston.io');
     $c->assertRedirect();
 });

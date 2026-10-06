@@ -4,10 +4,12 @@ namespace TheFountainhead\Metis\Livewire;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Livewire\Concerns\GatesLookups;
 use TheFountainhead\Metis\Models\MetisLookup;
+use TheFountainhead\Metis\Services\LookupAccess;
 use TheFountainhead\Metis\Services\RegistryApi;
 use TheFountainhead\Metis\Services\SearchDetector;
 
@@ -19,7 +21,25 @@ class Search extends Component
 
     public ?array $result = null;
 
+    /**
+     * 🚨 #[Locked] (6/10-2026). Bladen renderer de lazy CVR-/adresse-sektioner
+     * for `$query` naar `$resultType` er sat. Kunne klienten selv saette den,
+     * ville en `updates`-payload med `resultType=cvr` og et nyt CVR give
+     * sektionerne — og dermed nye lazy-payloads — uden om `search()` og
+     * kvote-gaten. `updatedQuery()` nulstiller den, saa et nyt `query` alene
+     * ikke er nok.
+     */
+    #[Locked]
     public ?string $resultType = null;
+
+    /**
+     * Navnesoegningen udelod personer, fordi brugeren ikke er identificeret.
+     *
+     * 🪤 En TILSTAND, ikke et tomt felt: "ingen personer" ville vaere en
+     * paastand om fravaer. Sandheden er at vi ikke spurgte.
+     */
+    #[Locked]
+    public bool $personerKraeverLogin = false;
 
     public bool $loading = false;
 
@@ -199,7 +219,7 @@ class Search extends Component
         $previousSuggestions = $this->suggestions;
         $previousSuggestionType = $this->suggestionType;
         $this->suggestions = [];
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personerKraeverLogin']);
         $this->resetPersonProperties();
         $this->retryCount = 0;
 
@@ -414,7 +434,7 @@ class Search extends Component
         $this->query = $value;
         // personProperties/-Status skal med: uden dem baerer et krydsopslag den
         // forrige persons ejendomsliste og besked med over paa den nye enhed.
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personerKraeverLogin']);
         $this->resetPersonProperties();
 
         // CVR/address → show sections inline
@@ -471,9 +491,11 @@ class Search extends Component
     }
 
     #[On('email-verified')]
-    public function onEmailVerified(string $email): void
+    public function onEmailVerified(?string $email = null): void
     {
-        session(['metis_verified_email' => $email]);
+        // 🚨 Skriv IKKE parameteren i sessionen — samme hul som
+        // `Lookup::onEmailVerified()`: en offentlig metode, kaldbar med en
+        // opdigtet mail. `EmailGate::verifyCode()` har allerede sat den.
         $this->search();
     }
 
@@ -534,10 +556,24 @@ class Search extends Component
 
         if (! $isCrossReference) {
             session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
+            // Samme IP-taeller som `/lookup` — ellers ville forsiden vaere en
+            // anden doer ind, hvor ryddede cookies stadig gav et nyt opslag.
+            app(LookupAccess::class)->taelAnonymtOpslagPaaIp();
             if (! session('metis_lookup_window_start')) {
                 session(['metis_lookup_window_start' => now()->timestamp]);
             }
         }
+    }
+
+    protected function personerTilladt(): bool
+    {
+        if (app(LookupAccess::class)->erIdentificeret()) {
+            return true;
+        }
+
+        $this->personerKraeverLogin = true;
+
+        return false;
     }
 
     protected function performSearch(string $type, string $query): void
@@ -564,7 +600,13 @@ class Search extends Component
         $result = match ($type) {
             'cvr' => $api->fetchCompany($query),
             'company_name' => ['companies' => $api->searchByName($query)],
-            'name' => ['persons' => $api->searchPersonByName($query), 'companies' => $api->searchByName($query)],
+            // 🚨 Personer kun for identificerede (Frederik 6/10-2026). Datalaget
+            // ville afvise kaldet alligevel; at lade vaere med at spoerge goer
+            // det muligt at SIGE det til brugeren frem for at vise et tomt felt.
+            'name' => [
+                'persons' => $this->personerTilladt() ? $api->searchPersonByName($query) : [],
+                'companies' => $api->searchByName($query),
+            ],
             'address' => $api->fetchPropertyByAddress($query),
             default => null,
         };
@@ -586,6 +628,13 @@ class Search extends Component
         }
 
         if (empty($result) || (is_array($result) && empty(array_filter($result)))) {
+            // 🪤 Ingen selskaber, og personerne spurgte vi ikke om. "Ingen
+            // resultater" ville paastaa at personen ikke findes; bladen viser
+            // i stedet at personopslag kraever tilmelding.
+            if ($this->personerKraeverLogin) {
+                return;
+            }
+
             $this->error = true;
             $this->errorMessage = 'no_results';
 

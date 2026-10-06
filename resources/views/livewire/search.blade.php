@@ -1,4 +1,4 @@
-@php $hasResult = $resultType || $result || $error || $cprBlocked || $rateLimited; @endphp
+@php $hasResult = $resultType || $result || $error || $cprBlocked || $rateLimited || $personerKraeverLogin; @endphp
 
 <div id="main-content" class="min-h-screen flex flex-col">
 
@@ -126,6 +126,17 @@
             <div class="bg-white rounded-2xl p-6 border border-sand-200/60 text-center">
                 <p class="text-ink-800 mb-1">CPR-opslag kræver en Metis-konto.</p>
                 <p class="text-sand-300 text-sm">Kontakt os for adgang.</p>
+            </div>
+            @endif
+
+            {{-- Personer udeladt: kraever tilmelding (Frederik 6/10-2026). En
+                 tilstand, ikke et tomt felt: vi spurgte ikke, saa vi siger
+                 det. Knappen aabner den samme dialog som kvote-gaten. --}}
+            @if($personerKraeverLogin)
+            <div class="bg-white rounded-2xl p-6 border border-sand-200/60 text-center">
+                <p class="text-ink-800 mb-1">{{ __('Personopslag kræver at du er tilmeldt.') }}</p>
+                <p class="text-sand-300 text-sm mb-3">{{ __('Tilmeld dig med navn og arbejdsmail for at se personer.') }}</p>
+                <button type="button" wire:click="$dispatch('show-email-gate')" class="text-warm-500 hover:text-warm-600 text-sm transition-colors">{{ __('Tilmeld dig') }}</button>
             </div>
             @endif
 
