@@ -65,9 +65,11 @@ class RegistryApi
      * alle veje moedes. En guard pr. `mount()` ville vaere samme fejl ét
      * niveau nede: den 29. sektion ville mangle den.
      *
-     * 🪤 BAGGRUNDSJOB RAMMES IKKE. De koerer uden session, saa
-     * `metis_lookup_count` er fravaerende og gaten inaktiv. Ingen undtagelse
-     * noedvendig — og dermed ingen undtagelse der kan blive den nye bypass.
+     * 🚨 UDEN SESSION ER KVOTEN BRUGT (opfoelgning, review M4). Her stod
+     * at baggrundsjob uden session ikke rammes. Det var en undtagelse, og den
+     * blev netop den bypass afsnittet advarede imod: alt var aabent uden
+     * session. Ingen job kalder `RegistryApi` (maalt 6/10); se
+     * `LookupAccess::harSession()`.
      */
     protected function kvoteOpbrugt(): bool
     {
@@ -120,13 +122,15 @@ class RegistryApi
      * 🪤 FOER cache-opslaget i hver metode, ellers udleveres en identificeret
      * brugers cachede CPR-svar til den naeste anonyme.
      *
-     * 🪤 Baggrundsjob uden session rammes ikke, af samme grund som kvoten.
+     * 🚨 Uden session er kalderen anonym (review M4, `LookupAccess::harSession()`).
      */
     protected function loginKraevetFejl(): ?array
     {
         $adgang = app(LookupAccess::class);
 
-        if ($adgang->gatingAktiv() && $adgang->harSession() && ! $adgang->erIdentificeret()) {
+        // 🚨 M4: ingen `harSession()`-undtagelse laengere. Uden session er
+        // `erIdentificeret()` falsk, saa en stateless kalder faar intet.
+        if ($adgang->gatingAktiv() && ! $adgang->erIdentificeret()) {
             return ['error' => 'login_required', 'status' => 401];
         }
 
@@ -1853,6 +1857,10 @@ class RegistryApi
 
     public function listWatchlists(): array
     {
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()->get('/v1/watchlists')->throw()->json();
         } catch (RequestException $e) {
@@ -1888,6 +1896,10 @@ class RegistryApi
 
     public function checkBatch(array $items): array
     {
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()
                 ->post('/v1/watchlists/check-batch', ['items' => $items])
@@ -1901,7 +1913,8 @@ class RegistryApi
     }
 
     /**
-     * Mutationer af watchlists og alerts kraever en BEKRAEFTET pilot.
+     * Watchlists og alerts kraever en BEKRAEFTET pilot, baade skrivning og
+     * laesning.
      *
      * 🚨 FIX-RUNDE 1 (review V3): uden token bruger `client()` den DELTE
      * tenant-noegle, saa en anonym kunne oprette og slette Frankstons
@@ -1911,13 +1924,16 @@ class RegistryApi
      * heller ikke nok: den ville stadig skrive paa den DELTE noegle. Et
      * uprøvet token (`AlertsInbox::setToken()`) er ikke en bekraeftet pilot.
      *
-     * Laesning (`listWatchlists`, `listAlerts`, `getAlert`, `checkBatch`) er
-     * IKKE gated her: maalt read-only paa prod 6/10 indeholder den delte
-     * noegles data 2 watchlists (ejendom, postnummer) og alerts af typen
-     * `new_transaction` med adresse, pris og matrikel/transaktions-id, ingen
-     * personfelter. Se rapporten.
+     * 🚨 OPFOELGNING (re-review, opfoelgning 1): LAESNINGERNE (`listWatchlists`,
+     * `listAlerts`, `getAlert`, `checkBatch`) stod aabne, saa `GET /alerts/{id}`
+     * og `AlertsInbox::fetch()` laeste tenantens alerts (adresse, pris,
+     * matrikel) og watchlists anonymt. Selv uden personfelter er det
+     * tenant-intern data. Samme gate nu, foer `client()`.
+     *
+     * 🪤 Ingen `harSession()`-undtagelse her: uden session er man ikke pilot
+     * (`LookupAccess::erPilot()`), saa en stateless kalder er afvist.
      */
-    protected function pilotMutationFejl(): ?array
+    protected function pilotFejl(): ?array
     {
         if (app(LookupAccess::class)->gatingAktiv() && ! app(LookupAccess::class)->erPilot()) {
             return ['error' => 'pilot_required', 'status' => 403];
@@ -1928,7 +1944,7 @@ class RegistryApi
 
     public function createWatchlist(string $type, string $value, ?string $label, array $alertTypes): array
     {
-        if ($blocked = $this->pilotMutationFejl()) {
+        if ($blocked = $this->pilotFejl()) {
             return $blocked;
         }
 
@@ -1948,7 +1964,7 @@ class RegistryApi
 
     public function deleteWatchlist(int $id): array
     {
-        if ($blocked = $this->pilotMutationFejl()) {
+        if ($blocked = $this->pilotFejl()) {
             return $blocked;
         }
 
@@ -1963,6 +1979,10 @@ class RegistryApi
 
     public function listAlerts(bool $unreadOnly = false, ?string $priority = null, int $page = 1): array
     {
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()->get('/v1/alerts', array_filter([
                 'unread_only' => $unreadOnly ? 1 : 0,
@@ -1978,7 +1998,7 @@ class RegistryApi
 
     public function markAlertRead(int $alertId): array
     {
-        if ($blocked = $this->pilotMutationFejl()) {
+        if ($blocked = $this->pilotFejl()) {
             return $blocked;
         }
 
@@ -1993,6 +2013,10 @@ class RegistryApi
 
     public function getAlert(int $id): ?array
     {
+        if ($this->pilotFejl()) {
+            return null;
+        }
+
         try {
             return $this->client()->get("/v1/alerts/{$id}")->throw()->json('data');
         } catch (\Throwable $e) {

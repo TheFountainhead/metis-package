@@ -14,6 +14,7 @@ beforeEach(function () {
     Http::fake();
     $this->withoutVite();
     config()->set('metis.mode', 'standalone');
+    config()->set('metis.gating.enabled', true);
 });
 
 function pilotAccount(string $password = 'hemmeligt-kodeord'): MetisPilotAccount
@@ -60,7 +61,7 @@ it('husk-mig-cookien genskaber sessionen, og log-ud fjerner den', function () {
     $secret = 'remember-secret';
     $account->forceFill(['remember_token' => Hash::make($secret)])->save();
 
-    $this->withUnencryptedCookie(PilotLogin::REMEMBER_COOKIE, $account->id.'|'.$secret)
+    $this->withCookie(PilotLogin::REMEMBER_COOKIE, $account->id.'|'.$secret)
         ->get('/engagementer')
         ->assertOk()
         ->assertDontSee('Kun for pilotbrugere');
@@ -73,15 +74,15 @@ it('husk-mig-cookien genskaber sessionen, og log-ud fjerner den', function () {
         ->and($account->fresh()->remember_token)->toBeNull();
 
     // Cookien alene kan ikke logge ind igen efter log-ud.
-    $this->withUnencryptedCookie(PilotLogin::REMEMBER_COOKIE, $account->id.'|'.$secret)->get('/engagementer')->assertSee('Kun for pilotbrugere');
+    $this->withCookie(PilotLogin::REMEMBER_COOKIE, $account->id.'|'.$secret)->get('/engagementer')->assertSee('Kun for pilotbrugere');
 });
 
 it('en forkert eller manipuleret husk-mig-cookie giver ingen session', function () {
     $account = pilotAccount();
     $account->forceFill(['remember_token' => Hash::make('rigtig')])->save();
 
-    $this->withUnencryptedCookie(PilotLogin::REMEMBER_COOKIE, $account->id.'|forkert')->get('/engagementer')->assertSee('Kun for pilotbrugere');
-    $this->withUnencryptedCookie(PilotLogin::REMEMBER_COOKIE, 'abc|rigtig')->get('/engagementer')->assertSee('Kun for pilotbrugere');
+    $this->withCookie(PilotLogin::REMEMBER_COOKIE, $account->id.'|forkert')->get('/engagementer')->assertSee('Kun for pilotbrugere');
+    $this->withCookie(PilotLogin::REMEMBER_COOKIE, 'abc|rigtig')->get('/engagementer')->assertSee('Kun for pilotbrugere');
 
     expect(session('metis_user_token'))->toBeNull();
 });

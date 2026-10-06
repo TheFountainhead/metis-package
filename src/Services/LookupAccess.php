@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Services;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
@@ -58,9 +59,21 @@ class LookupAccess
     }
 
     /**
-     * Koerer vi i en web-request med en session?
+     * Koerer vi i en request med en startet session?
      *
-     * 🪤 Baggrundsjob og kommandoer har ingen session og skal ikke rammes.
+     * 🚨 OPFOELGNING (review M4): UDEN session er kalderen ANONYM MED
+     * PROEVEN BRUGT. Foer var det omvendt: `erGodkendt()`,
+     * `anonymKvoteOverskredet()` og `RegistryApi::loginKraevetFejl()` sagde
+     * "tilladt" uden session, med begrundelsen at baggrundsjob ikke skulle
+     * rammes. Maalt 6/10: hverken pakken eller vaerten (metis) kalder
+     * `RegistryApi` fra et job eller en kommando, saa undtagelsen beskyttede
+     * intet. Den aabnede derimod alt for en fremtidig stateless rute, og for
+     * `Livewire::test()` uden session (som reviewerens foerste test ramte).
+     *
+     * 🪤 Skal et job en dag hente data, saa slaa gating fra for det kald
+     * (`metis.gating.enabled`) frem for at genindfoere en undtagelse her.
+     * En undtagelse "uden session" er praecis den bypass M4 lukker.
+     *
      * Alle web-indgange (siden og `/livewire/update`) ligger i `web`-gruppen,
      * som altid starter sessionen.
      */
@@ -76,7 +89,9 @@ class LookupAccess
             return true;
         }
 
-        return filled(session('metis_verified_email'));
+        // 🚨 M4: vaerdier i en IKKE-startet session kan ikke komme fra en
+        // cookie og taeller ikke.
+        return $this->harSession() && filled(session('metis_verified_email'));
     }
 
     /**
@@ -95,7 +110,8 @@ class LookupAccess
      */
     public function erPilot(): bool
     {
-        return filled(session('metis_user_token'))
+        return $this->harSession()
+            && filled(session('metis_user_token'))
             && (filled(session('metis_pilot_account_id')) || session('metis_pilot_verificeret') === true);
     }
 
@@ -111,7 +127,7 @@ class LookupAccess
             return true;
         }
 
-        return $this->erPilot() || filled(session('metis_verified_email'));
+        return $this->erPilot() || $this->erIdentificeret();
     }
 
     public function graense(): int
@@ -127,7 +143,11 @@ class LookupAccess
      */
     public function ipGraense(): int
     {
-        return (int) config('metis.gating.ip_daily_limit', 5);
+        // 🔑 Standarden (5) staar i config/metis.php, ikke her. En manglende
+        // noegle giver 0, altsaa ingen anonym proeve: fail-closed. Vaertens
+        // publicerede config mister ikke noeglen, fordi provideren fletter
+        // `gating` paa noegleniveau (`MetisServiceProvider::register()`).
+        return (int) config('metis.gating.ip_daily_limit');
     }
 
     /** DEN ENE taerskel pr. session. Se klassens docblock. */
@@ -145,7 +165,19 @@ class LookupAccess
     {
         $noegle = $this->ipNoegle();
 
-        return $noegle === null ? 0 : (int) Cache::get($noegle, 0);
+        if ($noegle === null) {
+            return 0;
+        }
+
+        // 🚨 Fail-closed (opfoelgning 2): kan taelleren ikke laeses, er IP'en
+        // brugt op. Foer gav en cache-fejl her 500 paa hele siden.
+        try {
+            return (int) Cache::get($noegle, 0);
+        } catch (\Throwable $e) {
+            $this->logTaellerFejl($e, 'laes');
+
+            return $this->ipGraense();
+        }
     }
 
     /**
@@ -157,7 +189,8 @@ class LookupAccess
      */
     public function anonymtOpslagTilladt(): bool
     {
-        return $this->opslagNrErTilladt($this->brugtISession() + 1)
+        return $this->harSession()
+            && $this->opslagNrErTilladt($this->brugtISession() + 1)
             && $this->brugtFraIp() < $this->ipGraense();
     }
 
@@ -170,7 +203,16 @@ class LookupAccess
      */
     public function anonymKvoteOverskredet(): bool
     {
-        if (! $this->gatingAktiv() || ! $this->harSession() || $this->erKvoteFritaget()) {
+        if (! $this->gatingAktiv()) {
+            return false;
+        }
+
+        // 🚨 M4: uden session er proeven brugt.
+        if (! $this->harSession()) {
+            return true;
+        }
+
+        if ($this->erKvoteFritaget()) {
             return false;
         }
 
@@ -202,23 +244,37 @@ class LookupAccess
             return true;
         }
 
+        // 🚨 M4: uden session er der ingen godkendelsesliste at skrive paa, og
+        // proeven er brugt.
+        if (! $this->harSession()) {
+            return false;
+        }
+
         $noegle = $this->ipNoegle();
 
         if ($noegle !== null) {
-            $over = rescue(function () use ($noegle) {
+            // 🚨 FAIL-CLOSED (opfoelgning 2). Foer stod her `rescue(..., false,
+            // false)`: kastede taelleren, blev opslaget GODKENDT, og eneste
+            // graense var 1 pr. session, som en ny cookie nulstiller. Med
+            // cachen nede var proeven altsaa ubegraenset. Nu: en fejl er et
+            // afslag, og den logges, saa en nede cache ses i stedet for at
+            // vise sig som "Du har brugt dine gratis opslag" for alle.
+            // Identificerede brugere og piloter er returneret ovenfor og
+            // rammes ikke.
+            try {
                 Cache::add($noegle, 0, now()->addHours((int) config('metis.gating.ip_window_hours', 24)));
                 $n = (int) Cache::increment($noegle);
-
-                if ($n > $this->ipGraense()) {
-                    Cache::decrement($noegle);
-
-                    return true;
-                }
+            } catch (\Throwable $e) {
+                $this->logTaellerFejl($e, 'reserver');
 
                 return false;
-            }, false, false);
+            }
 
-            if ($over) {
+            if ($n > $this->ipGraense()) {
+                // Pladsen gives tilbage. Fejler det, staar taelleren en for
+                // hoejt i resten af vinduet: den sikre retning.
+                rescue(fn () => Cache::decrement($noegle), null, false);
+
                 return false;
             }
         }
@@ -233,17 +289,35 @@ class LookupAccess
     /**
      * Maa denne session hente data for opslaget?
      *
-     * Sandt for fritagne brugere, uden session (baggrundsjob) og med gating
-     * slaaet fra. Ellers kun hvis `godkendOpslag()` har godkendt praecis dette
-     * opslag i denne session.
+     * Sandt for fritagne brugere og med gating slaaet fra. Uden session
+     * falsk (M4). Ellers kun hvis `godkendOpslag()` har godkendt praecis
+     * dette opslag i denne session.
      */
     public function erGodkendt(string $type, string $query): bool
     {
-        if (! $this->gatingAktiv() || ! $this->harSession() || $this->erKvoteFritaget()) {
+        if (! $this->gatingAktiv()) {
+            return true;
+        }
+
+        // 🚨 M4: uden session er intet godkendt.
+        if (! $this->harSession()) {
+            return false;
+        }
+
+        if ($this->erKvoteFritaget()) {
             return true;
         }
 
         return in_array($this->opslagsNoegle($type, $query), (array) session('metis_godkendte_opslag', []), true);
+    }
+
+    protected function logTaellerFejl(\Throwable $e, string $trin): void
+    {
+        rescue(fn () => Log::error('metis.ip_taeller_fejlede: anonymt opslag afvist', [
+            'trin' => $trin,
+            'exception' => $e::class,
+            'besked' => $e->getMessage(),
+        ]), null, false);
     }
 
     protected function opslagsNoegle(string $type, string $query): string

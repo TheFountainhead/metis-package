@@ -3,6 +3,7 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Component;
+use TheFountainhead\Metis\Livewire\Concerns\NormalisererAlerts;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -14,6 +15,8 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class AlertDetail extends Component
 {
+    use NormalisererAlerts;
+
     public int $alertId;
     public ?array $alert = null;
     public ?string $error = null;
@@ -30,8 +33,19 @@ class AlertDetail extends Component
         $this->loading = true;
         $this->error = null;
 
+        // 🚨 `GET /alerts/{id}` laeste tenantens alert paa den delte noegle for
+        // enhver besoegende. Kun en bekraeftet pilot; samme besked som et
+        // ukendt id, saa siden ikke afsloerer om alerten findes.
+        if (! $this->harPilotAdgang()) {
+            $this->error = __('Alert ikke fundet eller ingen adgang.');
+            $this->alert = null;
+            $this->loading = false;
+
+            return;
+        }
+
         try {
-            $alert = app(RegistryApi::class)->getAlert($this->alertId);
+            $alert = self::normaliserAlert(app(RegistryApi::class)->getAlert($this->alertId));
 
             if ($alert === null) {
                 $this->error = __('Alert ikke fundet eller ingen adgang.');

@@ -281,6 +281,10 @@ it('🚨 det samme gaelder forsidens soegning', function () {
 });
 
 it('🚨 forsidens navnesoegning spoerger ikke om personer for en anonym', function () {
+    // En frisk anonym session, som paa forsiden. Uden startet session er
+    // kvoten brugt (M4), og testen ville maale den gren i stedet.
+    session()->start();
+
     Http::fake([
         '*/v1/cvr/search-by-name' => Http::response(['data' => ['companies' => [['name' => 'LARSEN A/S', 'cvr' => '22222222']]]]),
         '*' => Http::response(PERSON_SVAR),
@@ -485,8 +489,10 @@ dataset('cachede_opslag', [
 ]);
 
 it('🚨 et cache-hit springer IKKE kvote-gaten over', function (Closure $seed, Closure $kald) {
-    $seed();
+    // 🪤 Sessionen FOER seed: `godkendOpslag()` i seed skriver paa sessionens
+    // godkendelsesliste og afviser uden startet session (M4).
     $this->withSession(['metis_lookup_count' => 999]);
+    $seed();
     $api = app(RegistryApi::class);
 
     // Positiv kontrol paa noeglen: inden for kvoten KOMMER det cachede svar.

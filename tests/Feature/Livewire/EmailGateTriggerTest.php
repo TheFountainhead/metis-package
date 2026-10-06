@@ -6,6 +6,9 @@ use TheFountainhead\Metis\Livewire\Search;
 
 beforeEach(function () {
     config(['metis.gating.enabled' => true, 'metis.gating.free_lookups' => 1]);
+    // Som en web-request i prod: sessionen er startet (uden den er man
+    // anonym med proeven brugt, review M4).
+    session()->start();
     Http::fake();
 });
 
