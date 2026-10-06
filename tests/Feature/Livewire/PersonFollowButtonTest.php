@@ -6,6 +6,10 @@ use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\PersonFollowButton;
 
 beforeEach(function () {
+    // Fix-runde 1 (review V3): follow/unfollow skriver watchlists og kraever en
+    // BEKRAEFTET pilot; disambiguering er et personopslag og kraever identifikation.
+    session(['metis_user_token' => '13|pilot', 'metis_pilot_verificeret' => true, 'metis_verified_email' => 'pilot@frankston.io']);
+
     if (! Route::has('metis.lookup')) {
         Route::get('/lookup/{type}/{query}', fn () => null)->name('metis.lookup')->where('query', '.*');
     }

@@ -6,7 +6,8 @@ use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\AlertDetail;
 
 beforeEach(function () {
-    session(['metis_user_token' => '13|fake-token-for-test']);
+    // Fix-runde 1 (review V3): mutationer (markRead) kraever en BEKRAEFTET pilot.
+    session(['metis_user_token' => '13|fake-token-for-test', 'metis_pilot_verificeret' => true]);
 });
 
 it('mounts with alert id and fetches alert via getAlert', function () {

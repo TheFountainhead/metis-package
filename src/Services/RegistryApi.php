@@ -1900,8 +1900,38 @@ class RegistryApi
         }
     }
 
+    /**
+     * Mutationer af watchlists og alerts kraever en BEKRAEFTET pilot.
+     *
+     * 🚨 FIX-RUNDE 1 (review V3): uden token bruger `client()` den DELTE
+     * tenant-noegle, saa en anonym kunne oprette og slette Frankstons
+     * watchlists og markere alerts som laest (`AlertsInbox::unfollow()`,
+     * `FollowButton::toggle()`, `PersonFollowButton::follow()/unfollow()`,
+     * alle offentlige over `/livewire/update`). En verificeret mail alene er
+     * heller ikke nok: den ville stadig skrive paa den DELTE noegle. Et
+     * uprøvet token (`AlertsInbox::setToken()`) er ikke en bekraeftet pilot.
+     *
+     * Laesning (`listWatchlists`, `listAlerts`, `getAlert`, `checkBatch`) er
+     * IKKE gated her: maalt read-only paa prod 6/10 indeholder den delte
+     * noegles data 2 watchlists (ejendom, postnummer) og alerts af typen
+     * `new_transaction` med adresse, pris og matrikel/transaktions-id, ingen
+     * personfelter. Se rapporten.
+     */
+    protected function pilotMutationFejl(): ?array
+    {
+        if (app(LookupAccess::class)->gatingAktiv() && ! app(LookupAccess::class)->erPilot()) {
+            return ['error' => 'pilot_required', 'status' => 403];
+        }
+
+        return null;
+    }
+
     public function createWatchlist(string $type, string $value, ?string $label, array $alertTypes): array
     {
+        if ($blocked = $this->pilotMutationFejl()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()->post('/v1/watchlists', [
                 'watch_type' => $type,
@@ -1918,6 +1948,10 @@ class RegistryApi
 
     public function deleteWatchlist(int $id): array
     {
+        if ($blocked = $this->pilotMutationFejl()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()->delete("/v1/watchlists/{$id}")->throw()->json();
         } catch (RequestException $e) {
@@ -1944,6 +1978,10 @@ class RegistryApi
 
     public function markAlertRead(int $alertId): array
     {
+        if ($blocked = $this->pilotMutationFejl()) {
+            return $blocked;
+        }
+
         try {
             return $this->client()->patch("/v1/alerts/{$alertId}/read")->throw()->json();
         } catch (RequestException $e) {
