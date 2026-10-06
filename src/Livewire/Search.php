@@ -4,10 +4,12 @@ namespace TheFountainhead\Metis\Livewire;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Livewire\Concerns\GatesLookups;
 use TheFountainhead\Metis\Models\MetisLookup;
+use TheFountainhead\Metis\Services\LookupAccess;
 use TheFountainhead\Metis\Services\RegistryApi;
 use TheFountainhead\Metis\Services\SearchDetector;
 
@@ -17,9 +19,32 @@ class Search extends Component
 
     public string $query = '';
 
+    /**
+     * 🚨 #[Locked] (fix-runde 1, review M6): `retrySection('valuation')` laeste
+     * en matrikel fra `$result`, som klienten selv kunne saette.
+     */
+    #[Locked]
     public ?array $result = null;
 
+    /**
+     * 🚨 #[Locked] (6/10-2026). Bladen renderer de lazy CVR-/adresse-sektioner
+     * for `$query` naar `$resultType` er sat. Kunne klienten selv saette den,
+     * ville en `updates`-payload med `resultType=cvr` og et nyt CVR give
+     * sektionerne — og dermed nye lazy-payloads — uden om `search()` og
+     * kvote-gaten. `updatedQuery()` nulstiller den, saa et nyt `query` alene
+     * ikke er nok.
+     */
+    #[Locked]
     public ?string $resultType = null;
+
+    /**
+     * Navnesoegningen udelod personer, fordi brugeren ikke er identificeret.
+     *
+     * 🪤 En TILSTAND, ikke et tomt felt: "ingen personer" ville vaere en
+     * paastand om fravaer. Sandheden er at vi ikke spurgte.
+     */
+    #[Locked]
+    public bool $personerKraeverLogin = false;
 
     public bool $loading = false;
 
@@ -199,7 +224,7 @@ class Search extends Component
         $previousSuggestions = $this->suggestions;
         $previousSuggestionType = $this->suggestionType;
         $this->suggestions = [];
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personerKraeverLogin']);
         $this->resetPersonProperties();
         $this->retryCount = 0;
 
@@ -270,7 +295,7 @@ class Search extends Component
         // email-verifikation og har sin egen graense pr. bruger, mens gaten er
         // et engangsspoergsmaal om adgang. `Lookup` har ingen tilsvarende —
         // ruten baerer allerede `throttle:20,1`.
-        if (config('metis.gating.enabled', true) && ! session('metis_user_token') && $this->isRateLimited()) {
+        if (config('metis.gating.enabled', true) && ! app(LookupAccess::class)->erPilot() && $this->isRateLimited()) {
             $this->rateLimited = true;
 
             return;
@@ -286,6 +311,11 @@ class Search extends Component
             $this->suggestions = $suggestions;
             $this->suggestionType = 'address';
 
+            return;
+        }
+
+        // 🚨 FIX-RUNDE 1: atomisk IP-reservation + godkendelsesliste.
+        if (! $this->godkendOpslag($type, $query)) {
             return;
         }
 
@@ -411,10 +441,33 @@ class Search extends Component
             return;
         }
 
+        // 🚨 FIX-RUNDE 1 (review K1, KRITISK): krydsopslaget havde hverken
+        // gate eller taelling. Knappen "Slaa op" i soegeresultaterne kalder
+        // netop denne metode, og den er offentlig over `/livewire/update`.
+        // Maalt (review POC A): i en frisk session, EFTER at IP'ens proeve var
+        // brugt, gav den alle 13 adressesektioner med ejernavne, for vilkaarlige
+        // adresser og CVR'er uden graense. Frederik 6/10: krydsopslag TAELLER.
+        // Derfor samme gate, rate limit, IP-reservation og taelling som search().
+        if ($this->skalGates()) {
+            $this->dispatch('show-email-gate');
+
+            return;
+        }
+
+        if (config('metis.gating.enabled', true) && ! app(LookupAccess::class)->erPilot() && $this->isRateLimited()) {
+            $this->rateLimited = true;
+
+            return;
+        }
+
+        if (! $this->godkendOpslag($type, $value)) {
+            return;
+        }
+
         $this->query = $value;
         // personProperties/-Status skal med: uden dem baerer et krydsopslag den
         // forrige persons ejendomsliste og besked med over paa den nye enhed.
-        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited']);
+        $this->reset(['result', 'resultType', 'error', 'errorMessage', 'cprBlocked', 'rateLimited', 'personerKraeverLogin']);
         $this->resetPersonProperties();
 
         // CVR/address → show sections inline
@@ -471,9 +524,11 @@ class Search extends Component
     }
 
     #[On('email-verified')]
-    public function onEmailVerified(string $email): void
+    public function onEmailVerified(?string $email = null): void
     {
-        session(['metis_verified_email' => $email]);
+        // 🚨 Skriv IKKE parameteren i sessionen — samme hul som
+        // `Lookup::onEmailVerified()`: en offentlig metode, kaldbar med en
+        // opdigtet mail. `EmailGate::verifyCode()` har allerede sat den.
         $this->search();
     }
 
@@ -532,12 +587,21 @@ class Search extends Component
             'is_cross_reference' => $isCrossReference,
         ]));
 
-        if (! $isCrossReference) {
-            session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
-            if (! session('metis_lookup_window_start')) {
-                session(['metis_lookup_window_start' => now()->timestamp]);
-            }
+        // 🚨 FIX-RUNDE 1: krydsopslag taeller OGSAA (Frederik 6/10). Via
+        // traitens `taelOpslag()`, saa sessionen og en verificeret brugers
+        // lead taelles ét sted. `isCrossReference` er nu kun en logmarkoer.
+        $this->taelOpslag();
+    }
+
+    protected function personerTilladt(): bool
+    {
+        if (app(LookupAccess::class)->erIdentificeret()) {
+            return true;
         }
+
+        $this->personerKraeverLogin = true;
+
+        return false;
     }
 
     protected function performSearch(string $type, string $query): void
@@ -564,7 +628,13 @@ class Search extends Component
         $result = match ($type) {
             'cvr' => $api->fetchCompany($query),
             'company_name' => ['companies' => $api->searchByName($query)],
-            'name' => ['persons' => $api->searchPersonByName($query), 'companies' => $api->searchByName($query)],
+            // 🚨 Personer kun for identificerede (Frederik 6/10-2026). Datalaget
+            // ville afvise kaldet alligevel; at lade vaere med at spoerge goer
+            // det muligt at SIGE det til brugeren frem for at vise et tomt felt.
+            'name' => [
+                'persons' => $this->personerTilladt() ? $api->searchPersonByName($query) : [],
+                'companies' => $api->searchByName($query),
+            ],
             'address' => $api->fetchPropertyByAddress($query),
             default => null,
         };
@@ -586,6 +656,13 @@ class Search extends Component
         }
 
         if (empty($result) || (is_array($result) && empty(array_filter($result)))) {
+            // 🪤 Ingen selskaber, og personerne spurgte vi ikke om. "Ingen
+            // resultater" ville paastaa at personen ikke findes; bladen viser
+            // i stedet at personopslag kraever tilmelding.
+            if ($this->personerKraeverLogin) {
+                return;
+            }
+
             $this->error = true;
             $this->errorMessage = 'no_results';
 

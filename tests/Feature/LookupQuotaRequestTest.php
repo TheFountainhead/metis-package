@@ -164,6 +164,8 @@ it('🪤 en pilot-token gaar stadig fri af kvoten', function () {
     $this->withSession([
         'metis_verified_email' => 'test@ktemadev.dk',
         'metis_user_token' => 'pilot-abc',
+        // Fix-runde 1 (review V2): kun en BEKRAEFTET pilot er fritaget.
+        'metis_pilot_verificeret' => true,
     ]);
 
     $this->get('/lookup/cvr/37792594')

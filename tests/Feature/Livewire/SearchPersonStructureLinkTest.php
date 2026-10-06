@@ -4,6 +4,15 @@ use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\Search;
 
+/*
+ * 🔑 Personsoegning kraever en identificeret bruger (6/10-2026, se
+ * AnonymAdgangTest). Testene her handler om hvad en identificeret bruger
+ * SER, saa sessionen baerer en verificeret mail som efter EmailGate.
+ */
+beforeEach(function () {
+    $this->withSession(['metis_verified_email' => 'pilot@frankston.io']);
+});
+
 /**
  * Ejerskabsgrafen var UOPNAAELIG fra en soegning.
  *
@@ -146,13 +155,22 @@ it('🪤 giver HVER person sin egen knap naar der ER flere traef', function () {
     // `return [[...]]` og giver ALTID praecis én person. Saa vi saetter
     // $result direkte og springer datalaget over — det er den eneste maade at
     // observere loekke-adfaerden paa.
-    $html = Livewire::test(Search::class)
-        ->set('resultType', 'name')
-        ->set('result', ['persons' => [
-            ['name' => 'Frederik Gregers Dannisgård Larnæs', 'roles' => [], 'owned_companies' => []],
-            ['name' => 'Jesper Friis Larnæs', 'roles' => [], 'owned_companies' => []],
-        ]])
-        ->html();
+    //
+    // 🪤 `resultType` er #[Locked] siden 6/10-2026 (en klient der selv satte
+    // den, kunne faa lazy sektioner uden om kvote-gaten), saa `->set()` kan
+    // ikke laengere bruges. Tilstanden saettes i stedet paa SERVEREN af en
+    // testunderklasse — samme rendering, ingen klientskrivning.
+    $html = Livewire::test(new class extends Search
+    {
+        public function mount(): void
+        {
+            $this->resultType = 'name';
+            $this->result = ['persons' => [
+                ['name' => 'Frederik Gregers Dannisgård Larnæs', 'roles' => [], 'owned_companies' => []],
+                ['name' => 'Jesper Friis Larnæs', 'roles' => [], 'owned_companies' => []],
+            ]];
+        }
+    })->html();
 
     expect(substr_count($html, 'data-testid="person-structure-link"'))->toBe(2)
         ->and($html)->toContain(rawurlencode('Frederik Gregers Dannisgård Larnæs'))

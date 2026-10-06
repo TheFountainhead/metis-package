@@ -46,6 +46,16 @@
                 </p>
             @endif
         </div>
+    @elseif($kraeverLogin)
+        {{-- 🚨 Person- og CPR-opslag kraever tilmelding (Frederik 6/10-2026).
+             Sektionerne maa IKKE renderes, af samme grund som ved kvote-gaten
+             nedenfor. Dialogen er den samme `metis-email-gate`, aabnet af
+             `show-email-gate` fra `mount()`. --}}
+        <div class="max-w-2xl mx-auto text-center py-16">
+            <h2 class="text-lg font-bold text-ink-800 mb-2">{{ __('Personopslag kræver at du er tilmeldt') }}</h2>
+            <p class="text-sm text-ink-600 mb-4">{{ __('Tilmeld dig med navn og arbejdsmail for at se personer og CPR-opslag.') }}</p>
+            <button type="button" wire:click="$dispatch('show-email-gate')" class="text-sm text-warm-500 hover:text-warm-600 transition-colors">{{ __('Tilmeld dig') }}</button>
+        </div>
     @elseif($gated)
         {{-- 🚨 Kvote-gaten ramte. Sektionerne maa IKKE renderes: de er `lazy`,
              saa hver af dem ville selv hente sine data via en Livewire-POST og

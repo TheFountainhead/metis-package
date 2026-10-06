@@ -174,6 +174,10 @@ class CompanyStructure extends MetisSection
 
     public function mount(string $query): void
     {
+        if ($this->opslagAfvist($query)) {
+            return;
+        }
+
         $this->query = $query;
         $api = app(RegistryApi::class);
 

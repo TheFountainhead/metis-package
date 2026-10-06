@@ -72,3 +72,30 @@ it('handles empty pilot config without side effects', function () {
 
     expect(session('metis_user_token'))->toBeNull();
 });
+
+it('🔑 en pilot verificeret via pilotlisten er en BEKRAEFTET pilot (fix-runde 1, review V2)', function () {
+    config(['metis.gating.pilot_users' => 'rasmus@example.com:2|abcDEF123xyz']);
+    makeVerification('rasmus@example.com');
+
+    Livewire::test(EmailGate::class)
+        ->set('email', 'rasmus@example.com')
+        ->set('code', '123456')
+        ->call('verifyCode');
+
+    expect(session('metis_pilot_verificeret'))->toBeTrue()
+        ->and(app(\TheFountainhead\Metis\Services\LookupAccess::class)->erPilot())->toBeTrue();
+});
+
+it('🪤 verifikation giver et NYT session-id (fix-runde 1, review M7)', function () {
+    makeVerification('other@example.com');
+    session()->start();
+    $foer = session()->getId();
+
+    Livewire::test(EmailGate::class)
+        ->set('email', 'other@example.com')
+        ->set('code', '123456')
+        ->call('verifyCode');
+
+    expect(session()->getId())->not->toBe($foer)
+        ->and(session('metis_verified_email'))->toBe('other@example.com');
+});

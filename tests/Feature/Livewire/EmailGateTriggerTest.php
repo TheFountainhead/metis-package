@@ -20,7 +20,8 @@ it('shows the email gate on the second lookup for anonymous users', function () 
 });
 
 it('bypasses the gate when a pilot token is active', function () {
-    session(['metis_lookup_count' => 5, 'metis_user_token' => '2|abcDEF123', 'metis_lookup_window_start' => now()->timestamp]);
+    // Fix-runde 1 (review V2): kun en BEKRAEFTET pilot er fritaget, ikke et token alene.
+    session(['metis_lookup_count' => 5, 'metis_user_token' => '2|abcDEF123', 'metis_pilot_verificeret' => true, 'metis_lookup_window_start' => now()->timestamp]);
 
     Livewire::test(Search::class)
         ->set('query', '28963610')

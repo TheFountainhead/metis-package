@@ -105,7 +105,7 @@ class PilotLogin extends Component
         if ($id = session('metis_pilot_account_id')) {
             MetisPilotAccount::whereKey($id)->update(['remember_token' => null]);
         }
-        session()->forget(['metis_user_token', 'metis_pilot_account_id', 'metis_verified_email']);
+        session()->forget(['metis_user_token', 'metis_pilot_account_id', 'metis_verified_email', 'metis_pilot_verificeret']);
         cookie()->queue(cookie()->forget(self::REMEMBER_COOKIE));
         cookie()->queue(cookie()->forget('metis_email'));
     }

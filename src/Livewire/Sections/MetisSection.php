@@ -3,6 +3,8 @@
 namespace TheFountainhead\Metis\Livewire\Sections;
 
 use Livewire\Attributes\Lazy;
+use Livewire\Attributes\Locked;
+use TheFountainhead\Metis\Services\LookupAccess;
 use Livewire\Component;
 
 /**
@@ -28,6 +30,19 @@ use Livewire\Component;
 #[Lazy(isolate: false)]
 abstract class MetisSection extends Component
 {
+    /**
+     * 🚨 #[Locked] (fix-runde 1, review V1). Refresh-handlerne (fx
+     * `CompanyTinglysning::retry()`, `CompanyStructure::loadProperties()`,
+     * `CompanyProperties::loadMore()`) henter paa `$this->query` EFTER mount.
+     * Maalt (review POC C): `updates: {query: "99999999"}` + `retry` hentede
+     * pantebreve for et vilkaarligt CVR.
+     *
+     * 🪤 Sikkert her, i modsaetning til `PersonStructure::$source`
+     * (PersonStructure:200): `query` forbruges af `mount(string $query)` og
+     * saettes altsaa af mount, ikke som en property-tildeling ved lazy-
+     * hydreringen. Bevist med rigtige `__lazyLoad`-rundture over HTTP.
+     */
+    #[Locked]
     public string $query;
     public bool $hasError = false;
     public ?string $errorMessage = null;
@@ -115,6 +130,59 @@ abstract class MetisSection extends Component
     public function boot(): void
     {
         $this->gated = $this->kvoteOpbrugt();
+
+        // 🚨 FIX-RUNDE 1 (review V1): ved hver EFTERFOELGENDE request paa en
+        // sektion (retry, poll, loadMore …) er `query` hydreret fra
+        // snapshottet. Er opslaget ikke godkendt i DENNE session, er det et
+        // genbrugt snapshot fra en anden session: stop foer metoden koerer.
+        //
+        // 🪤 Ved selve `__lazyLoad` er `query` endnu ikke sat (mount har ikke
+        // koert), saa den vej daekkes af `opslagAfvist()` i mount.
+        if (isset($this->query) && ($type = $this->opslagsType())
+            && ! app(LookupAccess::class)->erGodkendt($type, $this->query)) {
+            abort(403);
+        }
+    }
+
+    /**
+     * Hvilken opslagstype sektionen hoerer til, for godkendelseslisten.
+     *
+     * Adresse- og selskabssektioner. Personsektioner kraever en identificeret
+     * bruger i datalaget og er dermed fritaget fra listen (null).
+     */
+    protected function opslagsType(): ?string
+    {
+        $navn = class_basename(static::class);
+
+        return match (true) {
+            str_starts_with($navn, 'Address') => 'address',
+            str_starts_with($navn, 'Company') => 'cvr',
+            default => null,
+        };
+    }
+
+    /**
+     * Foerste linje i mount for sektioner der henter paa et CVR.
+     *
+     * 🚨 FIX-RUNDE 1 (review V1): et `__lazyLoad`-payload er signeret med
+     * APP_KEY, ikke med sessionen. Uden denne linje kunne et payload fra ét
+     * legitimt opslag sendes fra en frisk session (eller en anden IP) og give
+     * selskabets data igen og igen. Adressesektionerne daekkes i datalaget
+     * (`RegistryApi::resolveAddressAnalysis()`), fordi de alle henter derigennem.
+     */
+    protected function opslagAfvist(string $query): bool
+    {
+        $type = $this->opslagsType();
+
+        if ($type === null || app(LookupAccess::class)->erGodkendt($type, $query)) {
+            return false;
+        }
+
+        $this->query = $query;
+        $this->hasError = true;
+        $this->errorMessage = 'lookup_failed';
+
+        return true;
     }
 
     /**
@@ -185,14 +253,8 @@ abstract class MetisSection extends Component
 
     protected function kvoteOpbrugt(): bool
     {
-        if (! config('metis.gating.enabled', true)) {
-            return false;
-        }
-
-        if (session('metis_user_token') || session('metis_verified_email')) {
-            return false;
-        }
-
-        return session('metis_lookup_count', 0) > config('metis.gating.free_lookups', 1);
+        // Samme regel som `RegistryApi::kvoteOpbrugt()`, fra samme sted.
+        // Foer 6/10 var det en tredje kopi af taersklen.
+        return app(\TheFountainhead\Metis\Services\LookupAccess::class)->anonymKvoteOverskredet();
     }
 }
