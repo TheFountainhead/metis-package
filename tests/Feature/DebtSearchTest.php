@@ -6,7 +6,13 @@ use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 
 // /soeg er kun for pilotbrugere: testene simulerer en pilot-session.
-beforeEach(fn () => session(['metis_user_token' => '19|abc']));
+beforeEach(function () {
+    // Gating-test: slaar adgangskontrollen til (TestCase slaar den fra) og
+    // starter sessionen, som en web-request i prod altid har.
+    config()->set('metis.gating.enabled', true);
+    session()->start();
+    session(['metis_user_token' => '19|abc']);
+});
 
 // Søge-fakes bruger '*/v1/debt-search?*' og IKKE '*/v1/debt-search*'.
 // Det brede mønster matcher nemlig også '/v1/debt-search/export-link', og

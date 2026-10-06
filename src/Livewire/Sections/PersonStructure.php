@@ -1291,9 +1291,43 @@ class PersonStructure extends MetisSection
             $this->staleData = false;
         }
 
+        $this->beskaerKoeerTilEgneSelskaber();
         $this->recoverPhaseResults();
 
         return true;
+    }
+
+    /**
+     * Fjern noegler fra arbejdskoeerne, som ikke er et af personens EGNE
+     * selskaber.
+     *
+     * 🚨 OPFOELGNING PAA PR #192 (review M5). `structureByCompany` og
+     * `propertiesByCompany` er offentlige og ulaaste, og `tick()`,
+     * `retryStructures()` og `retryProperties()` henter for hver noegle. Over
+     * `/livewire/update` kunne en klient skrive `structureByCompany.<cvr> =
+     * pending` og faa serveren til at hente struktur og portefoelje for et
+     * VILKAARLIGT selskab paa tenant-noeglen, uden et talt opslag. Maalt
+     * 6/10: det hentede naaede ikke klienten (`rebuild()` bygger kun noder
+     * fra personens egne selskaber), men kaldet gik ud og varmede cachen.
+     *
+     * 🔑 Ikke `#[Locked]` (se `$source` ovenfor: Locked braekker den lazy
+     * rundtur). I stedet en serverside-kontrol mod `companiesData`, som
+     * netop er hentet paa den LAASTE `query`. Alle legitime noegler kommer
+     * derfra (`visibleFirstLevelCvrs()` bygger paa samme liste), saa
+     * navigation i grafen roeres ikke.
+     *
+     * Koeres FOER `recoverPhaseResults()`, som ellers ville laese en fremmed
+     * 'loaded'-noegle fra cachen.
+     */
+    protected function beskaerKoeerTilEgneSelskaber(): void
+    {
+        $egne = array_fill_keys(
+            collect($this->companiesData)->pluck('cvr')->filter()->map(fn ($cvr) => (string) $cvr)->all(),
+            true,
+        );
+
+        $this->structureByCompany = array_intersect_key($this->structureByCompany, $egne);
+        $this->propertiesByCompany = array_intersect_key($this->propertiesByCompany, $egne);
     }
 
     /**

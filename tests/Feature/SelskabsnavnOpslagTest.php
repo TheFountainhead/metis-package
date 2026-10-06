@@ -33,6 +33,9 @@ it('🚨 sender ét entydigt traef videre til selskabets CVR-side', function () 
 
     Livewire::test('metis-lookup', ['type' => 'company_name', 'query' => 'A.P. Møller - Mærsk A/S'])
         ->assertRedirect(route('metis.lookup', ['type' => 'cvr', 'query' => '22756214']));
+
+    expect(session('metis_lookup_count', 0))->toBe(0)
+        ->and(app(\TheFountainhead\Metis\Services\LookupAccess::class)->brugtFraIp())->toBe(0);
 });
 
 it('🚨 gaetter IKKE naar der er flere traef', function () {
@@ -57,7 +60,13 @@ it('🪤 lander ikke paa en tom side naar selskabet slet ikke findes', function 
 it('🪤 koster ikke en kvote at blive videresendt', function () {
     // Redirecten sker FOER kvote-gaten: brugeren har ikke set data endnu.
     config()->set('metis.gating.enabled', true);
-    session(['metis_lookup_count' => 99]);
+    // 🪤 Foer M4 stod her `metis_lookup_count => 99` uden startet session, og
+    // testen bestod KUN fordi datalaget var aabent uden session. Med en rigtig
+    // session afviser datalaget navneopslaget ved 99 (`client()`-gaten), saa
+    // en anonym med brugt kvote bliver ikke videresendt. Det testen vil vise,
+    // at videresendelsen ikke KOSTER et opslag, maales nu fra 0.
+    session()->start();
+    session(['metis_lookup_count' => 0]);
 
     Http::fake(['*' => Http::response(['data' => ['companies' => [
         ['cvr' => '22756214', 'name' => 'A.P. Møller - Mærsk A/S'],

@@ -11,6 +11,11 @@ use TheFountainhead\Metis\Livewire\PropertyExplore;
 // export-kaldet. Samme fælde som i DebtSearchTest.
 
 beforeEach(function () {
+    // Gating-test: slaar adgangskontrollen til (TestCase slaar den fra) og
+    // starter sessionen, som en web-request i prod altid har.
+    config()->set('metis.gating.enabled', true);
+    session()->start();
+
     if (! Route::has('metis.lookup')) {
         Route::get('/lookup/{type}/{query}', fn () => null)->name('metis.lookup')->where('query', '.*');
     }

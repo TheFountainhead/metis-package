@@ -6,6 +6,9 @@ return [
     'gating' => [
         'enabled' => env('METIS_GATING', true),
         'free_lookups' => 1,
+        // Hoejst saa mange anonyme gratis-opslag pr. IP pr. doegn (Frederik
+        // 6/10-2026). Ikke 1: mobilnet koerer CGNAT, hvor mange deler én IP.
+        'ip_daily_limit' => env('METIS_IP_DAILY_LIMIT', 5),
         'require_business_email' => true,
         // "email:token,email:token" — når en pilot-email verificeres i gaten,
         // hæftes deres registry-api-token på sessionen (alerts + kvote-fritagelse)

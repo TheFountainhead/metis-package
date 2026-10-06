@@ -56,6 +56,21 @@
                 {{ __('Tokenen tilhører dig personligt og må ikke deles. Logger automatisk ud når sessionen lukker.') }}
             </p>
         </div>
+    @elseif(! $this->harPilotAdgang())
+        {{-- 🚨 Et token ALENE er ikke en bekraeftet pilot (LookupAccess::erPilot):
+             `setToken()` proever det ikke mod registry-api. Ingen data her. --}}
+        <div class="max-w-xl mx-auto p-8 bg-white border rounded-lg">
+            <h2 class="text-lg font-semibold mb-2">{{ __('Tokenet er ikke bekræftet') }}</h2>
+            <p class="text-sm text-zinc-600 mb-4">
+                {{ __('Log ind med din pilotkonto for at se dine alerts og fulgte entiteter.') }}
+            </p>
+            @if(Route::has('metis.login'))
+                <a href="{{ route('metis.login') }}"
+                   class="inline-block px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
+                    {{ __('Log ind') }}
+                </a>
+            @endif
+        </div>
     @else
 
     @php
@@ -215,7 +230,9 @@
                                     {{ $isHigh ? __('Høj prioritet') : __('Information') }}
                                 </span>
                                 <span>{{ __('Via') }}: {{ $watchType === 'company' ? __('Selskab') : __('Ejendom') }} {{ $watchLabel }}</span>
-                                <span>{{ \Carbon\Carbon::parse($alert['created_at'])->diffForHumans() }}</span>
+                                @if($alert['created_at'])
+                                    <span>{{ \Carbon\Carbon::parse($alert['created_at'])->diffForHumans() }}</span>
+                                @endif
                             </div>
                         </a>
 

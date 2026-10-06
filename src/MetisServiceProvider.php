@@ -11,6 +11,7 @@ class MetisServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/metis.php', 'metis');
+        $this->fletGatingNoegler();
 
         $this->app->singleton('metis', function ($app) {
             return new \TheFountainhead\Metis\Services\RegistryApi(
@@ -18,6 +19,32 @@ class MetisServiceProvider extends ServiceProvider
                 config('metis.registry_api.key'),
             );
         });
+    }
+
+    /**
+     * Pakkens `gating`-noegler som standard under vaertens.
+     *
+     * 🪤 `mergeConfigFrom()` fletter kun det OEVERSTE niveau. Vaerten (metis)
+     * har en publiceret config/metis.php, hvis `gating` ikke har
+     * `ip_daily_limit`, saa vaertens `gating` erstattede pakkens helt, og en
+     * ny noegle her naaede aldrig frem. `LookupAccess::ipGraense()` laeser
+     * config uden standard (fail-closed: 0), saa uden denne fletning ville
+     * en pakke-opdatering lukke den anonyme proeve i prod.
+     *
+     * Kun ét niveau: vaertens lister (fx `free_email_domains`) erstatter
+     * pakkens, som foer.
+     */
+    protected function fletGatingNoegler(): void
+    {
+        if ($this->app instanceof \Illuminate\Contracts\Foundation\CachesConfiguration
+            && $this->app->configurationIsCached()) {
+            return;
+        }
+
+        $pakke = (require __DIR__.'/../config/metis.php')['gating'] ?? [];
+        $config = $this->app->make('config');
+
+        $config->set('metis.gating', array_merge($pakke, (array) $config->get('metis.gating', [])));
     }
 
     public function boot(): void
@@ -186,6 +213,12 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-follow-button', \TheFountainhead\Metis\Livewire\FollowButton::class);
         Livewire::component('metis-person-follow-button', \TheFountainhead\Metis\Livewire\PersonFollowButton::class);
         Livewire::component('metis-alerts-inbox', \TheFountainhead\Metis\Livewire\AlertsInbox::class);
+        // 🐛 Uden et navn kunne `/livewire/update` ikke finde komponenten
+        // (ComponentNotFoundException paa `the-fountainhead.metis.livewire.
+        // alert-detail`), saa knappen "Markér som læst" paa `/alerts/{id}` gav
+        // 500. `fetch()` og `markRead()` er gated paa pilot (NormalisererAlerts
+        // og RegistryApi::pilotFejl), saa navnet aabner ingen ny vej ind.
+        Livewire::component('metis-alert-detail', \TheFountainhead\Metis\Livewire\AlertDetail::class);
     }
 
     protected function registerCriiptoDriver(): void

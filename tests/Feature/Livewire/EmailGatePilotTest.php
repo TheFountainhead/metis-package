@@ -25,6 +25,8 @@ function makeVerification(string $email): void
 it('attaches the pilot token to the session when a pilot email verifies', function () {
     config(['metis.gating.pilot_users' => 'rasmus@example.com:2|abcDEF123xyz']);
     makeVerification('rasmus@example.com');
+    // Som en web-request i prod; uden startet session er ingen pilot (M4).
+    session()->start();
 
     Livewire::test(EmailGate::class)
         ->set('email', 'rasmus@example.com')
@@ -81,6 +83,10 @@ it('🔑 en pilot verificeret via pilotlisten er en BEKRAEFTET pilot (fix-runde 
         ->set('email', 'rasmus@example.com')
         ->set('code', '123456')
         ->call('verifyCode');
+
+    // 🪤 Livewire-kaldet er en request, der GEMMER sessionen og efterlader den
+    // ikke-startet. Naeste request starter den igen, ligesom her.
+    session()->start();
 
     expect(session('metis_pilot_verificeret'))->toBeTrue()
         ->and(app(\TheFountainhead\Metis\Services\LookupAccess::class)->erPilot())->toBeTrue();

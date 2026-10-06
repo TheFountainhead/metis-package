@@ -4,6 +4,7 @@ namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Component;
 use Livewire\WithPagination;
+use TheFountainhead\Metis\Livewire\Concerns\NormalisererAlerts;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -14,6 +15,7 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class AlertsInbox extends Component
 {
+    use NormalisererAlerts;
     use WithPagination;
 
     public bool $unreadOnly = false;
@@ -38,9 +40,17 @@ class AlertsInbox extends Component
 
     public function loadWatchlists(): void
     {
+        // 🚨 Offentlig over `/livewire/update`, uanset hvad siden viser. Kun en
+        // bekraeftet pilot; ellers ville den delte tenant-noegle svare.
+        if (! $this->harPilotAdgang()) {
+            $this->watchlists = [];
+
+            return;
+        }
+
         try {
             $resp = app(RegistryApi::class)->listWatchlists();
-            $this->watchlists = $resp['data'] ?? [];
+            $this->watchlists = isset($resp['error']) ? [] : self::normaliserWatchlists($resp);
         } catch (\Throwable $e) {
             $this->watchlists = [];
         }
@@ -111,18 +121,31 @@ class AlertsInbox extends Component
 
     public function fetch(): void
     {
-        $this->loading = true;
         $this->error = null;
 
+        // 🚨 Samme gate som `loadWatchlists()`: en ikke-pilot faar en tom
+        // tilstand og intet kald.
+        if (! $this->harPilotAdgang()) {
+            $this->response = null;
+            $this->loading = false;
+
+            return;
+        }
+
+        $this->loading = true;
+
         try {
-            $this->response = app(RegistryApi::class)->listAlerts(
+            $svar = app(RegistryApi::class)->listAlerts(
                 unreadOnly: $this->unreadOnly,
                 priority: $this->priority,
                 page: $this->getPage(),
             );
 
-            if (isset($this->response['error'])) {
+            if (isset($svar['error'])) {
+                $this->response = null;
                 $this->error = 'Kunne ikke hente alerts.';
+            } else {
+                $this->response = self::normaliserAlertSvar($svar);
             }
         } catch (\Throwable $e) {
             $this->error = 'Søgetjenesten er midlertidigt utilgængelig.';

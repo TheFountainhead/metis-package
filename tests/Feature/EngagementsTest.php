@@ -47,6 +47,10 @@ function cockpitMeta(): array
 
 beforeEach(function () {
     Http::preventStrayRequests();
+    // Gating-test: slaar adgangskontrollen til (TestCase slaar den fra) og
+    // starter sessionen, som en web-request i prod altid har.
+    config()->set('metis.gating.enabled', true);
+    session()->start();
 });
 
 it('uden pilot-token vises "kun for pilotbrugere", aldrig en tom liste, og API-et kaldes ikke', function () {
@@ -231,6 +235,8 @@ it('sortBy accepterer kun kendte felter', function () {
 });
 
 it('regnskabstabellen: udbytte vises som tal, 0 som 0, og null eller manglende som "ikke oplyst"', function () {
+    // Visningstest af en sektion, ikke en adgangstest.
+    config()->set('metis.gating.enabled', false);
     session(['metis_user_token' => '19|abc']);
     Http::fake(['*/v1/cvr/company/*' => Http::response(['data' => ['company' => [
         'name' => 'Testselskab ApS', 'cvr' => '22222222',
