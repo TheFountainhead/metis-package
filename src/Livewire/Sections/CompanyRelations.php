@@ -25,6 +25,10 @@ class CompanyRelations extends MetisSection
 
     public function mount(string $query): void
     {
+        if ($this->opslagAfvist($query)) {
+            return;
+        }
+
         $this->query = $query;
 
         if (! preg_match('/^\d{8}$/', $query)) {

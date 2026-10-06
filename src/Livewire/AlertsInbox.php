@@ -64,7 +64,12 @@ class AlertsInbox extends Component
             return;
         }
 
+        // 🪤 Tokenet er IKKE proevet her. Det giver derfor ingen kvote-
+        // fritagelse (review V2, se `LookupAccess::erPilot()`): kun dataene
+        // registry-api selv udleverer paa tokenet. Flaget fjernes, saa et
+        // tidligere verificeret pilot-flag ikke daekker et nyt indtastet token.
         session(['metis_user_token' => $token]);
+        session()->forget('metis_pilot_verificeret');
         $this->tokenInput = '';
         $this->tokenError = false;
         $this->fetch();
@@ -79,7 +84,7 @@ class AlertsInbox extends Component
             \TheFountainhead\Metis\Livewire\PilotLogin::logout();
         }
 
-        session()->forget('metis_user_token');
+        session()->forget(['metis_user_token', 'metis_pilot_verificeret']);
         $this->response = null;
         $this->watchlists = null;
         $this->showWatchlists = false;

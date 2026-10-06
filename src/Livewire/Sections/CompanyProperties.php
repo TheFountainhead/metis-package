@@ -18,6 +18,10 @@ class CompanyProperties extends MetisSection
 
     public function mount(string $query): void
     {
+        if ($this->opslagAfvist($query)) {
+            return;
+        }
+
         $this->query = $query;
 
         // Load existing cached data immediately

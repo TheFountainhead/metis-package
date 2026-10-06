@@ -80,10 +80,30 @@ class LookupAccess
     }
 
     /**
+     * Er dette en bekraeftet pilot?
+     *
+     * 🚨 FIX-RUNDE 1 (review V2): et `metis_user_token` ALENE er ikke en
+     * pilot. `AlertsInbox::setToken()` accepterer enhver streng paa formen
+     * `<tal>|<tegn>`, og et falsk token fritog for kvoten og IP-taellingen og
+     * gav adgang til cachede ejere og pantebreve (review POC B). Kun to veje
+     * er bekraeftet paa serveren:
+     *
+     *   - `PilotLogin::attach()` (kodeord eller husk-mig) saetter
+     *     `metis_pilot_account_id`;
+     *   - `EmailGate::verifyCode()` saetter `metis_pilot_verificeret`, naar
+     *     den verificerede mail staar i `metis.gating.pilot_users`.
+     */
+    public function erPilot(): bool
+    {
+        return filled(session('metis_user_token'))
+            && (filled(session('metis_pilot_account_id')) || session('metis_pilot_verificeret') === true);
+    }
+
+    /**
      * Er brugeren fritaget fra den ANONYMES gratis-kvote?
      *
-     * Uaendret semantik: pilot-token eller verificeret mail. Verificerede
-     * brugere har deres egen lead-kvote, som `GatesLookups` haandhaever.
+     * Bekraeftet pilot eller verificeret mail. Verificerede brugere har deres
+     * egen lead-kvote, som `GatesLookups` haandhaever.
      */
     public function erKvoteFritaget(): bool
     {
@@ -91,7 +111,7 @@ class LookupAccess
             return true;
         }
 
-        return filled(session('metis_user_token')) || filled(session('metis_verified_email'));
+        return $this->erPilot() || filled(session('metis_verified_email'));
     }
 
     public function graense(): int
@@ -99,7 +119,18 @@ class LookupAccess
         return (int) config('metis.gating.free_lookups', 1);
     }
 
-    /** DEN ENE taerskel. Se klassens docblock. */
+    /**
+     * Hoejst saa mange anonyme opslag pr. IP pr. vindue (Frederik 6/10: 5).
+     *
+     * 🪤 Ikke 1: mobilnet koerer CGNAT, hvor mange kunder deler én IP. Med 1
+     * ville den foerste paa masten bruge proeven for alle de andre.
+     */
+    public function ipGraense(): int
+    {
+        return (int) config('metis.gating.ip_daily_limit', 5);
+    }
+
+    /** DEN ENE taerskel pr. session. Se klassens docblock. */
     public function opslagNrErTilladt(int $nr): bool
     {
         return $nr <= $this->graense();
@@ -120,22 +151,22 @@ class LookupAccess
     /**
      * Siden: maa en anonym besoegende STARTE et nyt opslag?
      *
-     * Det hoejeste af session- og IP-taellingen afgoer. Ny cookie nulstiller
-     * sessionen, men ikke IP'en.
+     * Begge graenser skal holde: 1 pr. session OG `ip_daily_limit` pr. IP.
+     * Ren laesning til visning; selve reservationen er atomisk i
+     * `godkendOpslag()`.
      */
     public function anonymtOpslagTilladt(): bool
     {
-        return $this->opslagNrErTilladt(max($this->brugtISession(), $this->brugtFraIp()) + 1);
+        return $this->opslagNrErTilladt($this->brugtISession() + 1)
+            && $this->brugtFraIp() < $this->ipGraense();
     }
 
     /**
      * Datalaget: har denne session brugt flere opslag end den har faaet?
      *
-     * 🪤 KUN sessionen her, ikke IP'en. To kolleger bag samme kontor-IP der
-     * starter et opslag samtidig, kan begge passere siden (begge laeste 0),
-     * og IP-taelleren staar da paa 2. Talte datalaget IP'en med, ville BEGGE
-     * deres allerede tilladte opslag fejle i alle sektioner. IP-bindingen
-     * sidder paa siden, hvor nye opslag (og dermed nye lazy-payloads) udstedes.
+     * 🪤 KUN sessionen her. IP-graensen haandhaeves atomisk dér hvor et
+     * opslag GODKENDES (`godkendOpslag()`), og datalaget kraever desuden at
+     * opslaget staar paa sessionens godkendelsesliste (`erGodkendt()`).
      */
     public function anonymKvoteOverskredet(): bool
     {
@@ -147,28 +178,77 @@ class LookupAccess
     }
 
     /**
-     * Tael et anonymt opslag paa IP'en. Sessionstaelleren ejes af kalderen.
+     * Godkend et opslag: reserver en IP-plads ATOMISK og skriv opslaget paa
+     * sessionens godkendelsesliste. Returnerer false, hvis IP'en er brugt op.
      *
-     * Vinduet er fast fra foerste opslag (`Cache::add` saetter udloebet, og
-     * `increment` bevarer det), som standard 24 timer.
+     * 🚨 FIX-RUNDE 1 (review M1): foer blev IP'en LAEST i gaten og TALT efter
+     * render. N samtidige requests fra nye sessioner laeste alle 0 og kom
+     * alle igennem. Nu er reservationen `increment` med den RETURNEREDE
+     * vaerdi som afgoerelse; overskrides graensen, gives pladsen tilbage.
+     *
+     * 🚨 FIX-RUNDE 1 (review V1): godkendelseslisten binder sektionerne til
+     * de opslag siden faktisk har godkendt i DENNE session. Livewires
+     * checksum er bundet til APP_KEY, ikke til sessionen, saa et snapshot fra
+     * ét opslag kunne genbruges i en frisk session til et andet (eller
+     * samme) CVR. Sektionerne og `resolveAddressAnalysis()` spoerger nu
+     * `erGodkendt()` foer de henter.
+     *
+     * Fritagne brugere (verificeret mail, bekraeftet pilot) og gating slaaet
+     * fra springes over: de har ingen anonym kvote.
      */
-    public function taelAnonymtOpslagPaaIp(): void
+    public function godkendOpslag(string $type, string $query): bool
     {
         if ($this->erKvoteFritaget()) {
-            return;
+            return true;
         }
 
         $noegle = $this->ipNoegle();
 
-        if ($noegle === null) {
-            return;
+        if ($noegle !== null) {
+            $over = rescue(function () use ($noegle) {
+                Cache::add($noegle, 0, now()->addHours((int) config('metis.gating.ip_window_hours', 24)));
+                $n = (int) Cache::increment($noegle);
+
+                if ($n > $this->ipGraense()) {
+                    Cache::decrement($noegle);
+
+                    return true;
+                }
+
+                return false;
+            }, false, false);
+
+            if ($over) {
+                return false;
+            }
         }
 
-        // 🪤 `rescue()`: en fejlet cache maa ikke koste brugeren opslaget.
-        rescue(function () use ($noegle) {
-            Cache::add($noegle, 0, now()->addHours((int) config('metis.gating.ip_window_hours', 24)));
-            Cache::increment($noegle);
-        }, null, false);
+        $liste = (array) session('metis_godkendte_opslag', []);
+        $liste[] = $this->opslagsNoegle($type, $query);
+        session(['metis_godkendte_opslag' => array_slice(array_values(array_unique($liste)), -50)]);
+
+        return true;
+    }
+
+    /**
+     * Maa denne session hente data for opslaget?
+     *
+     * Sandt for fritagne brugere, uden session (baggrundsjob) og med gating
+     * slaaet fra. Ellers kun hvis `godkendOpslag()` har godkendt praecis dette
+     * opslag i denne session.
+     */
+    public function erGodkendt(string $type, string $query): bool
+    {
+        if (! $this->gatingAktiv() || ! $this->harSession() || $this->erKvoteFritaget()) {
+            return true;
+        }
+
+        return in_array($this->opslagsNoegle($type, $query), (array) session('metis_godkendte_opslag', []), true);
+    }
+
+    protected function opslagsNoegle(string $type, string $query): string
+    {
+        return sha1(strtolower($type).'|'.trim($query));
     }
 
     /**
@@ -203,9 +283,9 @@ class LookupAccess
     /**
      * Cache-noeglen for IP'ens taeller.
      *
-     * 🪤 IPv6 bindes paa /64. En almindelig IPv6-forbindelse faar et helt
-     * /64-net og kan skifte adresse inden for det efter forgodtbefindende;
-     * en noegle pr. fuld adresse ville vaere et nyt gratis opslag pr. adresse.
+     * 🪤 IPv6 bindes paa /56. En IPv6-forbindelse faar et helt net og kan
+     * skifte adresse inden for det efter forgodtbefindende; en noegle pr. fuld
+     * adresse ville vaere et nyt gratis opslag pr. adresse.
      *
      * sha1, saa en raa IP ikke staar i cache-tabellen.
      */
@@ -218,8 +298,11 @@ class LookupAccess
         }
 
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            // Standarden nulstiller de sidste 8 bytes af en IPv6, altsaa /64.
-            $ip = IpUtils::anonymize($ip);
+            // 🪤 /56, ikke /64 (review M2): mange udbydere tildeler et /56
+            // eller /48, saa et /64 gav op til 256 proever pr. abonnent. De
+            // sidste 9 bytes nulstilles. (Tredje argument kraever Symfony 7.2+;
+            // vaerten koerer 7.4.)
+            $ip = IpUtils::anonymize($ip, 1, 9);
         }
 
         return 'metis:anon_lookups:ip:'.sha1($ip);

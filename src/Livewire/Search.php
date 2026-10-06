@@ -19,6 +19,11 @@ class Search extends Component
 
     public string $query = '';
 
+    /**
+     * 🚨 #[Locked] (fix-runde 1, review M6): `retrySection('valuation')` laeste
+     * en matrikel fra `$result`, som klienten selv kunne saette.
+     */
+    #[Locked]
     public ?array $result = null;
 
     /**
@@ -290,7 +295,7 @@ class Search extends Component
         // email-verifikation og har sin egen graense pr. bruger, mens gaten er
         // et engangsspoergsmaal om adgang. `Lookup` har ingen tilsvarende —
         // ruten baerer allerede `throttle:20,1`.
-        if (config('metis.gating.enabled', true) && ! session('metis_user_token') && $this->isRateLimited()) {
+        if (config('metis.gating.enabled', true) && ! app(LookupAccess::class)->erPilot() && $this->isRateLimited()) {
             $this->rateLimited = true;
 
             return;
@@ -306,6 +311,11 @@ class Search extends Component
             $this->suggestions = $suggestions;
             $this->suggestionType = 'address';
 
+            return;
+        }
+
+        // 🚨 FIX-RUNDE 1: atomisk IP-reservation + godkendelsesliste.
+        if (! $this->godkendOpslag($type, $query)) {
             return;
         }
 
@@ -428,6 +438,29 @@ class Search extends Component
         if ($type === 'cpr') {
             $this->cprBlocked = true;
 
+            return;
+        }
+
+        // 🚨 FIX-RUNDE 1 (review K1, KRITISK): krydsopslaget havde hverken
+        // gate eller taelling. Knappen "Slaa op" i soegeresultaterne kalder
+        // netop denne metode, og den er offentlig over `/livewire/update`.
+        // Maalt (review POC A): i en frisk session, EFTER at IP'ens proeve var
+        // brugt, gav den alle 13 adressesektioner med ejernavne, for vilkaarlige
+        // adresser og CVR'er uden graense. Frederik 6/10: krydsopslag TAELLER.
+        // Derfor samme gate, rate limit, IP-reservation og taelling som search().
+        if ($this->skalGates()) {
+            $this->dispatch('show-email-gate');
+
+            return;
+        }
+
+        if (config('metis.gating.enabled', true) && ! app(LookupAccess::class)->erPilot() && $this->isRateLimited()) {
+            $this->rateLimited = true;
+
+            return;
+        }
+
+        if (! $this->godkendOpslag($type, $value)) {
             return;
         }
 
@@ -554,15 +587,10 @@ class Search extends Component
             'is_cross_reference' => $isCrossReference,
         ]));
 
-        if (! $isCrossReference) {
-            session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
-            // Samme IP-taeller som `/lookup` — ellers ville forsiden vaere en
-            // anden doer ind, hvor ryddede cookies stadig gav et nyt opslag.
-            app(LookupAccess::class)->taelAnonymtOpslagPaaIp();
-            if (! session('metis_lookup_window_start')) {
-                session(['metis_lookup_window_start' => now()->timestamp]);
-            }
-        }
+        // 🚨 FIX-RUNDE 1: krydsopslag taeller OGSAA (Frederik 6/10). Via
+        // traitens `taelOpslag()`, saa sessionen og en verificeret brugers
+        // lead taelles ét sted. `isCrossReference` er nu kun en logmarkoer.
+        $this->taelOpslag();
     }
 
     protected function personerTilladt(): bool

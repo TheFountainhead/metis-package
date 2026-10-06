@@ -234,10 +234,17 @@ class EmailGate extends Component
         }
 
         cookie()->queue('metis_email', $this->email, 60 * 24 * 30);
+
+        // 🪤 Nyt session-id ved identitetsskiftet (fix-runde 1, review M7):
+        // ellers kan et session-id plantet foer verifikationen arve den
+        // verificerede identitet, og for en pilot dennes registry-token.
+        session()->regenerate();
         session(['metis_verified_email' => $this->email]);
 
         if ($token = $this->pilotToken($this->email)) {
-            session(['metis_user_token' => $token]);
+            // Flaget fortaeller `LookupAccess::erPilot()` at tokenet kommer fra
+            // serverens egen pilotliste, ikke fra en indtastning (review V2).
+            session(['metis_user_token' => $token, 'metis_pilot_verificeret' => true]);
         }
 
         $this->dispatch('email-verified', email: $this->email);

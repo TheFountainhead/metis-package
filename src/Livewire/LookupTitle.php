@@ -44,6 +44,12 @@ class LookupTitle extends Component
 
     protected function companyTitle(string $cvr): string
     {
+        // Fix-runde 1 (review V1): samme godkendelsesliste som sektionerne,
+        // ellers kunne et genbrugt titel-payload slaa selskabsnavne op.
+        if (! app(\TheFountainhead\Metis\Services\LookupAccess::class)->erGodkendt('cvr', $cvr)) {
+            return "CVR {$cvr}";
+        }
+
         $info = rescue(fn () => app(RegistryApi::class)->fetchCompanyInfo($cvr), report: false);
 
         $name = is_array($info) && ! isset($info['error']) ? ($info['name'] ?? null) : null;

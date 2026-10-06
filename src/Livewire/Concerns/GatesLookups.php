@@ -49,9 +49,12 @@ trait GatesLookups
             return false;
         }
 
-        // Pilot-token = fuld adgang, ingen kvote. Rasmus-piloten maa ikke
+        // Bekraeftet pilot = fuld adgang, ingen kvote. Rasmus-piloten maa ikke
         // rammes af den offentlige betas graenser.
-        if (session('metis_user_token')) {
+        //
+        // 🚨 FIX-RUNDE 1 (review V2): IKKE bare `session('metis_user_token')`.
+        // Et uprøvet token fra `AlertsInbox::setToken()` fritog for kvoten.
+        if (app(LookupAccess::class)->erPilot()) {
             return false;
         }
 
@@ -78,6 +81,25 @@ trait GatesLookups
      * samme i `RegistryApi::loginKraevetFejl()`; dette er siden, som skal vise
      * tilmeldingen frem for en raekke fejlede sektioner.
      */
+    /**
+     * Godkend opslaget (atomisk IP-reservation + sessionens godkendelsesliste).
+     * Returnerer false, hvis IP'ens graense er naaet; gaten vises da.
+     *
+     * 🪤 Kaldes LIGE FOER opslaget vises og taelles, efter alle grene der
+     * returnerer uden at vise noget (CPR-redirect, ufuldstaendig adresse),
+     * saa et opslag der aldrig blev vist ikke koster en IP-plads.
+     */
+    protected function godkendOpslag(string $type, string $query): bool
+    {
+        if (app(LookupAccess::class)->godkendOpslag($type, $query)) {
+            return true;
+        }
+
+        $this->dispatch('show-email-gate');
+
+        return false;
+    }
+
     protected function kraeverIdentifikation(string $type): bool
     {
         return in_array(strtolower($type), ['person', 'cpr'], true)
@@ -133,9 +155,6 @@ trait GatesLookups
     protected function taelOpslag(): void
     {
         session(['metis_lookup_count' => session('metis_lookup_count', 0) + 1]);
-
-        // Kun anonyme taelles paa IP'en; verificerede har deres lead-kvote.
-        app(LookupAccess::class)->taelAnonymtOpslagPaaIp();
 
         if (! session('metis_lookup_window_start')) {
             session(['metis_lookup_window_start' => now()->timestamp]);

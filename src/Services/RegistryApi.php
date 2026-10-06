@@ -1420,6 +1420,15 @@ class RegistryApi
      */
     public function resolveAddressAnalysis(string $address): array
     {
+        // 🚨 FIX-RUNDE 1 (review V1/POC D): alle 13 adressesektioner og
+        // kortet henter herigennem, saa godkendelseslisten haandhaeves HER,
+        // foer cachen. En anonym session faar kun de adresser, siden har
+        // godkendt i denne session; et genbrugt payload i en frisk session faar
+        // intet. Fejl-arrayet laeses af sektionerne som "opslaget fejlede".
+        if (! app(LookupAccess::class)->erGodkendt('address', $address)) {
+            return ['error' => 'not_approved', 'status' => 403];
+        }
+
         $cacheKey = 'metis:address_analysis:'.md5($address);
 
         if (! is_null($cached = $this->fraCache($cacheKey))) {

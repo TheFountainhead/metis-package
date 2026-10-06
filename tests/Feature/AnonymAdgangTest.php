@@ -46,6 +46,10 @@ beforeEach(function () {
     config()->set('metis.mode', 'standalone');
     config()->set('metis.gating.enabled', true);
     config()->set('metis.gating.free_lookups', 1);
+    // 🪤 IP-graensen er 5 som standard (Frederik 6/10, fix-runde 1). Testene
+    // her blev skrevet mod 1 og beviser bindingen tydeligst dér; standarden
+    // paa 5 testes i ReviewPocRegressionTest.
+    config()->set('metis.gating.ip_daily_limit', 1);
     Cache::flush();
     Http::preventStrayRequests();
     Http::fake(['*' => Http::response(PERSON_SVAR)]);
@@ -370,7 +374,7 @@ it('🚨 CF-Connecting-IP fra en IKKE-Cloudflare-afsender ignoreres', function (
         ->assertSee('Du har brugt dine gratis opslag');
 });
 
-it('🪤 IPv6 bindes paa /64', function () {
+it('🪤 IPv6 bindes paa /56 (og dermed ogsaa inden for et /64)', function () {
     $this->withServerVariables(['REMOTE_ADDR' => '2001:db8:1:2::1'])
         ->get('/lookup/address/Travervænget 3, 2920 Charlottenlund')->assertOk();
 
@@ -378,6 +382,14 @@ it('🪤 IPv6 bindes paa /64', function () {
 
     $this->withServerVariables(['REMOTE_ADDR' => '2001:db8:1:2:ffff::9'])
         ->get('/lookup/address/Bredgade 40, 1260 København')
+        ->assertOk()
+        ->assertSee('Du har brugt dine gratis opslag');
+
+    // Et andet /64 i samme /56 (review M2): stadig samme abonnent.
+    $this->flushSession();
+
+    $this->withServerVariables(['REMOTE_ADDR' => '2001:db8:1:3::1'])
+        ->get('/lookup/address/Nyhavn 71, 1051 København')
         ->assertOk()
         ->assertSee('Du har brugt dine gratis opslag');
 });
@@ -450,7 +462,12 @@ it('modstykke: de pooled kald virker inden for kvoten', function () {
 
 dataset('cachede_opslag', [
     'resolveAddressAnalysis' => [
-        fn () => Cache::put('metis:address_analysis:'.md5('Travervænget 3, 2920 Charlottenlund'), ['property' => ['owner' => 'HEMMELIG EJER']], 3600),
+        function () {
+            Cache::put('metis:address_analysis:'.md5('Travervænget 3, 2920 Charlottenlund'), ['property' => ['owner' => 'HEMMELIG EJER']], 3600);
+            // Fix-runde 1: datalaget kraever ogsaa at adressen er godkendt i
+            // sessionen. Den er det her, saa testen maaler kun kvote-gaten.
+            app(LookupAccess::class)->godkendOpslag('address', 'Travervænget 3, 2920 Charlottenlund');
+        },
         fn (RegistryApi $api) => $api->resolveAddressAnalysis('Travervænget 3, 2920 Charlottenlund'),
     ],
     'fetchCompanyInfo' => [

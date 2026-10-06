@@ -15,6 +15,10 @@ class CompanyTax extends MetisSection
 
     public function mount(string $query): void
     {
+        if ($this->opslagAfvist($query)) {
+            return;
+        }
+
         $this->query = $query;
         $result = rescue(fn () => app(RegistryApi::class)->fetchCompanyTaxRecords($query));
         $this->records = $result['records'] ?? [];

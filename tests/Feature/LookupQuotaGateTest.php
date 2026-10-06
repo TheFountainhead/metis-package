@@ -90,7 +90,8 @@ it('lader en verificeret email passere gaten', function () {
 
 it('lader en pilot-token passere gaten', function () {
     // Rasmus-piloten maa ikke rammes af den offentlige betas kvoter.
-    $this->withSession(['metis_lookup_count' => 99, 'metis_user_token' => 'pilot-abc']);
+    // Fix-runde 1 (review V2): kun en BEKRAEFTET pilot er fritaget, ikke et token alene.
+    $this->withSession(['metis_lookup_count' => 99, 'metis_user_token' => 'pilot-abc', 'metis_pilot_verificeret' => true]);
 
     $this->get('/lookup/cvr/37792594')
         ->assertOk()
@@ -147,6 +148,9 @@ it('sektionen virker stadig naar kvoten IKKE er opbrugt', function () {
     // se tom ud UANSET gaten. Testen maa derfor bevise at KALDET sker — ikke at
     // svaret er fyldt. `assertSent` er den rigtige assertion her.
     $this->withSession(['metis_lookup_count' => 0]);
+    // Fix-runde 1 (review V1): sektionen kraever at siden har godkendt
+    // opslaget i sessionen, som `Lookup::mount()` goer.
+    app(\TheFountainhead\Metis\Services\LookupAccess::class)->godkendOpslag('cvr', '37792594');
 
     \Livewire\Livewire::test('metis-company-info', ['query' => '37792594']);
 

@@ -275,6 +275,14 @@ class Lookup extends Component
             return;
         }
 
+        // 🚨 FIX-RUNDE 1: IP-pladsen reserveres ATOMISK her, og opslaget
+        // skrives paa sessionens godkendelsesliste, som sektionerne kraever.
+        if (! $this->godkendOpslag($type, $query)) {
+            $this->gated = true;
+
+            return;
+        }
+
         // Save to history — in embedded mode use auth user, in standalone mode use session
         $data = [
             'search_type' => $type,
