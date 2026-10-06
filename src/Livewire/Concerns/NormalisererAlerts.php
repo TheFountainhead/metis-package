@@ -49,7 +49,6 @@ trait NormalisererAlerts
 
         $watchlist = is_array($alert['watchlist'] ?? null) ? $alert['watchlist'] : [];
         $priority = self::tekst($alert['priority'] ?? null);
-        $oprettet = self::tekst($alert['created_at'] ?? null);
 
         return [
             'id' => (int) $alert['id'],
@@ -57,7 +56,7 @@ trait NormalisererAlerts
             'description' => self::tekst($alert['description'] ?? null) ?? '',
             'is_read' => (bool) filter_var($alert['is_read'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'priority' => in_array($priority, ['high', 'medium', 'low'], true) ? $priority : 'low',
-            'created_at' => $oprettet !== null && strtotime($oprettet) !== false ? $oprettet : null,
+            'created_at' => self::tidspunkt($alert['created_at'] ?? null),
             'watchlist' => [
                 'watch_type' => self::tekst($watchlist['watch_type'] ?? null) ?? '',
                 'watch_value' => self::tekst($watchlist['watch_value'] ?? null),
@@ -134,6 +133,32 @@ trait NormalisererAlerts
 
             return is_scalar($vaerdi) || $vaerdi === null;
         }, ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * Et tidspunkt bladen trygt kan give `Carbon::parse()`, eller null.
+     *
+     * 🐛 Fix-runde 1 paa #193 (review F4): bladene kalder
+     * `Carbon::parse($alert['created_at'])`, som kaster paa en misdannet
+     * dato og tog siden ned. Her parses én gang, i en try, og det der gives
+     * videre er en ISO-8601-streng. Aar uden for 1900-2200 er en datafejl
+     * (fx `@99999999999999999`), ikke et tidspunkt, og vises ikke.
+     */
+    protected static function tidspunkt(mixed $vaerdi): ?string
+    {
+        $tekst = self::tekst($vaerdi);
+
+        if ($tekst === null || trim($tekst) === '') {
+            return null;
+        }
+
+        try {
+            $tid = \Carbon\Carbon::parse($tekst);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return $tid->year >= 1900 && $tid->year <= 2200 ? $tid->toIso8601String() : null;
     }
 
     private static function tekst(mixed $vaerdi): ?string

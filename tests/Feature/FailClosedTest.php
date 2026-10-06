@@ -122,6 +122,31 @@ it('🚨 fejler IP-taellerens skrivning, faar en anonym gaten og intet opslag', 
     Log::shouldHaveReceived('error')->withArgs(fn ($besked) => str_contains($besked, 'metis.ip_taeller'))->atLeast()->once();
 })->with(['kun skrivning fejler' => 'skriv', 'alt fejler' => 'alt']);
 
+it('🚨 F1: kan IP-laasen ikke faas i tide, afvises den anonyme proeve og det logges', function () {
+    Log::spy();
+    session()->start();
+    $adgang = app(LookupAccess::class);
+    $noegle = 'metis:anon_lookups:ip:'.sha1('203.0.113.88');
+
+    // En anden proces holder laasen (anden ejer).
+    $holder = Cache::lock($noegle.':laas', 10);
+    expect($holder->get())->toBeTrue();
+
+    try {
+        $start = microtime(true);
+        expect($adgang->reserverIpPlads($noegle))->toBeFalse();
+        expect(microtime(true) - $start)->toBeLessThan(5);
+    } finally {
+        $holder->release();
+    }
+
+    expect((int) Cache::get($noegle, 0))->toBe(0);
+    Log::shouldHaveReceived('error')->withArgs(fn ($besked, $ctx = []) => str_contains($besked, 'metis.ip_taeller') && ($ctx['trin'] ?? null) === 'laas')->once();
+
+    // Positiv kontrol: med laasen fri gives pladsen.
+    expect($adgang->reserverIpPlads($noegle))->toBeTrue();
+});
+
 it('🚨 fejler IP-taelleren, giver krydsopslaget heller ingen sektioner', function () {
     ipTaellerNede('skriv');
 

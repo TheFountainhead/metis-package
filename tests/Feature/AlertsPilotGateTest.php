@@ -254,6 +254,32 @@ it('🐛 /alerts og /alerts/{id} giver ikke 500 paa en uventet svarform', functi
     $this->get('/alerts/1')->assertOk();
 })->with('uventede svar');
 
+dataset('misdannede datoer', [
+    'tekst' => ['ikke en dato'],
+    'umulig maaned og dag' => ['2026-13-45'],
+    'aar 99999999' => ['+99999999-01-01'],
+    'unix-tid langt ude' => ['@99999999999999999'],
+    'heltal' => [1696150000],
+    'array' => [['2026-10-01']],
+    'tom streng' => [''],
+]);
+
+it('🐛 F4: en misdannet created_at giver ikke 500 paa /alerts eller /alerts/{id}', function (mixed $dato) {
+    pilotSession($this);
+    Http::fake(['*/v1/alerts/1' => Http::response(['data' => ['id' => 1, 'title' => 'DATO-ALERT', 'created_at' => $dato]]),
+        '*' => Http::response(['data' => [['id' => 1, 'title' => 'DATO-ALERT', 'created_at' => $dato]]])]);
+
+    $this->get('/alerts')->assertOk()->assertSee('DATO-ALERT');
+    $this->get('/alerts/1')->assertOk()->assertSee('DATO-ALERT')->assertDontSee('Alert-detekteret');
+})->with('misdannede datoer');
+
+it('modstykke: en gyldig created_at vises paa detaljesiden', function () {
+    pilotSession($this);
+    Http::fake(['*' => Http::response(['data' => ['id' => 1, 'title' => 'DATO-ALERT', 'created_at' => '2026-10-01T10:00:00Z']])]);
+
+    $this->get('/alerts/1')->assertOk()->assertSee('Alert-detekteret: 01. Oct 2026 10:00');
+});
+
 it('🐛 en alert-raekke uden id droppes, de gyldige vises stadig', function () {
     pilotSession($this);
     Http::fake(['*' => Http::response(['data' => [

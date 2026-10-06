@@ -252,31 +252,8 @@ class LookupAccess
 
         $noegle = $this->ipNoegle();
 
-        if ($noegle !== null) {
-            // 🚨 FAIL-CLOSED (opfoelgning 2). Foer stod her `rescue(..., false,
-            // false)`: kastede taelleren, blev opslaget GODKENDT, og eneste
-            // graense var 1 pr. session, som en ny cookie nulstiller. Med
-            // cachen nede var proeven altsaa ubegraenset. Nu: en fejl er et
-            // afslag, og den logges, saa en nede cache ses i stedet for at
-            // vise sig som "Du har brugt dine gratis opslag" for alle.
-            // Identificerede brugere og piloter er returneret ovenfor og
-            // rammes ikke.
-            try {
-                Cache::add($noegle, 0, now()->addHours((int) config('metis.gating.ip_window_hours', 24)));
-                $n = (int) Cache::increment($noegle);
-            } catch (\Throwable $e) {
-                $this->logTaellerFejl($e, 'reserver');
-
-                return false;
-            }
-
-            if ($n > $this->ipGraense()) {
-                // Pladsen gives tilbage. Fejler det, staar taelleren en for
-                // hoejt i resten af vinduet: den sikre retning.
-                rescue(fn () => Cache::decrement($noegle), null, false);
-
-                return false;
-            }
+        if ($noegle !== null && ! $this->reserverIpPlads($noegle)) {
+            return false;
         }
 
         $liste = (array) session('metis_godkendte_opslag', []);
@@ -284,6 +261,53 @@ class LookupAccess
         session(['metis_godkendte_opslag' => array_slice(array_values(array_unique($liste)), -50)]);
 
         return true;
+    }
+
+    /**
+     * Reserver én plads paa IP'ens taeller. Sand hvis pladsen blev givet.
+     *
+     * 🚨 FAIL-CLOSED (opfoelgning 2). Foer stod her `rescue(..., false,
+     * false)`: kastede taelleren, blev opslaget GODKENDT, og eneste graense
+     * var 1 pr. session, som en ny cookie nulstiller. Nu er en fejl et
+     * afslag, og den logges.
+     *
+     * 🚨 ATOMISK PAA ENHVER STORE (fix-runde 1 paa #193, review F1). Prod
+     * koerer `CACHE_STORE=file`, og `FileStore::increment()` er laes-laeg-til-
+     * skriv UDEN laas (kun `add()` laaser). Maalt af revieweren: 57 af 60
+     * parallelle reservationer godkendt med graensen 5. Afgoerelsen (laes,
+     * sammenlign, tael op) sker derfor inde i en cache-laas, som alle stores
+     * med `LockProvider` har (FileStore via `add()`, database, redis, array).
+     * Kan laasen ikke faas inden for `block()`, er det et afslag (fail-closed)
+     * og logges.
+     *
+     * Offentlig, saa samtidighedstesten kan koere PRAECIS denne kode i
+     * separate PHP-processer (`tests/Feature/Fixtures/ip-reservation-worker.php`).
+     */
+    public function reserverIpPlads(string $noegle): bool
+    {
+        try {
+            return Cache::lock($noegle.':laas', 5)
+                ->betweenBlockedAttemptsSleepFor(20)
+                ->block(2, function () use ($noegle) {
+                    Cache::add($noegle, 0, now()->addHours((int) config('metis.gating.ip_window_hours', 24)));
+
+                    if ((int) Cache::get($noegle, 0) >= $this->ipGraense()) {
+                        return false;
+                    }
+
+                    Cache::increment($noegle);
+
+                    return true;
+                });
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            $this->logTaellerFejl($e, 'laas');
+
+            return false;
+        } catch (\Throwable $e) {
+            $this->logTaellerFejl($e, 'reserver');
+
+            return false;
+        }
     }
 
     /**
