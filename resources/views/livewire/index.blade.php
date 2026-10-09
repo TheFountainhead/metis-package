@@ -7,7 +7,7 @@
         {{-- Search field --}}
         <form wire:submit="lookup" class="mb-8">
             <flux:field>
-                <flux:label>{{ __('Look up CVR, CPR, company name, or address') }}</flux:label>
+                <flux:label>{{ __('Look up CVR, company name, or address') }}</flux:label>
                 <div class="relative">
                     <div class="flex gap-2">
                         <div class="relative flex-1">
@@ -39,7 +39,7 @@
                     @if($detectedType)
                         <div class="flex items-center gap-2 mt-2">
                             <span class="text-xs text-zinc-500">{{ __('Detected') }}:</span>
-                            @foreach(['cvr', 'cpr', 'company', 'address'] as $t)
+                            @foreach(['cvr', 'company', 'address'] as $t)
                                 <button type="button"
                                     wire:click="setType('{{ $t }}')"
                                     class="px-2 py-0.5 text-xs rounded-full border transition-colors

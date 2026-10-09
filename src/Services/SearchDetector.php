@@ -32,7 +32,12 @@ class SearchDetector
      */
     public function isCpr(string $input): bool
     {
-        return preg_match('/^\d{6}-?\d{4}$/', preg_replace('/\s+/', '', $input)) === 1;
+        // 🚨 /u-normalisering: NBSP, tankestreg (Word-autokorrektur), ikke-
+        // brydende bindestreg, punktum og skraastreg slap foer forbi (review
+        // #195), og et CPR landede saa i historikken og i en CVR-URL.
+        $cifre = preg_replace('/[\s\p{Z}\p{Pd}\x{2011}.\/]+/u', '', $input) ?? $input;
+
+        return preg_match('/^\d{10}$/', $cifre) === 1;
     }
 
     public function detect(string $input): string

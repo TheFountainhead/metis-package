@@ -1071,16 +1071,17 @@ it('leaves the graph untouched on a properties tick that only burned budget', fu
     // ⚠️ The fase-1 companies refetch is excluded from the count: in name mode
     // fetchCompaniesByName() is NOT cached (the old CPR source was), so the
     // rehydration re-POSTs person-companies-by-name on every tick. That is a
-    // separate, fase-1 cost — not what this test pins.
-    $phaseRequests = Http::recorded()->slice($sentBefore)
-        ->map(fn ($pair) => $pair[0]->url())
-        ->reject(fn ($url) => str_contains($url, 'person-companies-by-name'))
-        ->values();
+    // separate, fase-1 cost — pinned below at exactly ONE per tick, so it
+    // cannot grow unnoticed (review #195).
+    $tickUrls = Http::recorded()->slice($sentBefore)->map(fn ($pair) => $pair[0]->url());
+    $phaseRequests = $tickUrls->reject(fn ($url) => str_contains($url, 'person-companies-by-name'))->values();
+    $companiesRefetches = $tickUrls->filter(fn ($url) => str_contains($url, 'person-companies-by-name'));
 
     expect($test->get('graphModel'))->toEqual($before)
         ->and($test->get('propertiesAttempts'))->toBe(1)
         ->and($phaseRequests)->toHaveCount(1)
         ->and($phaseRequests->first())->toContain('/company/11111111/property-portfolio')
+        ->and($companiesRefetches)->toHaveCount(1)
         ->and($test->get('propertiesStatus'))->toBe('building');
 });
 

@@ -144,7 +144,8 @@ it('shows the cpr note even when there are no companies', function () {
 });
 
 it('does not show the cpr note in cpr mode', function () {
-    Http::fake(['*search-by-cpr*' => Http::response(['data' => ['companies' => []]])]);
+    // CPR-tilstanden henter intet (lukket 9/10-2026); noten maa stadig ikke vises.
+    Http::fake(['*' => Http::response(['data' => ['companies' => []]])]);
 
     Livewire::test(PersonStructure::class, ['query' => '0101011234'])
         ->assertDontSee('private ejendomme vises ikke');

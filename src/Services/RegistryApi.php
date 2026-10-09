@@ -106,6 +106,22 @@ class RegistryApi
     }
 
     /**
+     * CPR-opslag er lukket i Metis (Frederik 9/10-2026).
+     *
+     * Opslagene lagde personnummeret i URL'en og hentede navn, adresse og
+     * bopael fra CPR Direkte bag kun navn + arbejdsmail. Ruten havde 0 kald
+     * paa 15 dage (nginx 25/9-9/10). Lukket HER, i datalaget, af samme grund
+     * som `loginKraevetFejl()`: sektionerne kan kaldes uden om siden.
+     *
+     * Ingen HTTP og ingen cache-laesning, uanset login. Samme fejlform som de
+     * oevrige gates, saa kaldestederne viser "opslaget fejlede".
+     */
+    protected function cprLukketFejl(): array
+    {
+        return ['error' => 'cpr_disabled', 'status' => 403];
+    }
+
+    /**
      * Person- og CPR-data kraever en identificeret bruger (Frederik 6/10-2026).
      *
      * 🔑 HER, i datalaget, og ikke kun paa `/lookup/person` og `/lookup/cpr`.
@@ -124,22 +140,6 @@ class RegistryApi
      *
      * 🚨 Uden session er kalderen anonym (review M4, `LookupAccess::harSession()`).
      */
-    /**
-     * CPR-opslag er lukket i Metis (Frederik 9/10-2026).
-     *
-     * Opslagene lagde personnummeret i URL'en og hentede navn, adresse og
-     * bopael fra CPR Direkte bag kun navn + arbejdsmail. Ruten havde 0 kald
-     * paa 15 dage (nginx 25/9-9/10). Lukket HER, i datalaget, af samme grund
-     * som `loginKraevetFejl()`: sektionerne kan kaldes uden om siden.
-     *
-     * Ingen HTTP og ingen cache-laesning, uanset login. Samme fejlform som de
-     * oevrige gates, saa kaldestederne viser "opslaget fejlede".
-     */
-    protected function cprLukketFejl(): array
-    {
-        return ['error' => 'cpr_disabled', 'status' => 403];
-    }
-
     protected function loginKraevetFejl(): ?array
     {
         $adgang = app(LookupAccess::class);

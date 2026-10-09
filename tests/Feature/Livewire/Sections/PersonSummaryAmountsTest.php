@@ -55,15 +55,3 @@ it('viser kapitaludvidelser i kroner, ikke øre', function () {
         ->assertSee('50,0M kr.');
 });
 
-it('PDF-rapporten viser selskabernes egenkapital og resultat i kroner, ikke øre', function () {
-    $html = view('metis::livewire.pdf', [
-        'type' => 'cpr',
-        'query' => '0101011234',
-        'data' => [
-            'properties' => ['properties' => []],
-            'companies' => ['companies' => [almaCompany([['year' => '2025', 'equity' => 14_320_268, 'profit_loss' => -14_546_770]])]],
-        ],
-    ])->render();
-
-    expect($html)->toContain('14.320.268 kr.')->toContain('-14.546.770 kr.');
-});

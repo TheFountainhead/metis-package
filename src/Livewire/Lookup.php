@@ -159,7 +159,7 @@ class Lookup extends Component
         // CPR under en anden type sendes til forsiden — UDEN personnummeret.
         // Datalaget er lukket for sig (`RegistryApi::cprLukketFejl()`).
         if (strtolower($type) === 'cpr' || (new SearchDetector)->isCpr($query)) {
-            $this->redirect(route('metis.home'), navigate: true);
+            $this->redirect(MetisLink::hjem(), navigate: true);
 
             return;
         }

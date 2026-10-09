@@ -53,7 +53,7 @@
              `show-email-gate` fra `mount()`. --}}
         <div class="max-w-2xl mx-auto text-center py-16">
             <h2 class="text-lg font-bold text-ink-800 mb-2">{{ __('Personopslag kræver at du er tilmeldt') }}</h2>
-            <p class="text-sm text-ink-600 mb-4">{{ __('Tilmeld dig med navn og arbejdsmail for at se personer og CPR-opslag.') }}</p>
+            <p class="text-sm text-ink-600 mb-4">{{ __('Tilmeld dig med navn og arbejdsmail for at se personopslag.') }}</p>
             <button type="button" wire:click="$dispatch('show-email-gate')" class="text-sm text-warm-500 hover:text-warm-600 transition-colors">{{ __('Tilmeld dig') }}</button>
         </div>
     @elseif($gated)

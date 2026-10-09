@@ -1,7 +1,12 @@
 <?php
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use TheFountainhead\Metis\Livewire\Search;
+use TheFountainhead\Metis\Models\MetisLookup;
 use TheFountainhead\Metis\Http\Controllers\MetisPdfController;
 use TheFountainhead\Metis\Services\RegistryApi;
 use TheFountainhead\Metis\View\Components\MetisLink;
@@ -19,6 +24,8 @@ use TheFountainhead\Metis\View\Components\MetisLink;
  * gating SLAAET FRA, hvor alle tidligere var "identificerede" — lukningen maa
  * ikke afhaenge af login-gaten.
  */
+uses(RefreshDatabase::class);
+
 const LUKKET_CPR = '0101011234';
 
 beforeEach(function () {
@@ -37,7 +44,48 @@ it('sender /lookup/cpr/ til forsiden uden personnummeret i adressen', function (
     expect($response->headers->get('Location'))->not->toContain('0101011234')
         ->and($response->headers->get('Location'))->not->toContain('010101-1234');
     Http::assertNothingSent();
-})->with(['uden bindestreg' => LUKKET_CPR, 'med bindestreg' => '010101-1234', 'store bogstaver' => LUKKET_CPR]);
+})->with(['uden bindestreg' => LUKKET_CPR, 'med bindestreg' => '010101-1234']);
+
+it('sender /lookup/cpr/ til forsiden ogsaa naar vaerdien ikke er et CPR', function () {
+    $this->get('/lookup/cpr/Lars')->assertRedirect(route('metis.home'));
+    expect(MetisLookup::count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+it('genkender CPR skrevet med andre skilletegn og sender det til forsiden', function (string $cpr) {
+    $response = $this->get('/lookup/cvr/'.rawurlencode($cpr));
+
+    $response->assertRedirect(route('metis.home'));
+    expect(MetisLookup::count())->toBe(0);
+    Http::assertNothingSent();
+})->with([
+    'NBSP' => "010101\u{00A0}1234",
+    'tankestreg' => "010101\u{2013}1234",
+    'ikke-brydende bindestreg' => "010101\u{2011}1234",
+    'punktum' => '010101.1234',
+    'skraastreg' => '010101/1234',
+]);
+
+it('blokerer et CPR i krydsopslaget, uanset den type klienten sender', function (string $type, string $value) {
+    Livewire::test(Search::class)
+        ->call('crossReference', $type, $value)
+        ->assertSet('cprBlocked', true)
+        ->assertNotDispatched('update-url');
+
+    expect(MetisLookup::count())->toBe(0);
+    Http::assertNothingSent();
+})->with([
+    'cpr' => ['cpr', LUKKET_CPR],
+    'CPR (store bogstaver)' => ['CPR', LUKKET_CPR],
+    'CPR forklaedt som cvr' => ['cvr', LUKKET_CPR],
+    'CPR forklaedt som adresse' => ['address', '010101-1234'],
+]);
+
+it('svarer 404 paa en CPR-PDF, ogsaa forklaedt som cvr', function (string $type) {
+    expect(fn () => app(MetisPdfController::class)->download($type, LUKKET_CPR))
+        ->toThrow(NotFoundHttpException::class);
+    Http::assertNothingSent();
+})->with(['cpr', 'CPR', 'cvr']);
 
 it('sender /lookup/CPR/ (store bogstaver i typen) til forsiden', function () {
     $this->get('/lookup/CPR/'.LUKKET_CPR)->assertRedirect(route('metis.home'));

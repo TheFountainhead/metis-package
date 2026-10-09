@@ -435,7 +435,10 @@ class Search extends Component
 
     public function crossReference(string $type, string $value): void
     {
-        if ($type === 'cpr') {
+        // Offentlig over `/livewire/update`: type og vaerdi kommer fra klienten.
+        // Samme vagt som Lookup::mount — et CPR under en anden type maa ikke
+        // logges, sendes som `update-url` eller slaas op som CVR.
+        if (strtolower(trim($type)) === 'cpr' || (new SearchDetector)->isCpr($value)) {
             $this->cprBlocked = true;
 
             return;

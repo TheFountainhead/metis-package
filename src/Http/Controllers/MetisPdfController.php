@@ -7,6 +7,7 @@ use Illuminate\Support\Str;
 use Spatie\LaravelPdf\Enums\Format;
 use Spatie\LaravelPdf\Facades\Pdf;
 use TheFountainhead\Metis\Services\RegistryApi;
+use TheFountainhead\Metis\Services\SearchDetector;
 
 class MetisPdfController extends Controller
 {
@@ -46,6 +47,10 @@ class MetisPdfController extends Controller
 
     public function download(string $type, string $query)
     {
+        // CPR-opslag er lukket (9/10-2026): heller ikke et CPR under en anden
+        // type, ellers sendes det til registry-api som CVR og havner i filnavnet.
+        abort_if(strtolower($type) === 'cpr' || (new SearchDetector)->isCpr($query), 404);
+
         $data = $this->gatherData($type, $query);
 
         $filename = 'metis-' . $type . '-' . Str::slug($query) . '.pdf';

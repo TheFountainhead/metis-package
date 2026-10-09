@@ -72,7 +72,16 @@ class MetisLink extends Component
      */
     public static function urlForEllerHjem(string $type, string $query): string
     {
-        return self::urlFor($type, $query) ?? route('metis.home');
+        return self::urlFor($type, $query) ?? self::hjem();
+    }
+
+    /**
+     * Forsiden: `metis.home` i standalone, `metis.index` i embedded
+     * (embedded.php registrerer ikke `metis.home`).
+     */
+    public static function hjem(): string
+    {
+        return route(Route::has('metis.home') ? 'metis.home' : 'metis.index');
     }
 
     public function url(): ?string
