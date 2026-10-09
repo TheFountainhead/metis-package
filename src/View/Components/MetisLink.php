@@ -115,7 +115,8 @@ class MetisLink extends Component
         //
         // Genbruger den kanoniske detektor: regexen fandtes engang i FEM
         // kopier med hver sin normalisering (SearchDetector.php:25-31).
-        if ((new SearchDetector)->isCpr($this->query) && strtolower($this->type) !== 'cpr') {
+        // CPR-opslag er lukket (9/10-2026): ingen cpr-URL, og intet CPR i en URL.
+        if (strtolower($this->type) === 'cpr' || (new SearchDetector)->isCpr($this->query)) {
             return null;
         }
 

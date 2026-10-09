@@ -153,10 +153,13 @@ class Lookup extends Component
         //      CPR-siden selv, hvor det foer faldt lige igennem til
         //      MetisLookup::create(). Flare censurerer i sit UI; vores egen
         //      tabel gjorde ikke.
-        $erCpr = (new SearchDetector)->isCpr($query);
-
-        if ($erCpr && strtolower($type) !== 'cpr') {
-            $this->redirect(MetisLink::urlForEllerHjem('cpr', $query), navigate: true);
+        //
+        // 🚨 CPR-OPSLAG ER LUKKET (Frederik 9/10-2026): personnummeret stod i
+        // URL'en, og ruten havde 0 kald paa 15 dage. Baade /lookup/cpr/ og et
+        // CPR under en anden type sendes til forsiden — UDEN personnummeret.
+        // Datalaget er lukket for sig (`RegistryApi::cprLukketFejl()`).
+        if (strtolower($type) === 'cpr' || (new SearchDetector)->isCpr($query)) {
+            $this->redirect(route('metis.home'), navigate: true);
 
             return;
         }
@@ -298,17 +301,10 @@ class Lookup extends Component
             $data['email'] = session('metis_verified_email');
         }
 
-        // 🚨 Et CPR gemmes ALDRIG. Foer faldt CPR-siden lige igennem hertil,
-        // saa redirecten flyttede bare nummeret fra én raekke til en anden.
-        if (! $erCpr) {
-            rescue(fn () => MetisLookup::create($data));
-        }
+        // 🚨 Et CPR gemmes ALDRIG: CPR-opslag sendes til forsiden oeverst i
+        // mount() (lukket 9/10-2026), saa intet CPR naar hertil.
+        rescue(fn () => MetisLookup::create($data));
 
-        // 🚨 TAEL OGSAA CPR-OPSLAG. Logning og kvote er to forskellige
-        // spoergsmaal: nummeret maa ikke gemmes, men opslaget skal koste. Uden
-        // denne linje uden for `if (! $erCpr)` ville netop CPR-ruten — den der
-        // baerer persondata — vaere gratis og ubegraenset.
-        //
         // 🪤 Samme taeller som `Search`, via traiten. To implementeringer ville
         // drive fra hinanden, og gaten laeser kun den ene — praecis den fejl
         // review-runden 9/8 fandt i selve gate-logikken.

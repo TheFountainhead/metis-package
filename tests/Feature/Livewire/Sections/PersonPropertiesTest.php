@@ -11,21 +11,24 @@ beforeEach(function () {
     }
 });
 
-// Task 3 (graph-filter-chips): PersonProperties::mount() switched from
-// fetchPersonPropertyPortfolioByCpr() to the cached variant. Two mounts for the
-// same CPR must hit the upstream endpoint only once.
-it('uses the cached person-property-portfolio fetch, so a second mount is a cache hit', function () {
-    Http::fake(['*/v1/person/property-portfolio' => Http::response(['data' => [
+// CPR-opslag er lukket (9/10-2026). PersonProperties henter paa CPR
+// (fetchPersonPropertyPortfolioByCprCached) og kan stadig mountes direkte over
+// /livewire/update. Den skal saa vise FEJLTILSTANDEN — et lukket opslag maa
+// ikke rendere som "0 ejendomme" — og den maa ikke kalde registry-api, heller
+// ikke ved et gentaget mount (den tidligere cache-test her).
+it('viser fejltilstanden og kalder intet, naar CPR-opslaget er lukket', function () {
+    Http::fake(['*' => Http::response(['data' => [
         'personal_properties' => [['address' => 'Bredgade 40']],
         'companies' => [],
         'summary' => [],
     ]])]);
 
-    Livewire::test(PersonProperties::class, ['query' => '0101011234'])
-        ->assertSet('personalProperties', [['address' => 'Bredgade 40']]);
+    foreach ([1, 2] as $_) {
+        Livewire::test(PersonProperties::class, ['query' => '0101011234'])
+            ->assertSet('hasError', true)
+            ->assertSet('personalProperties', [])
+            ->assertDontSee('Bredgade 40');
+    }
 
-    Livewire::test(PersonProperties::class, ['query' => '0101011234'])
-        ->assertSet('personalProperties', [['address' => 'Bredgade 40']]);
-
-    Http::assertSentCount(1);
+    Http::assertNothingSent();
 });

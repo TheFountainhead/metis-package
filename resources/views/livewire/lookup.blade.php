@@ -91,17 +91,7 @@
                 <livewire:metis-company-properties :query="$query" lazy="on-load" />
                 <livewire:metis-company-tinglysning :query="$query" lazy="on-load" />
             </div>
-        @elseif($type === 'cpr')
-            <div class="max-w-7xl space-y-6">
-                <livewire:metis-person-summary :query="$query" lazy="on-load" />
-            </div>
-            <livewire:metis-person-structure :query="$query" lazy="on-load" />
-            <div class="max-w-7xl space-y-6">
-                <livewire:metis-person-companies :query="$query" lazy="on-load" />
-                <livewire:metis-person-info :query="$query" lazy="on-load" />
-                <livewire:metis-person-properties :query="$query" lazy="on-load" />
-                <livewire:metis-person-relations :query="$query" lazy="on-load" />
-            </div>
+        {{-- Ingen cpr-gren: CPR-opslag er lukket (9/10-2026), mount() sender til forsiden. --}}
         @elseif($type === 'person')
             <livewire:metis-person-structure :query="$query" source="name" lazy="on-load" />
             <livewire:metis-person-roles :query="$query" lazy="on-load" />

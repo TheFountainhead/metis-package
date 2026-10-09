@@ -85,10 +85,11 @@
         {{-- CPR-noten: navne-mode kan aldrig vise private ejendomme (den
              endpoint findes kun for CPR), så oplyser vi det synligt i BEGGE
              tilstande — grafen og den tomme tilstand — fordi personen KAN
-             have private ejendomme vi ikke kan se herfra. --}}
+             have private ejendomme vi ikke kan se herfra. Opfordrer IKKE til
+             CPR-søgning: CPR-opslag er lukket (9/10-2026). --}}
         @if($source === 'name')
             <p class="mgraph-note" wire:key="cpr-note">
-                {{ __('Søg med CPR-nummer for også at se personens private ejendomme.') }}
+                {{ __('Personens private ejendomme vises ikke i et navneopslag.') }}
             </p>
         @endif
 

@@ -53,26 +53,22 @@ it('🚨 gatede opslag renderer INGEN datasektioner', function () {
         ->assertDontSee('metis-company-structure', false);
 });
 
-it('🚨 gater ogsaa CPR-ruten', function () {
-    // CPR-opslaget logges bevidst ikke, men det skal stadig KOSTE. Ellers ville
-    // netop den rute der baerer persondata vaere gratis og ubegraenset.
-    //
-    // 🔑 Siden 6/10-2026 kommer en anonym slet ikke saa langt: CPR kraever
-    // tilmelding (AnonymAdgangTest). Kvoten gaelder stadig den tilmeldte.
-    $this->withSession(['metis_lookup_count' => 1]);
-
-    $this->get('/lookup/cpr/311278-1234')
-        ->assertOk()
-        ->assertSee('Personopslag kræver at du er tilmeldt')
-        ->assertDontSee('metis-person-summary', false);
-});
-
-it('🚨 et CPR-opslag TAELLER, selv om det ikke gemmes i historikken', function () {
-    // 🪤 Logning og kvote er to forskellige spoergsmaal. Taelleren staar uden
-    // for `if (! $erCpr)` netop derfor. Tilmeldt bruger: anonyme naar ikke hertil.
+it('🚨 den lukkede CPR-rute redirecter FOER kvoten — intet hentes, intet taelles', function () {
+    // Foer 9/10-2026: CPR-opslaget blev ikke logget, men skulle stadig KOSTE,
+    // ellers ville netop den rute der baerer persondata vaere gratis og
+    // ubegraenset. Nu er CPR-opslag lukket: ruten udleverer intet, saa der er
+    // intet at taelle — redirecten sker foer kvote-gaten. Testen pinner
+    // raekkefoelgen: en "gratis" CPR-rute er kun i orden fordi den er TOM.
     $this->withSession(['metis_verified_email' => 'test@frankston.io']);
 
-    $this->get('/lookup/cpr/311278-1234')->assertOk();
+    $this->get('/lookup/cpr/311278-1234')->assertRedirect(route('metis.home'));
+
+    expect(session('metis_lookup_count', 0))->toBe(0);
+    Http::assertNothingSent();
+
+    // Positiv kontrol: et opslag i drift taeller for samme tilmeldte bruger,
+    // saa 0'et ovenfor ikke blot betyder "tilmeldte taelles aldrig".
+    $this->get('/lookup/cvr/37792594')->assertOk();
 
     expect(session('metis_lookup_count'))->toBe(1);
 });

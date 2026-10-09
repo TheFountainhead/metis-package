@@ -208,7 +208,10 @@ it('🚨 uden session giver datalaget hverken person-, CPR-, adresse- eller CVR-
     expect(app(LookupAccess::class)->harSession())->toBeFalse();
     $api = app(RegistryApi::class);
 
-    expect($api->fetchCompaniesByCpr('3112781234'))->toBe(['error' => 'login_required', 'status' => 401])
+    // CPR er lukket for alle (9/10-2026) — fejlen er cpr_disabled, ikke
+    // login_required, men udfaldet er det samme: ingen data, intet kald.
+    expect($api->fetchCompaniesByCpr('3112781234'))->toBe(['error' => 'cpr_disabled', 'status' => 403])
+        ->and($api->fetchCompaniesByName('Lars Larsen'))->toMatchArray(['error' => 'login_required'])
         ->and($api->fetchPersonRoles('Lars Larsen'))->toMatchArray(['error' => 'login_required'])
         ->and($api->resolveAddressAnalysis(FC_ADRESSE))->not->toHaveKey('data');
 

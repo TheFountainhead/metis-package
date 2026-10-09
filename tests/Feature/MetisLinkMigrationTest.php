@@ -34,9 +34,11 @@ it('urlFor() afviser en tom query i stedet for at kaste', function () {
         ->and(MetisLink::urlFor('address', '   '))->toBeNull();
 });
 
-it('urlFor() afviser et CPR uden for cpr-typen', function () {
+it('urlFor() afviser et CPR paa enhver type, ogsaa cpr-typen', function () {
+    // cpr-typen var den ene lovlige modtager indtil CPR-opslag blev lukket
+    // (9/10-2026). Nu bygges der aldrig en URL med et CPR.
     expect(MetisLink::urlFor('cvr', '123456-7890'))->toBeNull()
-        ->and(MetisLink::urlFor('cpr', '123456-7890'))->not->toBeNull();
+        ->and(MetisLink::urlFor('cpr', '123456-7890'))->toBeNull();
 });
 
 it('urlFor() returnerer null naar ruten ikke er registreret', function () {

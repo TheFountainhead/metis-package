@@ -8,7 +8,14 @@ use TheFountainhead\Metis\Models\MetisLookup;
 uses(RefreshDatabase::class);
 
 /**
- * Et CPR paa /lookup/cvr/ skal sendes til CPR-siden, ikke give en fejlside.
+ * Et CPR paa /lookup/cvr/ (eller enhver anden type) maa hverken give en
+ * fejlside eller lande i historikken.
+ *
+ * 🚨 OPDATERET 9/10-2026: CPR-opslag er LUKKET. Hvor guarden foer sendte
+ * videre til CPR-siden, sender den nu til forsiden — uden personnummeret.
+ * Selve redirect-adfaerden pinnes i tests/Feature/CprOpslagLukketTest.php;
+ * testene her beholder sikkerhedspaastanden: et CPR gemmes ALDRIG i
+ * historikken, i ingen form og under ingen type.
  *
  * 🚨 MAALT 5/8 (Flare #9104992): fejlen gik fra n=2 til n=14 paa seks doegn i
  * PROD-trafik. `lookup.blade.php:24` loader OTTE selskabssektioner for
@@ -17,11 +24,6 @@ uses(RefreshDatabase::class);
  *
  * Brugeren saa en fejlside — selvom vi HAR en CPR-side.
  */
-it('sender et CPR paa /lookup/cvr/ videre til CPR-siden', function () {
-    Livewire::test(Lookup::class, ['type' => 'cvr', 'query' => '1234567890'])
-        ->assertRedirect(route('metis.lookup', ['type' => 'cpr', 'query' => '1234567890']));
-});
-
 it('🚨 gemmer IKKE CPR-et i historikken under forkert type', function () {
     // 🪤 `metis_lookups.search_term` er vores EGEN tabel — Flare censurerer
     // CPR i sit UI, men det gjorde vores historik ikke. Maalt: 4 raekker laa
@@ -45,14 +47,6 @@ it('roerer ikke et gyldigt CVR', function () {
     expect(MetisLookup::where('search_term', '35050027')->exists())->toBeTrue();
 });
 
-it('roerer ikke CPR-siden selv', function () {
-    // Samme 10-cifrede vaerdi paa den RIGTIGE rute maa ikke redirecte —
-    // ellers ville den loope.
-    Livewire::test(Lookup::class, ['type' => 'cpr', 'query' => '1234567890'])
-        ->assertNoRedirect()
-        ->assertSet('type', 'cpr');
-});
-
 it('🚨 REVIEW-FUND: fanger ogsaa CPR MED bindestreg og mellemrum', function () {
     // 🚨 Foerste udkast brugte sin egen regex `^\d{10}$` og missede dermed
     // den form danskere faktisk skriver: DDMMYY-XXXX.
@@ -67,7 +61,7 @@ it('🚨 REVIEW-FUND: fanger ogsaa CPR MED bindestreg og mellemrum', function ()
     // og iOS-autokorrektur producerer den.
     foreach (['123456-7890', ' 1234567890 ', '123456 7890'] as $q) {
         Livewire::test(Lookup::class, ['type' => 'cvr', 'query' => $q])
-            ->assertRedirect(route('metis.lookup', ['type' => 'cpr', 'query' => $q]));
+            ->assertRedirect(route('metis.home'));
 
         expect(MetisLookup::where('search_term', $q)->exists())->toBeFalse();
     }
@@ -89,10 +83,10 @@ it('🚨 verificeret gennem en RIGTIG HTTP-request, ikke kun Livewire::test', fu
     //
     // Denne test rammer ruten som en browser goer.
     $this->get('/lookup/cvr/1234567890')
-        ->assertRedirect('/lookup/cpr/1234567890');
+        ->assertRedirect(route('metis.home'));
 
     $this->get('/lookup/cvr/123456-7890')
-        ->assertRedirect('/lookup/cpr/123456-7890');
+        ->assertRedirect(route('metis.home'));
 
     // Ingen af dem maa efterlade CPR i historikken.
     expect(MetisLookup::whereIn('search_term', ['1234567890', '123456-7890'])->exists())->toBeFalse();
@@ -114,7 +108,7 @@ it('🚨 REVIEW-FUND: ALLE ruter er lukket, ikke kun /lookup/cvr/', function () 
     // `{type}` har ingen rute-begraensning, saa enhver vaerdi naar mount().
     foreach (['person', 'address', 'name', 'company'] as $type) {
         $this->get("/lookup/{$type}/123456-7890")
-            ->assertRedirect('/lookup/cpr/123456-7890');
+            ->assertRedirect(route('metis.home'));
     }
 
     expect(MetisLookup::where('search_term', '123456-7890')->exists())->toBeFalse();
@@ -123,20 +117,20 @@ it('🚨 REVIEW-FUND: ALLE ruter er lukket, ikke kun /lookup/cvr/', function () 
 it('🚨 REVIEW-FUND: guarden er case-INsensitiv', function () {
     // 🚨 `$type === 'cvr'` er case-sensitiv. /lookup/CVR/... omgik guarden med
     // ét bogstavs aendring og gemte CPR'et med search_type='CVR'.
-    $this->get('/lookup/CVR/123456-7890')->assertRedirect('/lookup/cpr/123456-7890');
+    $this->get('/lookup/CVR/123456-7890')->assertRedirect(route('metis.home'));
 
     expect(MetisLookup::where('search_term', '123456-7890')->exists())->toBeFalse();
 });
 
-it('🚨 REVIEW-FUND: CPR gemmes ALDRIG — heller ikke paa CPR-siden selv', function () {
-    // 🚨 Redirecten flyttede bare nummeret: CPR-siden havde INGEN guard og
-    // faldt lige igennem til MetisLookup::create(). Testen FOELGER derfor
-    // redirecten frem for at stoppe ved 302 — det var praecis derfor den
-    // tidligere test bestod mens hullet var aabent.
-    $this->get('/lookup/cvr/1234567890')->assertRedirect('/lookup/cpr/1234567890');
-    $this->get('/lookup/cpr/1234567890');          // foelg redirecten
-    $this->get('/lookup/cpr/123456-7890');         // og den anden form
-    $this->get('/lookup/cpr/123456 7890');         // og mellemrums-formen
+it('🚨 REVIEW-FUND: CPR gemmes ALDRIG — heller ikke paa den (lukkede) CPR-rute selv', function () {
+    // 🚨 Redirecten flyttede engang bare nummeret: CPR-siden havde INGEN guard
+    // og faldt lige igennem til MetisLookup::create(). CPR-siden er lukket
+    // (9/10-2026), men /lookup/cpr/ er stadig en rute der naar mount() — saa
+    // den rammes direkte, i alle tre former.
+    $this->get('/lookup/cvr/1234567890')->assertRedirect(route('metis.home'));
+    $this->get('/lookup/cpr/1234567890')->assertRedirect(route('metis.home'));
+    $this->get('/lookup/cpr/123456-7890')->assertRedirect(route('metis.home'));
+    $this->get('/lookup/cpr/123456 7890')->assertRedirect(route('metis.home'));
 
     expect(MetisLookup::whereIn('search_term',
         ['1234567890', '123456-7890', '123456 7890'])->exists())->toBeFalse();

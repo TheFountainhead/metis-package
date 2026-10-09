@@ -37,9 +37,6 @@ class MetisPdfController extends Controller
             $data['structure'] = rescue(fn () => $api->fetchCompanyStructure($query), []);
             $data['portfolio'] = rescue(fn () => $api->fetchCompanyPropertyPortfolio($query));
             $data['tax'] = rescue(fn () => $api->fetchCompanyTaxRecords($query));
-        } elseif ($type === 'cpr') {
-            $data['properties'] = rescue(fn () => $api->fetchPropertiesByCpr($query));
-            $data['companies'] = rescue(fn () => $api->fetchCompaniesByCpr($query));
         } elseif ($type === 'address') {
             $data['analysis'] = $api->resolveAddressAnalysis($query);
         }

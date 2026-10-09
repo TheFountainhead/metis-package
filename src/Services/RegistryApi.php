@@ -124,6 +124,22 @@ class RegistryApi
      *
      * 🚨 Uden session er kalderen anonym (review M4, `LookupAccess::harSession()`).
      */
+    /**
+     * CPR-opslag er lukket i Metis (Frederik 9/10-2026).
+     *
+     * Opslagene lagde personnummeret i URL'en og hentede navn, adresse og
+     * bopael fra CPR Direkte bag kun navn + arbejdsmail. Ruten havde 0 kald
+     * paa 15 dage (nginx 25/9-9/10). Lukket HER, i datalaget, af samme grund
+     * som `loginKraevetFejl()`: sektionerne kan kaldes uden om siden.
+     *
+     * Ingen HTTP og ingen cache-laesning, uanset login. Samme fejlform som de
+     * oevrige gates, saa kaldestederne viser "opslaget fejlede".
+     */
+    protected function cprLukketFejl(): array
+    {
+        return ['error' => 'cpr_disabled', 'status' => 403];
+    }
+
     protected function loginKraevetFejl(): ?array
     {
         $adgang = app(LookupAccess::class);
@@ -1162,13 +1178,10 @@ class RegistryApi
         }
     }
 
+    /** Lukket: se cprLukketFejl(). */
     public function fetchCompaniesByCpr(string $cpr): ?array
     {
-        if ($blocked = $this->loginKraevetFejl()) {
-            return $blocked;
-        }
-
-        return $this->post('/v1/cvr/search-by-cpr', ['cpr' => $cpr]);
+        return $this->cprLukketFejl();
     }
 
     /**
@@ -1216,45 +1229,16 @@ class RegistryApi
         return $result;
     }
 
-    /**
-     * Cachet variant af fetchCompaniesByCpr() — nøglen hashes (sha1) så et
-     * rå CPR-nummer aldrig havner i cache-nøglen eller -loggen. 5 min TTL:
-     * lang nok til at dæmpe gentagne opslag under samme graf-udvidelse, kort
-     * nok til at nye selskabsregistreringer dukker op hurtigt. Fejl caches
-     * ALDRIG — se noten ved fetchCompanyInfo().
-     */
+    /** Lukket: se cprLukketFejl(). */
     public function fetchCompaniesByCprCached(string $cpr): ?array
     {
-        if ($blocked = $this->loginKraevetFejl()) {
-            return $blocked;
-        }
-
-        $cacheKey = 'metis:companies_by_cpr:'.sha1($cpr);
-
-        if (! is_null($cached = $this->fraCache($cacheKey))) {
-            return $cached;
-        }
-
-        $result = $this->fetchCompaniesByCpr($cpr);
-
-        // post()'s catch-block returnerer aldrig null ved en RequestException
-        // — den giver et ['error' => ..., 'status' => ...]-array. Den fejlform
-        // skal behandles som "fejlede" på samme måde som et rent null-svar,
-        // ellers cacher vi en 500'er i 5 minutter.
-        if (! is_null($result) && ! isset($result['error'])) {
-            Cache::put($cacheKey, $result, 300);
-        }
-
-        return $result;
+        return $this->cprLukketFejl();
     }
 
+    /** Lukket: se cprLukketFejl(). */
     public function fetchPropertiesByCpr(string $cpr): ?array
     {
-        if ($blocked = $this->loginKraevetFejl()) {
-            return $blocked;
-        }
-
-        return $this->post('/v1/property-tinglysning/search-by-cpr', ['cpr' => $cpr]);
+        return $this->cprLukketFejl();
     }
 
     public function fetchPersonRoles(string $query): ?array
@@ -1325,71 +1309,24 @@ class RegistryApi
         }
     }
 
+    /** Lukket: se cprLukketFejl(). */
     public function fetchPersonPropertyPortfolioByCpr(string $cpr): ?array
     {
-        if ($blocked = $this->loginKraevetFejl()) {
-            return $blocked;
-        }
-
-        return $this->post('/v1/person/property-portfolio', ['cpr' => $cpr]);
+        return $this->cprLukketFejl();
     }
 
-    /**
-     * Cachet variant af fetchPersonPropertyPortfolioByCpr() — spejler
-     * fetchCompaniesByCprCached() præcist: nøglen hashes (sha1) så et rå
-     * CPR-nummer aldrig havner i cache-nøglen eller -loggen, 300s TTL, og
-     * fejl caches ALDRIG. post()'s catch-block returnerer aldrig null ved en
-     * RequestException — den giver et ['error' => ..., 'status' => ...]-array
-     * — den fejlform skal behandles som "fejlede" på samme måde som et rent
-     * null-svar, ellers cacher vi en 500'er (eller transportfejl) i 5 minutter.
-     */
+    /** Lukket: se cprLukketFejl(). */
     public function fetchPersonPropertyPortfolioByCprCached(string $cpr): ?array
     {
-        if ($blocked = $this->loginKraevetFejl()) {
-            return $blocked;
-        }
-
-        $cacheKey = self::personPropertyPortfolioCacheKey($cpr);
-
-        if (! is_null($cached = $this->fraCache($cacheKey))) {
-            return $cached;
-        }
-
-        $result = $this->fetchPersonPropertyPortfolioByCpr($cpr);
-
-        if (! is_null($result) && ! isset($result['error'])) {
-            Cache::put($cacheKey, $result, 300);
-        }
-
-        return $result;
+        return $this->cprLukketFejl();
     }
 
-    /**
-     * CACHE-ONLY variant, the exact counterpart of
-     * fetchCompanyStructureFromCache(): a miss returns null and the caller
-     * decides, rather than falling through to the real POST the way the
-     * ...Cached() method above does.
-     *
-     * For recovery paths that run inside INTERACTIVE requests (a chip toggle,
-     * an expand). This endpoint is the most expensive one in the package —
-     * 5-15s on a cold call — so a recovery pass allowed to fall through would
-     * make a single chip click hang for that long, which is the whole reason
-     * the cache-only/never-fetch split exists.
-     */
+    /** Lukket: se cprLukketFejl(). */
     public function fetchPersonPropertyPortfolioByCprFromCache(string $cpr): ?array
     {
-        // Cache-only: null er "ikke i cachen", som kalderen allerede haandterer.
-        if ($this->loginKraevetFejl()) {
-            return null;
-        }
-
-        return $this->fraCache(self::personPropertyPortfolioCacheKey($cpr));
-    }
-
-    /** sha1'd so a raw CPR never lands in a cache key, a log line or a dump. */
-    protected static function personPropertyPortfolioCacheKey(string $cpr): string
-    {
-        return 'metis:person_property_portfolio:'.sha1($cpr);
+        // null = "ikke i cachen", som kalderen allerede haandterer. Et svar
+        // cachet foer lukningen udleveres ikke.
+        return null;
     }
 
     /**
