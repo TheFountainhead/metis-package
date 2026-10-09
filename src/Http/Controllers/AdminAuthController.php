@@ -21,7 +21,7 @@ class AdminAuthController extends Controller
     {
         try {
             return Socialite::driver('criipto')->redirect();
-        } catch (CriiptoUnreachableException $e) {
+        } catch (ConnectException|ServerException|CriiptoUnreachableException $e) {
             return $this->mitidUnreachable('redirect', $e);
         }
     }

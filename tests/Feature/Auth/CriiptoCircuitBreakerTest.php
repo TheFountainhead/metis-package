@@ -21,6 +21,14 @@ use Illuminate\Support\Sleep;
  * with CriiptoUnreachableException, which the callback turns into the MitID
  * "try again" page.
  */
+/** Cache keys are scoped to the Criipto base URI (see cacheKey()). */
+if (! function_exists('criiptoCacheKey')) {
+    function criiptoCacheKey(string $name): string
+    {
+        return "criipto:{$name}:".md5('https://sequii.mitid.dk');
+    }
+}
+
 beforeEach(function () {
     config(['services.criipto.base_uri' => 'https://sequii.mitid.dk']);
     Cache::flush();

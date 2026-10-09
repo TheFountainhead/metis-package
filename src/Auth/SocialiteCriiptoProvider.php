@@ -124,7 +124,7 @@ class SocialiteCriiptoProvider extends AbstractProvider
 
         // Get the algorithm from the token header
         $tokenParts = explode('.', $token);
-        $header = json_decode(base64_decode($tokenParts[0]), true);
+        $header = json_decode(base64_decode(strtr($tokenParts[0], '-_', '+/')), true); // base64url
         $kid = $header['kid'] ?? null;
 
         if (! isset($keys[$kid])) {

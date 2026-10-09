@@ -39,9 +39,9 @@ it('callback sends the admin back to login with a message instead of a 500', fun
     expect(session('metis_admin_authenticated'))->toBeNull();
 })->with('unreachable');
 
-it('redirect sends the admin back to login when Criipto is unreachable', function () {
+it('redirect sends the admin back to login when Criipto is unreachable', function (Throwable $e) {
     Socialite::shouldReceive('driver')->with('criipto')->andReturnSelf();
-    Socialite::shouldReceive('redirect')->andThrow(new CriiptoUnreachableException('Criipto circuit breaker is open'));
+    Socialite::shouldReceive('redirect')->andThrow($e);
     Log::spy();
 
     $this->get('/admin/auth/redirect')
@@ -49,4 +49,4 @@ it('redirect sends the admin back to login when Criipto is unreachable', functio
         ->assertSessionHas('error');
 
     Log::shouldHaveReceived('error')->once();
-});
+})->with('unreachable');

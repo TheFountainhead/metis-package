@@ -19,9 +19,11 @@ use Illuminate\Support\Sleep;
  * when curl provably never sent it.
  */
 /** Cache keys are scoped to the Criipto base URI (see cacheKey()). */
-function criiptoCacheKey(string $name): string
-{
-    return "criipto:{$name}:".md5('https://sequii.mitid.dk');
+if (! function_exists('criiptoCacheKey')) {
+    function criiptoCacheKey(string $name): string
+    {
+        return "criipto:{$name}:".md5('https://sequii.mitid.dk');
+    }
 }
 
 beforeEach(function () {
@@ -205,4 +207,20 @@ it('still refuses a token whose key Criipto does not publish', function () {
 
     expect(fn () => $method->invoke($provider, $token))->toThrow(Exception::class);
     expect($mock->count())->toBe(0); // refetched once, still unknown
+});
+
+it('reads a kid whose header encodes to base64url-only characters', function () {
+    retryPrimeDiscovery();
+    $kid = 'rot>>>??~~key';
+    [$private, $jwk] = rotationKeyPair($kid);
+    Cache::put(criiptoCacheKey('jwks'), ['keys' => [$jwk]], 3600);
+
+    $token = \Firebase\JWT\JWT::encode(['sub' => 'user-3', 'exp' => time() + 60], $private, 'RS256', $kid);
+    expect(strpbrk(explode('.', $token)[0], '-_'))->not->toBeFalse(); // the case under test is present
+    $mock = new MockHandler([new Response(200, [], json_encode(['keys' => []]))]);
+    $provider = retryProvider($mock);
+    $method = (new ReflectionClass($provider))->getMethod('getUserByToken');
+
+    expect($method->invoke($provider, $token)['sub'])->toBe('user-3');
+    expect($mock->count())->toBe(1);
 });
