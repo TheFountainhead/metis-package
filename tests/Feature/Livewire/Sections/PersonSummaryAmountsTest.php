@@ -55,26 +55,3 @@ it('viser kapitaludvidelser i kroner, ikke øre', function () {
         ->assertSee('50,0M kr.');
 });
 
-it('selskabskortet viser egenkapital, aktiver og resultat i kroner, ikke øre', function () {
-    \Illuminate\Support\Facades\Http::fake(['*search-by-cpr*' => \Illuminate\Support\Facades\Http::response(['data' => ['companies' => [
-        almaCompany([['year' => '2025', 'equity' => 14_320_268, 'assets' => 23_206_845, 'profit_loss' => -14_546_770]]),
-    ]]])]);
-
-    Livewire::test(\TheFountainhead\Metis\Livewire\Sections\PersonCompanies::class, ['query' => '0101011234'])
-        ->assertSee('14.320.268 kr.')
-        ->assertSee('23.206.845 kr.')
-        ->assertSee('-14.546.770 kr.');
-});
-
-it('PDF-rapporten viser selskabernes egenkapital og resultat i kroner, ikke øre', function () {
-    $html = view('metis::livewire.pdf', [
-        'type' => 'cpr',
-        'query' => '0101011234',
-        'data' => [
-            'properties' => ['properties' => []],
-            'companies' => ['companies' => [almaCompany([['year' => '2025', 'equity' => 14_320_268, 'profit_loss' => -14_546_770]])]],
-        ],
-    ])->render();
-
-    expect($html)->toContain('14.320.268 kr.')->toContain('-14.546.770 kr.');
-});

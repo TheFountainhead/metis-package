@@ -6,18 +6,18 @@ use TheFountainhead\Metis\Livewire\Sections\PersonCompanies;
 
 // Flare 9097433: en transport-fejl gav en tom sektion med hasError=false —
 // umulig at skelne fra "personen ejer ingen selskaber". Fejl skal VISES.
-it('sets the error state when the companies fetch fails on transport', function () {
-    Http::fake(['*search-by-cpr*' => Http::failedConnection('cURL error 28: timeout')]);
+//
+// CPR-opslag er lukket (9/10-2026): sektionen henter paa CPR og kan derfor
+// aldrig faa data. Den kan stadig mountes direkte over /livewire/update, og
+// skal saa vise FEJLTILSTANDEN — ikke "ingen selskaber" — uden et HTTP-kald.
+it('viser fejltilstanden, ikke "ingen selskaber", naar CPR-opslaget er lukket — uden HTTP-kald', function () {
+    Http::fake(['*' => Http::response(['data' => ['companies' => [['cvr' => '11111111', 'name' => 'HEMMELIG ApS']]]])]);
 
     Livewire::test(PersonCompanies::class, ['query' => '0101011234'])
         ->assertSet('hasError', true)
-        ->assertSee('Selskabsdata kunne ikke hentes');
-});
+        ->assertSet('companies', [])
+        ->assertSee('Selskabsdata kunne ikke hentes')
+        ->assertDontSee('HEMMELIG');
 
-it('renders the genuine empty state (not the error state) on a successful empty response', function () {
-    Http::fake(['*search-by-cpr*' => Http::response(['data' => ['companies' => []]])]);
-
-    Livewire::test(PersonCompanies::class, ['query' => '0101011234'])
-        ->assertSet('hasError', false)
-        ->assertDontSee('Selskabsdata kunne ikke hentes');
+    Http::assertNothingSent();
 });

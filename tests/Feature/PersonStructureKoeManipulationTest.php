@@ -27,7 +27,9 @@ use Illuminate\Support\Facades\Http;
  * `query`) faktisk indeholder. Navigation i grafen roeres ikke: alle
  * legitime noegler kommer fra den liste.
  */
-const KM_CPR = '311278-1234';
+// CPR-opslag er lukket (9/10-2026); rundturen koerer nu over personsiden
+// (navnetilstand), som har samme arbejdskoeer og samme beskaering.
+const KM_NAVN = 'Lars Larsen';
 const KM_EGEN = '11111111';
 const KM_FREMMED = '99999999';
 
@@ -38,7 +40,7 @@ beforeEach(function () {
     Cache::flush();
     Http::preventStrayRequests();
     Http::fake([
-        '*/v1/cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [[
+        '*/v1/cvr/person-companies-by-name*' => Http::response(['data' => ['companies' => [[
             'cvr' => KM_EGEN, 'name' => 'EGEN ApS', 'is_active' => true, 'has_direct_ownership' => true,
             'roles' => [['is_current' => true, 'title' => 'Ejer', 'ownership_share' => 100]],
         ]]]]),
@@ -80,10 +82,10 @@ function kmKald(object $test, string $snapshot, string $metode, array $params = 
     ]);
 }
 
-/** Rigtig rundtur: CPR-siden, derefter sektionens `__lazyLoad`. Returnerer det loadede snapshot. */
+/** Rigtig rundtur: personsiden, derefter sektionens `__lazyLoad`. Returnerer det loadede snapshot. */
 function kmLoadetStruktur(object $test): string
 {
-    [$snapshot, $encoded] = kmLazy($test->get('/lookup/cpr/'.KM_CPR)->assertOk()->getContent());
+    [$snapshot, $encoded] = kmLazy($test->get('/lookup/person/'.KM_NAVN)->assertOk()->getContent());
 
     $svar = kmKald($test, $snapshot, '__lazyLoad', [$encoded])->assertOk();
     $loadet = $svar->json('components.0.snapshot');

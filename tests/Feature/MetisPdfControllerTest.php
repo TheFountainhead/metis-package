@@ -138,17 +138,3 @@ it('henter hvert CVR-felt fra sit EGET endpoint', function () {
     expect($kald)->toBe(['roles' => 1, 'structure' => 1, 'portfolio' => 1, 'tax' => 1]);
 });
 
-it('henter begge CPR-felter fra hver sit endpoint', function () {
-    // 🪤 Begge stier indeholder 'search-by-cpr', saa et moenster paa
-    // '*properties*' ramte den forkerte. Pin paa den FULDE sti.
-    Http::fake([
-        '*property-tinglysning/search-by-cpr*' => Http::response(['data' => ['properties' => [['id' => 1]]]], 200),
-        '*cvr/search-by-cpr*' => Http::response(['data' => ['companies' => [['cvr' => '111']]]], 200),
-        '*' => Http::response(['data' => []], 200),
-    ]);
-
-    $data = opsamletPdfData('cpr', '1234567890');
-
-    expect($data['properties']['properties'][0]['id'])->toBe(1)
-        ->and($data['companies']['companies'][0]['cvr'])->toBe('111');
-});

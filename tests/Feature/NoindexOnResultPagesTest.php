@@ -82,7 +82,22 @@ it('enhver query-parameter udloeser noindex, ikke kun de kendte navne', function
  * isolerede aarsagen til query-betingelsen alene.
  */
 it('🚨 CPR-opslag i STIEN baerer noindex — uden query-streng', function () {
-    $this->get('/lookup/cpr/4006033395')
+    // 🔑 OPDATERET 9/10-2026: CPR-opslag er lukket. En CPR-URL svarer ikke
+    // laengere 200 med en side der kan indekseres: den redirecter til
+    // forsiden UDEN personnummeret, og selve redirect-svaret baerer stadig
+    // noindex-headeren, saa CPR-URL'en ikke kan optages i et indeks.
+    $svar = $this->get('/lookup/cpr/4006033395');
+
+    $svar->assertRedirect(route('metis.home'))
+        ->assertHeader('X-Robots-Tag', 'noindex, nofollow');
+    expect($svar->headers->get('Location'))->not->toContain('4006033395')
+        ->and($svar->getContent())->not->toContain('4006033395');
+});
+
+it('🚨 opslag i STIEN baerer meta-noindex — uden query-streng', function () {
+    // Den oprindelige paastand (stien, ikke query-strengen, udloeser tagget)
+    // proevet paa en opslagstype der stadig er i drift.
+    $this->get('/lookup/cvr/37792594')
         ->assertOk()
         ->assertSee('name="robots"', false)
         ->assertSee('noindex', false);
@@ -103,7 +118,7 @@ it('🚨 X-Robots-Tag-headeren saettes — den daekker Livewire-svar', function 
     // "Henter data"-pladsholdere. Maalt 9/8: 20.549 af Googlebots requests var
     // POST. Et meta-tag alene ville altsaa daekke den tomme skal, ikke
     // indholdet.
-    $this->get('/lookup/cpr/4006033395')
+    $this->get('/lookup/person/Frederik')
         ->assertOk()
         ->assertHeader('X-Robots-Tag', 'noindex, nofollow');
 });

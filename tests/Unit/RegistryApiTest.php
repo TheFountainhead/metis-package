@@ -545,116 +545,28 @@ it('fetchCompanyInfosPooled: bounds Http::pool() to a concurrency of 6, never un
         ->withArgs(fn ($callback, $concurrency) => is_callable($callback) && $concurrency === 6);
 });
 
-it('caches companies-by-cpr on a hashed key and never caches null', function () {
-    // fetchCompaniesByCpr() bruger post()-hjælperen, som unwrapper via
-    // ->json('data') — fixturen skal derfor wrappes i 'data' for at nå frem.
-    Http::fake(['*/v1/cvr/search-by-cpr' => Http::response(['data' => ['companies' => [['cvr' => '1']]]])]);
-
-    $api = app(RegistryApi::class);
-    $api->fetchCompaniesByCprCached('0101011234');
-    $api->fetchCompaniesByCprCached('0101011234');
-
-    Http::assertSentCount(1);
-    expect(Cache::has('metis:companies_by_cpr:'.sha1('0101011234')))->toBeTrue();
-});
-
-it('cacher IKKE et fejlet svar fra companies-by-cpr', function () {
-    // post()-hjælperen returnerer aldrig null ved en RequestException — den
-    // giver ['error' => ..., 'status' => 500]. Den fejlform må ikke caches.
-    Http::fake(['*/v1/cvr/search-by-cpr' => Http::response('Server error', 500)]);
-
-    $api = app(RegistryApi::class);
-    $first = $api->fetchCompaniesByCprCached('0101011234');
-    $second = $api->fetchCompaniesByCprCached('0101011234');
-
-    expect($first)->toHaveKey('error')->and($second)->toHaveKey('error');
-    Http::assertSentCount(2);
-    expect(Cache::has('metis:companies_by_cpr:'.sha1('0101011234')))->toBeFalse();
-});
-
-it('companies-by-cpr cache key never contains the raw cpr', function () {
-    Http::fake(['*/v1/cvr/search-by-cpr' => Http::response(['data' => ['companies' => []]])]);
-
-    app(RegistryApi::class)->fetchCompaniesByCprCached('0101011234');
-
-    // sha1-nøglen er deterministisk — selve asserten er at ingen key med rå CPR findes.
-    expect(Cache::has('metis:companies_by_cpr:0101011234'))->toBeFalse();
-});
-
 /*
 |--------------------------------------------------------------------------
-| Person-property-portfolio cache (Task 3, graph-filter-chips) — mirrors
-| fetchCompaniesByCprCached exactly: 300s TTL, sha1-hashed key, failures
-| (both null AND ['error' => ...] shapes) never cached.
+| CPR-cachen (lukket 9/10-2026)
 |--------------------------------------------------------------------------
+| companies-by-cpr og person-property-portfolio blev cachet 300s paa en
+| sha1-noegle, og testene her beviste at noeglen aldrig bar det RAA CPR.
+| Metoderne er lukket og cacher nu slet intet — sikkerhedspaastanden er
+| skaerpet fra "aldrig raa CPR i noeglen" til "ingen CPR-noegle overhovedet".
 */
 
-it('caches person-property-portfolio on a hashed key so a second call is a cache hit', function () {
-    Http::fake(['*/v1/person/property-portfolio' => Http::response(['data' => ['personal_properties' => [['address' => 'Bredgade 40']]]])]);
+it('skriver ingen CPR-cache-noegle, hverken raa eller hashet, fra de lukkede metoder', function () {
+    Http::fake(['*' => Http::response(['data' => ['companies' => [['cvr' => '1']], 'personal_properties' => [['address' => 'Bredgade 40']]]])]);
 
     $api = app(RegistryApi::class);
-    $first = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
-    $second = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
+    $api->fetchCompaniesByCprCached('0101011234');
+    $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
 
-    Http::assertSentCount(1);
-    expect($second)->toBe($first)
-        ->and(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeTrue();
-});
-
-it('person-property-portfolio cache key never contains the raw cpr', function () {
-    Http::fake(['*/v1/person/property-portfolio' => Http::response(['data' => ['personal_properties' => []]])]);
-
-    app(RegistryApi::class)->fetchPersonPropertyPortfolioByCprCached('0101011234');
-
-    expect(Cache::has('metis:person_property_portfolio:0101011234'))->toBeFalse();
-});
-
-it('never caches a failed person-property-portfolio call (error shape)', function () {
-    // post() turns a 500 into ['error' => ...] rather than throwing — that shape
-    // must not shadow fresh data for 5 minutes, same rule as fetchCompaniesByCprCached.
-    Http::fake(['*/v1/person/property-portfolio' => Http::response('Server error', 500)]);
-
-    $api = app(RegistryApi::class);
-    $first = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
-    $second = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
-
-    expect($first)->toHaveKey('error')->and($second)->toHaveKey('error');
-    Http::assertSentCount(2);
-    expect(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeFalse();
-});
-
-it('never caches a failed person-property-portfolio call (transport/null shape) and retries genuinely on the next call', function () {
-    // Http::failedConnection() is the canonical way to simulate a transport
-    // failure that RESPECTS the retry layer — a raw throw from a fake closure
-    // bypasses retry handling and is never re-invoked (documented trap in the
-    // companies-by-cpr tests above). It returns a closure($request), so it is
-    // invoked manually inside a stateful fake for fail-then-succeed.
-    //
-    // client()'s retry(2, ...) means 2 TOTAL attempts per outer call. To make
-    // the FIRST outer call fail end-to-end (both attempts fail, so ['error']
-    // comes back and nothing is cached), the fake must fail on calls 1 AND 2,
-    // then succeed from call 3 onward — which lands on the SECOND outer call's
-    // first attempt.
-    $calls = 0;
-    Http::fake(function ($request) use (&$calls) {
-        $calls++;
-        if ($calls <= 2) {
-            return (Http::failedConnection('cURL error 28: transient'))($request);
-        }
-
-        return Http::response(['data' => ['personal_properties' => [['address' => 'Bredgade 40']]]]);
-    });
-
-    $api = app(RegistryApi::class);
-    $first = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
-
-    expect($first)->toHaveKey('error')
+    Http::assertNothingSent();
+    expect(Cache::has('metis:companies_by_cpr:0101011234'))->toBeFalse()
+        ->and(Cache::has('metis:companies_by_cpr:'.sha1('0101011234')))->toBeFalse()
+        ->and(Cache::has('metis:person_property_portfolio:0101011234'))->toBeFalse()
         ->and(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeFalse();
-
-    $second = $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
-
-    expect($second['personal_properties'][0]['address'])->toBe('Bredgade 40')
-        ->and(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeTrue();
 });
 
 it('pools structure fetches with per-cvr null on failure', function () {
@@ -754,19 +666,20 @@ it('never puts the upstream response body in the error value', function () {
     // RequestException::getMessage() APPENDS the response body (truncated at
     // 120 chars) to "HTTP request returned status code N". registry-api echoes
     // the request payload into some of its own error bodies — on the CPR path
-    // that payload IS the CPR — so returning getMessage() handed the CPR to
-    // every caller of this array, and onward into whatever logged or rendered
-    // it. Callers only ever isset()-check this key (verified by grep across
-    // src/ and tests/), so a constant loses nothing.
+    // that payload was the CPR (CPR-opslag er lukket 9/10-2026; i dag er det
+    // et personNAVN) — so returning getMessage() handed it to every caller of
+    // this array, and onward into whatever logged or rendered it. Callers only
+    // ever isset()-check this key (verified by grep across src/ and tests/),
+    // so a constant loses nothing.
     Http::fake([
-        '*/v1/cvr/search-by-cpr' => Http::response('validation failed for cpr 0101011234', 422),
+        '*/v1/cvr/person-companies-by-name' => Http::response('validation failed for name Jens Testsen', 422),
     ]);
 
-    $result = (new RegistryApi)->fetchCompaniesByCpr('0101011234');
+    $result = (new RegistryApi)->fetchCompaniesByName('Jens Testsen');
 
     expect($result['error'])->toBe('upstream_error')
         ->and($result['status'])->toBe(422)
-        ->and(json_encode($result))->not->toContain('0101011234');
+        ->and(json_encode($result))->not->toContain('Jens Testsen');
 });
 
 it('reports the original exception so Flare still gets the detail', function () {
@@ -938,7 +851,7 @@ it('company caches are deliberately tenant-neutral — revisit if registry-api e
 it('returns the backward-compatible error shape when the transport times out', function () {
     Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('cURL error 28: Operation timed out after 30002 milliseconds'));
 
-    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+    $result = app(RegistryApi::class)->fetchCompaniesByName('Jens Testsen');
 
     expect($result)->toBe(['error' => 'upstream_error', 'status' => 0]);
 });
@@ -959,7 +872,7 @@ it('retries exactly once on ConnectionException and succeeds on the second attem
         return Http::response(['data' => ['companies' => [['cvr' => '1']]]]);
     });
 
-    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+    $result = app(RegistryApi::class)->fetchCompaniesByName('Jens Testsen');
 
     expect($calls)->toBe(2)
         ->and($result['companies'][0]['cvr'])->toBe('1');
@@ -973,7 +886,7 @@ it('does not retry on a received 500 — a response is an answer, not transport 
         return Http::response(['message' => 'boom'], 500);
     });
 
-    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+    $result = app(RegistryApi::class)->fetchCompaniesByName('Jens Testsen');
 
     expect($calls)->toBe(1)
         ->and($result['error'])->toBe('upstream_error');
@@ -995,7 +908,7 @@ it('retries on 503 and succeeds once the deploy maintenance window clears', func
             : Http::response(['data' => ['companies' => [['cvr' => '1']]]]);
     });
 
-    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+    $result = app(RegistryApi::class)->fetchCompaniesByName('Jens Testsen');
 
     expect($calls)->toBe(2)
         ->and($result['companies'][0]['cvr'])->toBe('1');
@@ -1011,7 +924,7 @@ it('gives up on a persistent 503 after three attempts and falls back to the erro
         return Http::response(['message' => 'Service Unavailable'], 503);
     });
 
-    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+    $result = app(RegistryApi::class)->fetchCompaniesByName('Jens Testsen');
 
     expect($calls)->toBe(3)
         ->and($result['error'])->toBe('upstream_error')
@@ -1035,10 +948,10 @@ it('fails fast on later 503s once a maintenance window is observed on the instan
 
     $api = app(RegistryApi::class);
 
-    $api->fetchCompaniesByCpr('0101011234');
+    $api->fetchCompaniesByName('Jens Testsen');
     expect($calls)->toBe(3);
 
-    $second = $api->fetchCompaniesByCpr('0101011234');
+    $second = $api->fetchCompaniesByName('Jens Testsen');
 
     expect($calls)->toBe(4)
         ->and($second['error'])->toBe('upstream_error');
@@ -1047,7 +960,7 @@ it('fails fast on later 503s once a maintenance window is observed on the instan
 it('never leaks the curl message (varying ms) into the returned error value', function () {
     Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('cURL error 28: Operation timed out after 30002 milliseconds'));
 
-    $result = app(RegistryApi::class)->fetchCompaniesByCpr('0101011234');
+    $result = app(RegistryApi::class)->fetchCompaniesByName('Jens Testsen');
 
     expect(json_encode($result))->not->toContain('30002')->not->toContain('cURL');
 });

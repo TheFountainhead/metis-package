@@ -110,8 +110,9 @@ it('🚨 bygger ALDRIG en URL med et CPR paa en ikke-cpr-type', function () {
     expect((new MetisLink('cvr', '010190-1234'))->url())->toBeNull()
         ->and((new MetisLink('person', '0101901234'))->url())->toBeNull()
         ->and((new MetisLink('address', '010190 1234'))->url())->toBeNull()
-        // cpr-typen er den ene lovlige modtager (ingen kaldesteder bruger den i dag)
-        ->and((new MetisLink('cpr', '010190-1234'))->url())->toContain('/lookup/cpr/');
+        // cpr-typen var den ene lovlige modtager indtil CPR-opslag blev
+        // lukket (9/10-2026) — nu faar heller ikke den en URL.
+        ->and((new MetisLink('cpr', '010190-1234'))->url())->toBeNull();
 });
 
 it('🪤 encoder mellemrum som %20, ikke som +', function () {

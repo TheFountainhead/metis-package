@@ -110,12 +110,17 @@ it('🚨 en anonym personside viser login-gaten og ingen sektioner', function ()
     Http::assertNothingSent();
 });
 
-it('🚨 en anonym CPR-side viser login-gaten og ingen sektioner', function () {
-    $svar = $this->get('/lookup/cpr/311278-1234')->assertOk();
+it('🚨 en anonym CPR-side sendes til forsiden uden personnummeret og uden sektioner', function () {
+    // CPR-opslag er lukket (9/10-2026): siden viste foer login-gaten; nu er
+    // der ingen side. Ogsaa med gating SLAAET TIL (CprOpslagLukketTest koerer
+    // med den slaaet fra) maa svaret hverken baere CPR'et eller sektioner.
+    $svar = $this->get('/lookup/cpr/311278-1234');
 
-    $svar->assertSee('Personopslag kræver at du er tilmeldt')
-        ->assertDontSee('metis-person-summary', false)
-        ->assertDontSee('metis-person-companies', false);
+    $svar->assertRedirect(route('metis.home'));
+    expect($svar->headers->get('Location'))->not->toContain('311278')
+        ->and($svar->getContent())->not->toContain('311278')
+        ->and($svar->getContent())->not->toContain('metis-person-summary')
+        ->and($svar->getContent())->not->toContain('metis-person-companies');
 
     Http::assertNothingSent();
 });
@@ -139,7 +144,7 @@ it('🚨 login-gaten aabner den eksisterende tilmeldings-dialog', function () {
 });
 
 it('🚨 gaten er case-insensitiv paa typen', function () {
-    Livewire::test(Lookup::class, ['type' => 'CPR', 'query' => '311278-1234'])
+    Livewire::test(Lookup::class, ['type' => 'PERSON', 'query' => 'Lars Larsen'])
         ->assertSet('kraeverLogin', true);
 });
 
@@ -171,7 +176,32 @@ it('modstykke: en IDENTIFICERET bruger faar personsektionen', function (string $
     Livewire::test($navn, $params);
 
     Http::assertSent(fn ($r) => str_starts_with($r->url(), 'https://registry-api.test/v1/'));
-})->with('personsektioner');
+})->with([
+    // Kun navnesektionerne: CPR-sektionerne er lukket (9/10-2026) — se testen
+    // nedenfor, der beviser at de heller ikke henter for en identificeret.
+    'person-roles (navn)' => ['metis-person-roles', ['query' => 'Lars Larsen']],
+    'person-structure (navn)' => ['metis-person-structure', ['query' => 'Lars Larsen', 'source' => 'name']],
+]);
+
+it('🚨 en CPR-sektion mountet DIREKTE henter intet, heller ikke for en IDENTIFICERET bruger', function (string $navn, array $params) {
+    // CPR-opslag er lukket i datalaget (9/10-2026), ikke kun bag login-gaten.
+    // Komponenterne findes stadig og kan mountes over /livewire/update, saa
+    // lukningen skal holde ogsaa naar gaten ville have lukket op.
+    identificeret($this);
+
+    $c = Livewire::test($navn, $params);
+
+    Http::assertNothingSent();
+    expect(json_encode($c->instance()->all()))->not->toContain('HEMMELIG')
+        ->and($c->html())->not->toContain('HEMMELIG');
+})->with([
+    'person-structure (cpr)' => ['metis-person-structure', ['query' => '3112781234']],
+    'person-companies' => ['metis-person-companies', ['query' => '3112781234']],
+    'person-info' => ['metis-person-info', ['query' => '3112781234']],
+    'person-properties' => ['metis-person-properties', ['query' => '3112781234']],
+    'person-relations' => ['metis-person-relations', ['query' => '3112781234']],
+    'person-summary' => ['metis-person-summary', ['query' => '3112781234']],
+]);
 
 it('🚨 REPLAY: et lazy-payload fra en identificeret session giver en anonym INGEN persondata', function () {
     // Den virkelige angrebsvej. Livewires checksum er bundet til APP_KEY, ikke
@@ -224,13 +254,17 @@ it('🚨 en anonym session faar ingen CPR-data fra datalaget, heller ikke fra ca
     Http::assertNothingSent();
 });
 
-it('modstykke: en identificeret bruger faar CPR-data, ogsaa fra cachen', function () {
+it('🚨 en identificeret bruger faar heller ingen CPR-data, ogsaa ikke fra cachen', function () {
+    // Foer lukningen (9/10-2026) var dette modstykket: en identificeret bruger
+    // FIK det cachede CPR-svar. Nu er CPR lukket for alle — men navneopslaget
+    // virker stadig (positiv kontrol, saa afvisningen ikke blot er en doed gate).
     identificeret($this);
     Cache::put('metis:companies_by_cpr:'.sha1('3112781234'), ['companies' => [['name' => 'CACHET ApS']]], 300);
 
     $api = app(RegistryApi::class);
 
-    expect(json_encode($api->fetchCompaniesByCprCached('3112781234')))->toContain('CACHET ApS')
+    expect($api->fetchCompaniesByCprCached('3112781234'))->toMatchArray(['error' => 'cpr_disabled'])
+        ->and(json_encode($api->fetchCompaniesByCprCached('3112781234')))->not->toContain('CACHET ApS')
         ->and(json_encode($api->fetchPersonRoles('Lars Larsen')))->toContain('HEMMELIG PERSON');
 });
 
@@ -239,10 +273,14 @@ it('🚨 et token ALENE er ikke en identifikation', function () {
     // `<tal>|<tegn>` uden at proeve den mod registry-api. Taltes tokenet som
     // identifikation, kunne en anonym skrive `1|x` og faa en identificeret
     // brugers CACHEDE CPR-svar — cachen spoerger aldrig registry-api.
+    //
+    // CPR-cachen er lukket (9/10-2026), saa her proeves den stadig aabne
+    // persondata-vej i datalaget: navneopslaget, som en identificeret faar
+    // (se modstykket ovenfor) og et token alene IKKE maa faa.
     $this->withSession(['metis_user_token' => '1|opdigtet']);
-    Cache::put('metis:companies_by_cpr:'.sha1('3112781234'), ['companies' => [['name' => 'HEMMELIG ApS']]], 300);
 
-    expect(json_encode(app(RegistryApi::class)->fetchCompaniesByCprCached('3112781234')))->not->toContain('HEMMELIG');
+    expect(json_encode(app(RegistryApi::class)->fetchPersonRoles('Lars Larsen')))->not->toContain('HEMMELIG');
+    Http::assertNothingSent();
 
     $this->get('/lookup/person/Lars Larsen')
         ->assertOk()
@@ -257,9 +295,9 @@ it('🚨 en identificeret bruger ser personsiden med sektioner', function () {
         ->assertDontSee('Personopslag kræver at du er tilmeldt')
         ->assertSee('metis-person-roles', false);
 
+    // CPR-siden er lukket (9/10-2026) — ogsaa for en identificeret bruger.
     $this->get('/lookup/cpr/311278-1234')
-        ->assertOk()
-        ->assertSee('metis-person-companies', false);
+        ->assertRedirect(route('metis.home'));
 });
 
 it('🚨 email-verified-eventet kan IKKE bruges til at udnaevne sig selv', function () {
