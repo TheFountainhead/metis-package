@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 use TheFountainhead\Metis\Services\RegistryApi;
 
@@ -15,7 +16,12 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class FollowButton extends Component
 {
+    // Laast: ellers kan klienten saette typen til `cpr` og gemme et CPR som
+    // watchlist-raekke i registry-api (review metis-package#195).
+    #[Locked]
     public string $watchType;
+
+    #[Locked]
     public string $watchValue;
     public string $displayLabel = '';
 
