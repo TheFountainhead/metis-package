@@ -45,7 +45,9 @@ class AdminAuthController extends Controller
                 ->with('error', 'Du har ikke adgang til admin-panelet.');
         }
 
-        session(['metis_admin_authenticated' => true, 'metis_admin_cpr' => $cpr]);
+        // Kun flaget: CPR'en bruges til allowlisten ovenfor og laeses aldrig
+        // siden. I sessionen ville den foelge med Flare-rapporter (10/10-2026).
+        session(['metis_admin_authenticated' => true]);
 
         return redirect()->route('metis.admin.dashboard');
     }
