@@ -2,8 +2,10 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use TheFountainhead\Metis\Services\LookupAccess;
 use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\RegistryApi;
 
@@ -133,7 +135,39 @@ class CompanySegmentation extends Component
     public function mount(): void
     {
         $this->normaliser();
+
+        if (! $this->harAdgang()) {
+            return;
+        }
+
         $this->segmentér();
+    }
+
+    /**
+     * Kun for bekraeftede piloter (licensbrugere), samme praedikat som
+     * `RegistryApi::pilotFejl()`. Er gaten slaaet fra (embedded bag vaertens
+     * egen login), er adgangen vaertens ansvar.
+     *
+     * 🪤 Siden viser bare beskeden; det er datalaget der afviser. Gaten her
+     * sparer kun et kald og giver den rigtige besked (lektionen fra #185).
+     */
+    public function harAdgang(): bool
+    {
+        $adgang = app(LookupAccess::class);
+
+        return ! $adgang->gatingAktiv() || $adgang->erPilot();
+    }
+
+    /**
+     * Bekraefter en pilot sin arbejdsmail paa selve siden, skal resultatet
+     * komme frem uden genindlaesning (samme blindgyde som DebtSearch).
+     */
+    #[On('email-verified')]
+    public function onEmailVerified(): void
+    {
+        if ($this->harAdgang()) {
+            $this->segmentér();
+        }
     }
 
     /**
@@ -185,6 +219,10 @@ class CompanySegmentation extends Component
 
     public function segmentér(): void
     {
+        if (! $this->harAdgang()) {
+            return;
+        }
+
         $this->fejl = null;
 
         $this->normaliser();
@@ -222,6 +260,7 @@ class CompanySegmentation extends Component
             $this->total = null;
             $this->fejl = match (true) {
                 ($svar['error'] ?? null) === 'quota_exceeded' => 'Du har brugt dine gratis opslag. Skriv til support@frankston.io for adgang.',
+                ($svar['error'] ?? null) === 'pilot_required' => 'Segmenteringen kræver en pilotkonto. Skriv til support@frankston.io for adgang.',
                 isset($svar['message']) => (string) $svar['message'],
                 default => 'Segmenteringen kunne ikke hentes. Prøv igen, eller skriv til support@frankston.io.',
             };
@@ -285,6 +324,10 @@ class CompanySegmentation extends Component
      */
     public function hentCsv()
     {
+        if (! $this->harAdgang()) {
+            return null;
+        }
+
         // 🪤 Eksportér ALDRIG filtre der ikke er vist. Har den seneste
         // segmentering fejlet, ville CSV'en beskrive en population brugeren
         // aldrig har set paa skaermen.

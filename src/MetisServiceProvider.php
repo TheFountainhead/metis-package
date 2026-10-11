@@ -214,6 +214,12 @@ class MetisServiceProvider extends ServiceProvider
         // 500. `fetch()` og `markRead()` er gated paa pilot (NormalisererAlerts
         // og RegistryApi::pilotFejl), saa navnet aabner ingen ny vej ind.
         Livewire::component('metis-alert-detail', \TheFountainhead\Metis\Livewire\AlertDetail::class);
+        // 🐛 Samme fejl paa `/segmentering` (maalt paa prod 11/10-2026, Flare
+        // 9438177): siden renderede, men ENHVER aendring af et filter og
+        // Excel-knappen gav 500, fordi `/livewire/update` ikke kunne finde
+        // komponenten. `segmentér()` og `hentCsv()` er gated paa pilot
+        // (komponenten og RegistryApi::pilotFejl), saa navnet aabner ingen ny vej ind.
+        Livewire::component('metis-company-segmentation', \TheFountainhead\Metis\Livewire\CompanySegmentation::class);
     }
 
     protected function registerCriiptoDriver(): void
