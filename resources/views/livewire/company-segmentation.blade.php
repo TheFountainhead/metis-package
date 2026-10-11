@@ -186,7 +186,7 @@
                 </div>
 
                 <p class="text-xs text-ink-700/50 mt-3">
-                    {{ __('Klik på en række for at se selskaberne bag tallet. Kilde: Det Centrale Virksomhedsregister (CVR). Branchekoder er registrets egne DB07-koder.') }}
+                    {{ __('Klik på et navn for at se selskaberne bag tallet. Kilde: Det Centrale Virksomhedsregister (CVR). Branchekoder er registrets egne DB07-koder.') }}
                 </p>
 
                 @if($valgtGruppe !== null)
@@ -208,7 +208,7 @@
                         @if($selskabFejl)
                             <div class="p-4 text-sm text-red-800">{{ $selskabFejl }}</div>
                         @else
-                            <div class="overflow-x-auto" wire:loading.class="opacity-40" wire:target="visSelskaber,selskabSide">
+                            <div class="overflow-x-auto" wire:loading.class="opacity-40" wire:target="visSelskaber,gaaTilSide">
                                 <table class="w-full text-sm">
                                     <thead class="text-left">
                                         <tr>
@@ -229,7 +229,7 @@
                                                 <td class="px-4 py-2 tabular-nums text-ink-700/70">{{ $selskab['cvr'] ?? '' }}</td>
                                                 <td class="px-4 py-2 text-ink-700/70">{{ $selskab['industry_description'] ?? ($selskab['industry_code'] ?? '') }}</td>
                                                 <td class="px-4 py-2 tabular-nums text-ink-700/70">
-                                                    {{ ! empty($selskab['founded_date']) ? \Illuminate\Support\Carbon::parse($selskab['founded_date'])->format('d.m.Y') : '' }}
+                                                    {{ $this->dato($selskab['founded_date'] ?? null) }}
                                                 </td>
                                                 <td class="px-4 py-2 text-right tabular-nums text-ink-800">{{ $selskab['max_fte'] ?? '–' }}</td>
                                             </tr>
@@ -240,12 +240,18 @@
                                 </table>
                             </div>
 
-                            @if($selskabSider > 1)
+                            @if($listeAfkortet)
+                                <p class="px-4 py-2 border-t border-sand-200 text-xs text-ink-700/60">
+                                    {{ __('Listen viser de første 10.000 selskaber. Brug filtrene til venstre for at indsnævre gruppen.') }}
+                                </p>
+                            @endif
+
+                            @if($sider > 1)
                                 <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-sand-200 text-sm">
-                                    <button type="button" wire:click="selskabSide({{ $selskabSide - 1 }})" @disabled($selskabSide <= 1)
+                                    <button type="button" wire:click="gaaTilSide({{ $side - 1 }})" @disabled($side <= 1)
                                             class="px-3 py-1.5 border border-sand-200 rounded-lg disabled:opacity-40">← {{ __('Forrige') }}</button>
-                                    <span class="text-ink-700/70">{{ __('Side') }} {{ $selskabSide }} {{ __('af') }} {{ number_format($selskabSider, 0, ',', '.') }}</span>
-                                    <button type="button" wire:click="selskabSide({{ $selskabSide + 1 }})" @disabled($selskabSide >= $selskabSider)
+                                    <span class="text-ink-700/70">{{ __('Side') }} {{ $side }} {{ __('af') }} {{ number_format($sider, 0, ',', '.') }}</span>
+                                    <button type="button" wire:click="gaaTilSide({{ $side + 1 }})" @disabled($side >= $sider)
                                             class="px-3 py-1.5 border border-sand-200 rounded-lg disabled:opacity-40">{{ __('Næste') }} →</button>
                                 </div>
                             @endif

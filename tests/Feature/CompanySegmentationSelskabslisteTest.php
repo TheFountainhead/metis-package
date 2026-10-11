@@ -65,7 +65,7 @@ it('🚨 sender SAMME filtre som taellingen, plus gruppen og siden', function ()
     Livewire::test(CompanySegmentation::class)
         ->set('ivaerksaetter', true)
         ->call('visSelskaber', '751')
-        ->call('selskabSide', 2);
+        ->call('gaaTilSide', 2);
 
     Http::assertSent(fn ($r) => erListekald($r)
         && $r['group_by'] === 'municipality_code'
@@ -141,4 +141,62 @@ it('viser en fejlbesked, ikke en tom liste, naar API-et svigter', function () {
         ->call('visSelskaber', '751')
         ->assertSee('Selskaberne kunne ikke hentes')
         ->assertDontSee('Ingen selskaber i gruppen');
+});
+
+it('🚨 ingen offentlig metode hedder det samme som en offentlig egenskab', function () {
+    // Livewires $wire-proxy slaar state op FOER metoder: en metode med samme
+    // navn som en egenskab kan aldrig kaldes fra browseren. Livewire::test()
+    // ser det ikke, fordi ->call() gaar uden om proxyen.
+    $klasse = new ReflectionClass(CompanySegmentation::class);
+    $egenskaber = collect($klasse->getProperties(ReflectionProperty::IS_PUBLIC))->map->getName();
+    $metoder = collect($klasse->getMethods(ReflectionMethod::IS_PUBLIC))
+        ->filter(fn ($m) => $m->getDeclaringClass()->getName() === CompanySegmentation::class)
+        ->map->getName();
+
+    expect($metoder->intersect($egenskaber)->values()->all())->toBe([]);
+});
+
+it('🚨 listen bruger de filtre der GAV tallene, ikke et felt der er aendret siden', function () {
+    fakeListeOk();
+    config()->set('metis.gating.enabled', false);
+
+    // industryPrefix har ingen updated-hook: et .blur-felt kan synce i samme
+    // request som klikket uden at taellingen er koert igen.
+    Livewire::test(CompanySegmentation::class)
+        ->set('industryPrefix', '62')
+        ->call('visSelskaber', '751');
+
+    Http::assertSent(fn ($r) => erListekald($r) && ! isset($r['industry_prefix']));
+});
+
+it('🚨 en payload kan ikke saette den valgte gruppe eller tabellen', function () {
+    fakeListeOk();
+    config()->set('metis.gating.enabled', false);
+
+    expect(fn () => Livewire::test(CompanySegmentation::class)->set('valgtGruppe', '999'))
+        ->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
+    expect(fn () => Livewire::test(CompanySegmentation::class)->set('grupper', [['key' => '999', 'count' => 1]]))
+        ->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
+
+    Http::assertNotSent(fn ($r) => erListekald($r));
+});
+
+it('crasher ikke paa en ulaeselig stiftelsesdato', function () {
+    config()->set('metis.gating.enabled', false);
+    Http::fake([
+        '*/company-segmentation/companies' => Http::response(['data' => [['cvr' => '40447024', 'name' => 'X ApS', 'founded_date' => 'ukendt']], 'meta' => ['total' => 1, 'last_page' => 1]]),
+        '*/company-segmentation' => Http::response(['data' => [['key' => '751', 'label' => null, 'count' => 1]], 'meta' => ['total' => 1]]),
+    ]);
+
+    Livewire::test(CompanySegmentation::class)->call('visSelskaber', '751')->assertOk()->assertSee('X ApS');
+});
+
+it('regner sider ud fra totalen naar last_page mangler, og siger fra naar listen er afkortet', function () {
+    config()->set('metis.gating.enabled', false);
+    Http::fake([
+        '*/company-segmentation/companies' => Http::response(['data' => [['cvr' => '1', 'name' => 'A']], 'meta' => ['total' => 6924, 'capped' => false]]),
+        '*/company-segmentation' => Http::response(['data' => [['key' => '751', 'label' => null, 'count' => 6924]], 'meta' => ['total' => 6924]]),
+    ]);
+
+    Livewire::test(CompanySegmentation::class)->call('visSelskaber', '751')->assertSet('sider', 139);
 });

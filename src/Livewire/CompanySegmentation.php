@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -59,10 +60,32 @@ class CompanySegmentation extends Component
     #[Url(as: 'aarsvaerk_maks', except: null)]
     public $fteMax = null;
 
-    /** @var array<int, array{key: string, label: ?string, count: int}> */
+    /**
+     * 🔒 #[Locked]: tabellen er serverens svar. Ellers kunne en
+     * /livewire/update-payload saette `grupper` og dermed aabne en vilkaarlig
+     * gruppe i `visSelskaber()` (review af #200).
+     *
+     * @var array<int, array{key: string, label: ?string, count: int}>
+     */
+    #[Locked]
     public array $grupper = [];
 
+    #[Locked]
     public ?int $total = null;
+
+    /**
+     * Gruppering og filtre der FAKTISK gav tallene paa skaermen. Listen bruger
+     * disse, ikke de aktuelle (klient-skrivbare) filterfelter: et `.blur`-felt
+     * kan synce i samme request som klikket og ellers give en liste over en
+     * anden population end tabellen (review af #200).
+     *
+     * @var array<string, mixed>
+     */
+    #[Locked]
+    public array $vistFiltre = [];
+
+    #[Locked]
+    public string $vistGroupBy = 'municipality_code';
 
     public ?string $fejl = null;
 
@@ -75,17 +98,30 @@ class CompanySegmentation extends Component
      * "Aarhus med ivaerksaetterfilter" maa aldrig blive staaende under en
      * tabel uden filteret.
      */
+    #[Locked]
     public ?string $valgtGruppe = null;
 
     /** @var array<int, array<string, mixed>> */
+    #[Locked]
     public array $selskaber = [];
 
+    #[Locked]
     public ?int $selskabTotal = null;
 
-    public int $selskabSide = 1;
+    // 🪤 Egenskaben hedder `side`, metoden `gaaTilSide()`. Foerste udkast kaldte
+    // begge `selskabSide`; Livewires $wire-proxy slaar state op FOER metoder,
+    // saa wire:click="selskabSide(2)" ramte tallet, og knappen var doed i
+    // browseren, mens Livewire::test()->call() var groen (review af #200).
+    #[Locked]
+    public int $side = 1;
 
-    public int $selskabSider = 1;
+    #[Locked]
+    public int $sider = 1;
 
+    #[Locked]
+    public bool $listeAfkortet = false;
+
+    #[Locked]
     public ?string $selskabFejl = null;
 
     public const SELSKABER_PR_SIDE = 50;
@@ -231,12 +267,15 @@ class CompanySegmentation extends Component
 
     public function segmentér(): void
     {
+        // FOER adgangstjekket: mister sessionen pilot-adgang, maa en aaben
+        // liste ikke blive liggende i snapshottet (review af #200).
+        $this->lukSelskaber();
+
         if (! $this->harAdgang()) {
             return;
         }
 
         $this->fejl = null;
-        $this->lukSelskaber();
 
         $this->normaliser();
 
@@ -277,6 +316,8 @@ class CompanySegmentation extends Component
         $data = $svar['data'] ?? [];
         $this->grupper = is_array($data) ? $data : [];
         $this->total = (int) $svar['meta']['total'];
+        $this->vistGroupBy = $this->groupBy;
+        $this->vistFiltre = $this->filtre();
     }
 
     /** @return array<string, mixed> */
@@ -362,35 +403,30 @@ class CompanySegmentation extends Component
             return;
         }
 
-        // Kun en gruppe der STAAR i den viste tabel kan aabnes. Ellers kunne
-        // en vilkaarlig noegle sendes over /livewire/update.
-        if (! collect($this->grupper)->contains(fn ($g) => (string) ($g['key'] ?? '') === $noegle && $noegle !== '')) {
+        // Kun en gruppe der STAAR i den viste tabel kan aabnes (`grupper` er
+        // #[Locked], saa listen kan ikke saettes udefra).
+        if ($noegle === '' || ! collect($this->grupper)->contains(fn ($g) => (string) ($g['key'] ?? '') === $noegle)) {
             return;
         }
 
         $this->valgtGruppe = $noegle;
-        $this->selskabSide = 1;
+        $this->side = 1;
         $this->hentSelskaber();
     }
 
-    public function selskabSide(int $side): void
+    public function gaaTilSide(int $side): void
     {
         if ($this->valgtGruppe === null) {
             return;
         }
 
-        $this->selskabSide = max(1, min($side, $this->selskabSider));
+        $this->side = max(1, min($side, $this->sider));
         $this->hentSelskaber();
     }
 
     public function lukSelskaber(): void
     {
-        $this->valgtGruppe = null;
-        $this->selskaber = [];
-        $this->selskabTotal = null;
-        $this->selskabSide = 1;
-        $this->selskabSider = 1;
-        $this->selskabFejl = null;
+        $this->reset(['valgtGruppe', 'selskaber', 'selskabTotal', 'side', 'sider', 'listeAfkortet', 'selskabFejl']);
     }
 
     protected function hentSelskaber(): void
@@ -399,14 +435,13 @@ class CompanySegmentation extends Component
             return;
         }
 
-        $this->normaliser();
         $this->selskabFejl = null;
 
         $svar = app(RegistryApi::class)->segmentationCompanies(
-            $this->groupBy,
+            $this->vistGroupBy,
             $this->valgtGruppe,
-            $this->filtre(),
-            $this->selskabSide,
+            $this->vistFiltre,
+            $this->side,
             self::SELSKABER_PR_SIDE,
         );
 
@@ -415,16 +450,34 @@ class CompanySegmentation extends Component
         if (isset($svar['error']) || ! isset($svar['meta']['total']) || ! is_array($svar['data'] ?? null)) {
             $this->selskaber = [];
             $this->selskabTotal = null;
-            $this->selskabFejl = ($svar['error'] ?? null) === 'pilot_required'
-                ? 'Listen kræver en pilotkonto.'
-                : 'Selskaberne kunne ikke hentes. Prøv igen, eller skriv til support@frankston.io.';
+            $this->selskabFejl = match (true) {
+                ($svar['error'] ?? null) === 'pilot_required' => 'Listen kræver en pilotkonto.',
+                ($svar['error'] ?? null) === 'daily_quota_exceeded' => 'Dagens kvote for selskabslister er brugt. Prøv igen i morgen, eller skriv til support@frankston.io.',
+                isset($svar['message']) => (string) $svar['message'],
+                default => 'Selskaberne kunne ikke hentes. Prøv igen, eller skriv til support@frankston.io.',
+            };
 
             return;
         }
 
+        $total = (int) $svar['meta']['total'];
+
         $this->selskaber = array_values(array_filter($svar['data'], 'is_array'));
-        $this->selskabTotal = (int) $svar['meta']['total'];
-        $this->selskabSider = max(1, (int) ($svar['meta']['last_page'] ?? 1));
+        $this->selskabTotal = $total;
+        // Falder tilbage paa totalen, saa en manglende last_page aldrig skjuler
+        // alle sider efter den foerste.
+        $this->sider = max(1, (int) ($svar['meta']['last_page'] ?? ceil($total / self::SELSKABER_PR_SIDE)));
+        $this->listeAfkortet = (bool) ($svar['meta']['capped'] ?? false);
+    }
+
+    /** En dato fra API'et som dd.mm.åååå; et ulaeseligt felt giver tom tekst, ikke 500. */
+    public function dato(mixed $vaerdi): string
+    {
+        if (! is_string($vaerdi) || ! preg_match('/^\d{4}-\d{2}-\d{2}/', $vaerdi)) {
+            return '';
+        }
+
+        return substr($vaerdi, 8, 2).'.'.substr($vaerdi, 5, 2).'.'.substr($vaerdi, 0, 4);
     }
 
     /** Navnet paa den valgte gruppe, som i tabellen. */
