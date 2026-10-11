@@ -118,16 +118,36 @@ it('har ingen CPR-metoder i datalaget', function () {
         ->and($metoder->filter(fn (string $navn) => stripos($navn, 'cpr') !== false)->values()->all())->toBe([]);
 });
 
-it('har ingen CPR-sektioner: de kan hverken mountes eller laver HTTP', function (string $komponent) {
+it('kalder ingen CPR-endpoints nogen steder i pakken', function () {
+    // Navnetesten ovenfor fanger ikke en CPR-hentning under et andet navn
+    // (review #198). Derfor scannes kilden for selve endpoints og felter.
+    $kilde = collect(\Illuminate\Support\Facades\File::allFiles(dirname(__DIR__, 2).'/src'))
+        // Kun kode, ikke kommentarer: historiske noter maa gerne naevne search-by-cpr.
+        ->mapWithKeys(fn ($f) => [$f->getRelativePathname() => collect(token_get_all($f->getContents()))
+            ->reject(fn ($t) => is_array($t) && in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true))
+            ->map(fn ($t) => is_array($t) ? $t[1] : $t)
+            ->implode('')]);
+
+    $forbudt = ['by-cpr', 'exclude_cpr', "'cpr' =>", '/v1/person/property-portfolio'];
+    $fund = $kilde->flatMap(fn (string $indhold, string $fil) => collect($forbudt)
+        ->filter(fn (string $m) => str_contains($indhold, $m))
+        ->map(fn (string $m) => "$fil: $m"))->values()->all();
+
+    expect($kilde->keys())->toContain('Services/RegistryApi.php') // positiv kontrol: scanningen ser kilden
+        ->and($fund)->toBe([]);
+});
+
+it('har ingen CPR-sektioner: de kan hverken mountes eller laver HTTP', function (string $komponent, string $klasse) {
     expect(fn () => Livewire::test($komponent, ['query' => LUKKET_CPR]))
-        ->toThrow(\Livewire\Exceptions\ComponentNotFoundException::class);
+        ->toThrow(\Livewire\Exceptions\ComponentNotFoundException::class)
+        ->and(class_exists($klasse))->toBeFalse();
     Http::assertNothingSent();
 })->with([
-    'metis-person-summary',
-    'metis-person-info',
-    'metis-person-companies',
-    'metis-person-properties',
-    'metis-person-relations',
+    ['metis-person-summary', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonSummary'],
+    ['metis-person-info', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonInfo'],
+    ['metis-person-companies', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonCompanies'],
+    ['metis-person-properties', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonProperties'],
+    ['metis-person-relations', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonRelations'],
 ]);
 
 it('sender ikke et CPR til navneopslaget, heller ikke med en varm CPR-cache fra foer lukningen', function (string $cpr) {
