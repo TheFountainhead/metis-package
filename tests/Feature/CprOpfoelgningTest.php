@@ -1,10 +1,12 @@
 <?php
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\User as SocialiteUser;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
+use TheFountainhead\Metis\Livewire\AlertsInbox;
 use TheFountainhead\Metis\Livewire\FollowButton;
 
 /**
@@ -15,6 +17,8 @@ use TheFountainhead\Metis\Livewire\FollowButton;
  * 2. FollowButtons watchType/watchValue var ikke laaste, saa en klient kunne
  *    saette typen til `cpr` og gemme et CPR som watchlist-raekke.
  */
+uses(RefreshDatabase::class);
+
 beforeEach(fn () => $this->app->register(\Laravel\Socialite\SocialiteServiceProvider::class));
 
 it('gemmer ikke admin-CPR i sessionen efter MitID-login', function () {
@@ -94,4 +98,16 @@ it('sletter den gamle session-raekke ved pilot-logout', function () {
     expect(app('session')->driver()->getHandler()->read($foer))->not->toContain('hemmelig-token')
         ->and(session()->getId())->not->toBe($foer)
         ->and(session()->has('metis_user_token'))->toBeFalse();
+});
+
+it('genindlaeser alerts-siden efter pilot-logout, saa den ikke sidder med et udloebet CSRF-token', function () {
+    // logout() roterer CSRF-tokenet (regenerate). Bliver siden staaende, gaar
+    // naeste handling (fx setToken) ud med det gamle token og faar 419.
+    config()->set('metis.mode', 'standalone');
+    Http::fake(['*' => Http::response(['data' => []])]);
+    $this->withSession(['metis_user_token' => '1|aegte', 'metis_pilot_account_id' => 7, 'metis_verified_email' => 'pilot@frankston.io']);
+
+    Livewire::test(AlertsInbox::class)
+        ->call('clearToken')
+        ->assertRedirect(route('metis.alerts'));
 });
