@@ -157,7 +157,8 @@ class Lookup extends Component
         // 🚨 CPR-OPSLAG ER LUKKET (Frederik 9/10-2026): personnummeret stod i
         // URL'en, og ruten havde 0 kald paa 15 dage. Baade /lookup/cpr/ og et
         // CPR under en anden type sendes til forsiden — UDEN personnummeret.
-        // Datalaget er lukket for sig (`RegistryApi::cprLukketFejl()`).
+        // Datalaget har ingen CPR-metoder laengere (FHT-2348), og
+        // `PersonStructure::fetchCompanies()` afviser et CPR-formet query.
         if (strtolower($type) === 'cpr' || (new SearchDetector)->isCpr($query)) {
             $this->redirect(MetisLink::hjem(), navigate: true);
 

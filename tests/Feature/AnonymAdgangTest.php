@@ -119,8 +119,7 @@ it('🚨 en anonym CPR-side sendes til forsiden uden personnummeret og uden sekt
     $svar->assertRedirect(route('metis.home'));
     expect($svar->headers->get('Location'))->not->toContain('311278')
         ->and($svar->getContent())->not->toContain('311278')
-        ->and($svar->getContent())->not->toContain('metis-person-summary')
-        ->and($svar->getContent())->not->toContain('metis-person-companies');
+        ->and($svar->getContent())->not->toContain('metis-person-');
 
     Http::assertNothingSent();
 });
@@ -150,13 +149,8 @@ it('🚨 gaten er case-insensitiv paa typen', function () {
 
 dataset('personsektioner', [
     'person-roles (navn)' => ['metis-person-roles', ['query' => 'Lars Larsen']],
-    'person-structure (navn)' => ['metis-person-structure', ['query' => 'Lars Larsen', 'source' => 'name']],
+    'person-structure (navn)' => ['metis-person-structure', ['query' => 'Lars Larsen']],
     'person-structure (cpr)' => ['metis-person-structure', ['query' => '3112781234']],
-    'person-companies' => ['metis-person-companies', ['query' => '3112781234']],
-    'person-info' => ['metis-person-info', ['query' => '3112781234']],
-    'person-properties' => ['metis-person-properties', ['query' => '3112781234']],
-    'person-relations' => ['metis-person-relations', ['query' => '3112781234']],
-    'person-summary' => ['metis-person-summary', ['query' => '3112781234']],
 ]);
 
 it('🚨 en personsektion mountet DIREKTE af en anonym henter intet', function (string $navn, array $params) {
@@ -177,16 +171,17 @@ it('modstykke: en IDENTIFICERET bruger faar personsektionen', function (string $
 
     Http::assertSent(fn ($r) => str_starts_with($r->url(), 'https://registry-api.test/v1/'));
 })->with([
-    // Kun navnesektionerne: CPR-sektionerne er lukket (9/10-2026) — se testen
-    // nedenfor, der beviser at de heller ikke henter for en identificeret.
+    // Kun navneopslag: et CPR afvises ogsaa for en identificeret — se testen
+    // nedenfor.
     'person-roles (navn)' => ['metis-person-roles', ['query' => 'Lars Larsen']],
-    'person-structure (navn)' => ['metis-person-structure', ['query' => 'Lars Larsen', 'source' => 'name']],
+    'person-structure (navn)' => ['metis-person-structure', ['query' => 'Lars Larsen']],
 ]);
 
 it('🚨 en CPR-sektion mountet DIREKTE henter intet, heller ikke for en IDENTIFICERET bruger', function (string $navn, array $params) {
-    // CPR-opslag er lukket i datalaget (9/10-2026), ikke kun bag login-gaten.
-    // Komponenterne findes stadig og kan mountes over /livewire/update, saa
-    // lukningen skal holde ogsaa naar gaten ville have lukket op.
+    // CPR-opslag er lukket (9/10-2026), ikke kun bag login-gaten. De rene
+    // CPR-sektioner er slettet (FHT-2348, se CprOpslagLukketTest); den
+    // tilbagevaerende personsektion kan mountes over /livewire/update med et
+    // CPR, saa afvisningen skal holde ogsaa naar gaten ville have lukket op.
     identificeret($this);
 
     $c = Livewire::test($navn, $params);
@@ -196,11 +191,7 @@ it('🚨 en CPR-sektion mountet DIREKTE henter intet, heller ikke for en IDENTIF
         ->and($c->html())->not->toContain('HEMMELIG');
 })->with([
     'person-structure (cpr)' => ['metis-person-structure', ['query' => '3112781234']],
-    'person-companies' => ['metis-person-companies', ['query' => '3112781234']],
-    'person-info' => ['metis-person-info', ['query' => '3112781234']],
-    'person-properties' => ['metis-person-properties', ['query' => '3112781234']],
-    'person-relations' => ['metis-person-relations', ['query' => '3112781234']],
-    'person-summary' => ['metis-person-summary', ['query' => '3112781234']],
+    'person-structure (cpr med bindestreg)' => ['metis-person-structure', ['query' => '311278-1234']],
 ]);
 
 it('🚨 REPLAY: et lazy-payload fra en identificeret session giver en anonym INGEN persondata', function () {
@@ -227,45 +218,22 @@ it('🚨 REPLAY: et lazy-payload fra en identificeret session giver en anonym IN
     Http::assertNothingSent();
 });
 
-it('🚨 en anonym session faar ingen CPR-data fra datalaget, heller ikke fra cachen', function () {
+it('🚨 en anonym session faar ingen persondata fra datalaget', function () {
+    // CPR-metoderne er fjernet (FHT-2348); CprOpslagLukketTest beviser at der
+    // ingen er. Tilbage er navneopslagene, som kraever login.
     $this->withSession(['metis_lookup_count' => 0]);
     $api = app(RegistryApi::class);
 
-    // Cachen er varm fra en identificeret brugers opslag for 2 minutter siden.
-    Cache::put('metis:companies_by_cpr:'.sha1('3112781234'), ['companies' => [['name' => 'HEMMELIG ApS']]], 300);
-    Cache::put('metis:person_property_portfolio:'.sha1('3112781234'), ['companies' => [['name' => 'HEMMELIG ApS']]], 300);
-
     $svar = [
-        $api->fetchCompaniesByCpr('3112781234'),
-        $api->fetchCompaniesByCprCached('3112781234'),
-        $api->fetchPropertiesByCpr('3112781234'),
-        $api->fetchPersonPropertyPortfolioByCpr('3112781234'),
-        $api->fetchPersonPropertyPortfolioByCprCached('3112781234'),
-        $api->fetchPersonPropertyPortfolioByCprFromCache('3112781234'),
         $api->fetchPersonRoles('Lars Larsen'),
         $api->fetchCompaniesByName('Lars Larsen'),
         $api->fetchPersonPropertyPortfolio('Lars Larsen'),
         $api->disambiguatePerson('Lars Larsen'),
-        $api->fetchRolesByCvr(['11111111'], '3112781234'),
         $api->searchPersonByName('Lars Larsen'),
     ];
 
     expect(json_encode($svar))->not->toContain('HEMMELIG');
     Http::assertNothingSent();
-});
-
-it('🚨 en identificeret bruger faar heller ingen CPR-data, ogsaa ikke fra cachen', function () {
-    // Foer lukningen (9/10-2026) var dette modstykket: en identificeret bruger
-    // FIK det cachede CPR-svar. Nu er CPR lukket for alle — men navneopslaget
-    // virker stadig (positiv kontrol, saa afvisningen ikke blot er en doed gate).
-    identificeret($this);
-    Cache::put('metis:companies_by_cpr:'.sha1('3112781234'), ['companies' => [['name' => 'CACHET ApS']]], 300);
-
-    $api = app(RegistryApi::class);
-
-    expect($api->fetchCompaniesByCprCached('3112781234'))->toMatchArray(['error' => 'cpr_disabled'])
-        ->and(json_encode($api->fetchCompaniesByCprCached('3112781234')))->not->toContain('CACHET ApS')
-        ->and(json_encode($api->fetchPersonRoles('Lars Larsen')))->toContain('HEMMELIG PERSON');
 });
 
 it('🚨 et token ALENE er ikke en identifikation', function () {

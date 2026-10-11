@@ -17,9 +17,10 @@ use TheFountainhead\Metis\Services\RegistryApi;
  *    resolves LAZY via fetchCompanyInfo (24h-cachet, så det er et cache-hit
  *    på alle gensyn og ét let kald første gang). Fejler opslaget, bliver
  *    CVR-nummeret stående — titlen må aldrig blokere eller fejle siden.
- *  - cpr: neutral "Personopslag". search-by-cpr-payloaden bærer ikke
- *    personens navn (verificeret i 2b), og det RÅ CPR hører ikke hjemme som
- *    sidetitel selv om Personinformation-kortet viser det som indhold.
+ *  - alt andet: neutral "Personopslag". Der er ingen cpr-type længere
+ *    (CPR-opslag er lukket, Lookup::mount() sender til forsiden), men
+ *    fallbacken må aldrig vise søgetermen: et RÅT CPR hører ikke hjemme
+ *    som sidetitel (pinnet i LookupTitleTest).
  */
 #[Lazy]
 class LookupTitle extends Component

@@ -93,7 +93,7 @@
             </div>
         {{-- Ingen cpr-gren: CPR-opslag er lukket (9/10-2026), mount() sender til forsiden. --}}
         @elseif($type === 'person')
-            <livewire:metis-person-structure :query="$query" source="name" lazy="on-load" />
+            <livewire:metis-person-structure :query="$query" lazy="on-load" />
             <livewire:metis-person-roles :query="$query" lazy="on-load" />
         {{-- 🚨 `lazy="on-load"`, ikke bare `lazy`: almindelig lazy venter paa
              VIEWPORTEN, saa sektioner under skaermkanten hang for evigt paa

@@ -106,22 +106,6 @@ class RegistryApi
     }
 
     /**
-     * CPR-opslag er lukket i Metis (Frederik 9/10-2026).
-     *
-     * Opslagene lagde personnummeret i URL'en og hentede navn, adresse og
-     * bopael fra CPR Direkte bag kun navn + arbejdsmail. Ruten havde 0 kald
-     * paa 15 dage (nginx 25/9-9/10). Lukket HER, i datalaget, af samme grund
-     * som `loginKraevetFejl()`: sektionerne kan kaldes uden om siden.
-     *
-     * Ingen HTTP og ingen cache-laesning, uanset login. Samme fejlform som de
-     * oevrige gates, saa kaldestederne viser "opslaget fejlede".
-     */
-    protected function cprLukketFejl(): array
-    {
-        return ['error' => 'cpr_disabled', 'status' => 403];
-    }
-
-    /**
      * Person- og CPR-data kraever en identificeret bruger (Frederik 6/10-2026).
      *
      * 🔑 HER, i datalaget, og ikke kun paa `/lookup/person` og `/lookup/cpr`.
@@ -650,8 +634,7 @@ class RegistryApi
     }
 
     /**
-     * Cached variant, mirroring fetchCompaniesByCprCached()'s contract (5 min
-     * TTL, failures NEVER cached).
+     * Cached variant: 5 min TTL, failures NEVER cached.
      *
      * PersonStructure calls this from mount AND from rehydrateBeforeRebuild(),
      * which every poll tick, chip toggle and expand runs through — so the
@@ -688,19 +671,9 @@ class RegistryApi
         return $result;
     }
 
-    public function fetchRolesByCvr(array $cvrs, ?string $excludeCpr = null): array
+    public function fetchRolesByCvr(array $cvrs): array
     {
-        // Med et CPR er det et personopslag (PersonRelations), ikke et selskabsopslag.
-        if ($excludeCpr && ($blocked = $this->loginKraevetFejl())) {
-            return $blocked;
-        }
-
-        $payload = ['cvr_numbers' => $cvrs];
-        if ($excludeCpr) {
-            $payload['exclude_cpr'] = $excludeCpr;
-        }
-
-        return $this->post('/v1/cvr/roles-by-cvr', $payload);
+        return $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $cvrs]);
     }
 
     public function fetchCompanyInfo(string $cvr): ?array
@@ -922,9 +895,8 @@ class RegistryApi
         // holdt det ikke — den cachede fejlen som var den et svar.
         // Blev foerst FARLIGT da post() holdt op med at kaste paa misdannede
         // svar: foer kastede en TypeError, saa der var intet at cache.
-        // De tre soeskende (fetchCrossOwnershipCached:458,
-        // fetchCompaniesByCprCached, fetchPersonPropertyPortfolioByCprCached)
-        // gjorde det rigtigt hele tiden. Review-fund 18/8.
+        // Soeskendet fetchCrossOwnershipCached() gjorde det rigtigt hele
+        // tiden. Review-fund 18/8.
         if (! empty($structure) && ! isset($structure['error'])) {
             Cache::put(self::structureCacheKey($cvr), $structure, 300);
         }
@@ -1178,15 +1150,9 @@ class RegistryApi
         }
     }
 
-    /** Lukket: se cprLukketFejl(). */
-    public function fetchCompaniesByCpr(string $cpr): ?array
-    {
-        return $this->cprLukketFejl();
-    }
-
     /**
-     * Companies for a person looked up by NAME (no CPR) — same shape as the
-     * CPR path so PersonStructure can classify() it unchanged.
+     * Companies for a person looked up by NAME — the companies[] shape
+     * PersonStructure::classify() reads.
      *
      * post() never returns null itself: a RequestException is caught by
      * errorFrom() and turned into ['error' => 'upstream_error', 'status' =>
@@ -1227,18 +1193,6 @@ class RegistryApi
         }
 
         return $result;
-    }
-
-    /** Lukket: se cprLukketFejl(). */
-    public function fetchCompaniesByCprCached(string $cpr): ?array
-    {
-        return $this->cprLukketFejl();
-    }
-
-    /** Lukket: se cprLukketFejl(). */
-    public function fetchPropertiesByCpr(string $cpr): ?array
-    {
-        return $this->cprLukketFejl();
     }
 
     public function fetchPersonRoles(string $query): ?array
@@ -1307,26 +1261,6 @@ class RegistryApi
         } catch (ConnectionException|RequestException $e) {
             return null;   // ægte fejl — konsumenten må tilbyde retry
         }
-    }
-
-    /** Lukket: se cprLukketFejl(). */
-    public function fetchPersonPropertyPortfolioByCpr(string $cpr): ?array
-    {
-        return $this->cprLukketFejl();
-    }
-
-    /** Lukket: se cprLukketFejl(). */
-    public function fetchPersonPropertyPortfolioByCprCached(string $cpr): ?array
-    {
-        return $this->cprLukketFejl();
-    }
-
-    /** Lukket: se cprLukketFejl(). */
-    public function fetchPersonPropertyPortfolioByCprFromCache(string $cpr): ?array
-    {
-        // null = "ikke i cachen", som kalderen allerede haandterer. Et svar
-        // cachet foer lukningen udleveres ikke.
-        return null;
     }
 
     /**

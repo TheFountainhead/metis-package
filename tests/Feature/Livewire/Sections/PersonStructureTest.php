@@ -14,12 +14,10 @@ beforeEach(function () {
 });
 
 /*
- * CPR-opslag er lukket (9/10-2026). Graf-, fase-, budget-, berigelses- og
- * hydreringstestene herunder koerer derfor i NAVNETILSTAND
- * (`'source' => 'name'`, endpoint person-companies-by-name) — samme
- * komponent, samme faser, samme paastande. Private ejendomme-laget fandtes
- * kun i CPR-tilstand; dets tests er slettet, og lukningen selv er pinnet i
- * 'lukker CPR-tilstanden …' nedenfor og i tests/Feature/CprOpslagLukketTest.php.
+ * CPR-opslag er lukket (9/10-2026), og CPR-tilstanden er fjernet (FHT-2348).
+ * Komponenten slaar kun op paa NAVN (endpoint person-companies-by-name).
+ * At et CPR-formet query afvises uden HTTP-kald er pinnet i
+ * 'afviser et CPR …' nedenfor og i tests/Feature/CprOpslagLukketTest.php.
  */
 
 /**
@@ -152,7 +150,7 @@ function personRoleCompany(string $cvr, ?string $title = 'Direktør', string $na
 it('marks the skeleton failed (not empty) when the companies lookup fails, and offers a retry', function () {
     fakeRegistryPersonFailingThenSucceeding([personOwnershipCompany('11111111')]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('skeletonStatus'))->toBe('failed');
     $test->assertSee('Prøv igen')
@@ -169,14 +167,12 @@ it('marks the skeleton failed (not empty) when the companies lookup fails, and o
 it('treats a successful but empty companies list as empty, with no graph canvas', function () {
     fakeRegistryPerson([]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     // null ≠ tom: a SUCCESSFUL response with no companies is 'empty', never
-    // 'failed'. In name mode the private-properties layer does not exist
-    // (settled 'empty' from mount), so the verdict is final at once — the
-    // message is on screen without a poll round.
+    // 'failed'. The verdict is final at once — the message is on screen
+    // without a poll round.
     expect($test->get('skeletonStatus'))->toBe('empty')
-        ->and($test->get('privatePropertiesStatus'))->toBe('empty')
         ->and($test->get('graphModel')['nodes'])->toBe([]);
 
     $test->assertSee('Ingen aktive selskabsrelationer')
@@ -189,7 +185,7 @@ it('builds a graph with the person root and both layers when the skeleton loads'
         personRoleCompany('22222222', 'Bestyrelsesformand', 'Drift A/S'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('skeletonStatus'))->toBe('loaded');
 
@@ -214,7 +210,7 @@ it('fails the skeleton when cross-ownership fails, because a de-duped graph woul
         personOwnershipCompany('22222222', 100.0, 'Holding B ApS'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('skeletonStatus'))->toBe('failed')
         ->and($test->get('graphModel')['nodes'])->toBe([]);
@@ -227,7 +223,7 @@ it('skips the cross-ownership call entirely with fewer than two ownership cvrs',
         personRoleCompany('22222222'),
     ]);
 
-    Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     Http::assertNotSent(fn ($request) => str_contains($request->url(), 'cross-ownership'));
 });
@@ -238,7 +234,7 @@ it('refuses a layer toggle that would leave nothing but the person', function ()
         personRoleCompany('22222222', 'Direktør', 'Drift A/S'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     // Ownership layer is empty, so it can always be switched off.
     $test->call('toggleLayer', 'ownership');
@@ -262,7 +258,7 @@ it('locks the only chip that carries nodes even while the empty chips are still 
         personOwnershipCompany('11111111', 100.0, 'Holding ApS'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('ownershipCount'))->toBe(1)
         ->and($test->get('roleCount'))->toBe(0)
@@ -308,7 +304,7 @@ it('toggles a layer off and back on, rebuilding the graph each time', function (
         personRoleCompany('22222222', 'Direktør', 'Drift A/S'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $test->call('toggleLayer', 'roles');
     expect($test->get('layers'))->toBe(['ownership'])
@@ -328,7 +324,7 @@ it('dispatches graph-refit after a node expand — the expand path must re-frame
         range(1, 25),
     ));
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $test->call('expandNode', 'sub:person:root');
     $test->assertDispatched('graph-refit');
@@ -343,7 +339,7 @@ it('shows chip badges counting each layers companies', function () {
         array_merge(personRoleCompany('44444444', 'Tidligere direktør', 'Lukket ApS'), ['is_active' => false]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('ownershipCount'))->toBe(2)
         ->and($test->get('roleCount'))->toBe(1);
@@ -358,7 +354,7 @@ it('classifies the role label as title then role, and reads the share off the fi
         personRoleCompany('22222222', null, 'Drift A/S', 'CEO'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $edge = collect($test->get('graphModel')['edges'])->first(fn ($e) => $e['to'] === '22222222');
     expect($edge['label'])->toBe('CEO');
@@ -367,7 +363,7 @@ it('classifies the role label as title then role, and reads the share off the fi
 it('keeps the raw api payloads out of the wire payload', function () {
     fakeRegistryPerson([personOwnershipCompany('11111111')]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     // The rendered Livewire snapshot IS the wire payload — the raw companies
     // rows (which carry the person's whole role history) must never appear in
@@ -383,7 +379,7 @@ it('rehydrates the protected companies payload across a real hydration boundary'
         personRoleCompany('22222222', 'Direktør', 'Drift A/S'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     // A genuinely FRESH instance (protected state empty), as a second request
     // produces — toggleLayer must re-fetch cache-first before rebuilding, or
@@ -418,7 +414,7 @@ it('keeps the last-good graph when the cross-ownership refetch fails, instead of
             ->push('Server error', 500),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $edgeAt = fn ($graph) => collect($graph['edges'])->map(fn ($e) => $e['from'].'->'.$e['to'])->all();
     expect($edgeAt($test->get('graphModel')))->toContain('11111111->22222222');
@@ -445,7 +441,7 @@ it('keeps the last-good graph when the companies refetch fails on expand', funct
         '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $before = $test->get('graphModel');
 
     \Illuminate\Support\Facades\Cache::flush();
@@ -472,7 +468,7 @@ it('degrades the same way for toggleLayer as for expandNode', function () {
         '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $before = $test->get('graphModel');
     $layersBefore = $test->get('layers');
 
@@ -496,7 +492,7 @@ it('treats a malformed 200 response as a failure rather than a 500', function ()
         '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('skeletonStatus'))->toBe('failed');
     $test->assertSee('Prøv igen');
@@ -507,7 +503,7 @@ it('treats a connection exception as a failure rather than a 500', function () {
         '*/v1/cvr/person-companies-by-name*' => fn () => throw new \Illuminate\Http\Client\ConnectionException('refused'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('skeletonStatus'))->toBe('failed');
 });
@@ -521,7 +517,7 @@ it('treats a cross-ownership connection exception as a skeleton failure', functi
         '*/v1/cvr/cross-ownership*' => fn () => throw new \Illuminate\Http\Client\ConnectionException('refused'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('skeletonStatus'))->toBe('failed');
 });
@@ -543,7 +539,7 @@ it('reveals every hidden first-level company from a single person-root expand', 
 
     fakeRegistryPerson(array_merge($owned, $roles));
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $root = collect($test->get('graphModel')['nodes'])->firstWhere('id', 'person:root');
     expect($root['expand']['relations'])->toBe(10)
@@ -565,7 +561,7 @@ it('renders a person-root expand button that targets the node id, never sub:null
     // The person root has cvr=null, so a blade binding built from node.cvr
     // would emit the literal string 'sub:null' and the cap would be
     // unreachable through the UI.
-    $html = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name'])->html();
+    $html = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen'])->html();
 
     expect($html)->not->toContain('sub:null')
         ->and($html)->toContain('node.cvr ?? node.id');
@@ -583,7 +579,7 @@ it('recomputes the fase-2 queue when an expand reveals new first-level companies
 
     fakeRegistryPerson($owned);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     expect($test->get('structureByCompany'))->toHaveCount(20);
 
     $test->call('expandNode', 'sub:person:root');
@@ -611,7 +607,7 @@ it('keeps companies in the fase-2 queue when a layer is switched off', function 
         personRoleCompany('22222222', 'Direktør', 'Drift A/S'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     // NB array_keys() casts numeric-string cvr keys to INTEGERS, so normalise
     // back to strings before comparing.
@@ -632,7 +628,7 @@ it('preserves already-resolved queue entries when the queue is recomputed', func
         personRoleCompany('22222222', 'Direktør', 'Drift A/S'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     // Simulate Task 7 having already resolved one cvr, then force a recompute.
     // The cache warms with it: a 'loaded' cvr whose structure is no longer
@@ -654,7 +650,7 @@ it('reopens a settled fase-2 aggregate when an expand strands new pending entrie
 
     fakeRegistryPerson($owned);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     // Simulate Task 7 finishing the phase: every visible cvr settled, aggregate
     // closed — with the cache warm, as a real completed phase leaves it, so the
@@ -677,7 +673,7 @@ it('reopens a settled fase-2 aggregate when an expand strands new pending entrie
 it('leaves a settled fase-2 aggregate closed when nothing is pending', function () {
     fakeRegistryPerson([personOwnershipCompany('11111111', 100.0, 'Holding ApS')]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     warmStructureCache(['11111111']);
     $test->set('structureByCompany', ['11111111' => 'loaded'])
@@ -698,7 +694,7 @@ it('never carries the contradictory staleData + failed skeleton pair', function 
         '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     \Illuminate\Support\Facades\Cache::flush();
     $fresh = rehydratedFrom($test);
@@ -819,7 +815,7 @@ it('takes three structure cvrs per tick and leaves the rest pending', function (
         '00000001' => ['subsidiaries' => [personSubsidiary('90000001')]],
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $test->call('tick');
 
@@ -850,7 +846,7 @@ it('marks only the failing cvr failed and still finishes the phase', function ()
         '22222222' => ['subsidiaries' => [personSubsidiary('90000002')]],
     ], relationships: []);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick');
 
     $queue = collect($test->get('structureByCompany'))->mapWithKeys(fn ($s, $c) => [(string) $c => $s]);
@@ -875,7 +871,7 @@ it('starts fase 3 even when some fase-2 cvrs failed', function () {
         '22222222' => [personPortfolioRow('22222222', '5002')],
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $test->call('tick'); // fase 2 settles (one failed) → fase 3 seeded
     expect($test->get('structuresStatus'))->toBe('failed')
@@ -900,7 +896,7 @@ it('fails the properties phase when the shared attempts budget is exhausted', fu
         ['11111111' => 'building'],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles, fase 3 seeded
 
     expect($test->get('propertiesStatus'))->toBe('building');
@@ -933,7 +929,7 @@ it('cascades a structures retry into fase 3 and enrichment', function () {
         '22222222' => [personPortfolioRow('22222222', '5002')],
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles with one failure, fase 3 seeded
     $test->call('tick'); // fase 3 drains
     $test->set('enrichmentStatus', 'loaded');
@@ -968,7 +964,7 @@ it('keeps fetching structures for a layer whose chip is switched off', function 
         '22222222' => ['subsidiaries' => [personSubsidiary('90000022')]],
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $test->call('toggleLayer', 'roles');
 
@@ -996,7 +992,7 @@ it('never queues a truncated first-level company until it is expanded', function
         '00000025' => ['subsidiaries' => [personSubsidiary('90000025')]],
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect($test->get('structureByCompany'))->toHaveCount(20)
         ->and(array_map('strval', array_keys($test->get('structureByCompany'))))->not->toContain('00000025');
@@ -1013,7 +1009,7 @@ it('polls only while there is work left', function () {
         ['11111111' => []], // successful, but no properties
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     expect($test->html())->toContain('wire:poll');
 
     $test->call('tick'); // fase 2 done → fase 3 seeded
@@ -1054,7 +1050,7 @@ it('leaves the graph untouched on a properties tick that only burned budget', fu
         ['11111111' => 'building'],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles
 
     $before = $test->get('graphModel');
@@ -1092,7 +1088,7 @@ it('is a no-op tick once every phase has settled', function () {
         ['11111111' => [personPortfolioRow('11111111', '5001')]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2
     $test->call('tick'); // fase 3
     // Task 8: fase 4 settles on the third tick (the pooled company-info call
@@ -1115,7 +1111,7 @@ it('keeps fase-2 results across a hydration boundary by refetching them', functi
         ['11111111' => [personPortfolioRow('11111111', '5001')]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 loads 11111111, seeds fase 3
 
     expect(collect($test->get('graphModel')['nodes'])->pluck('id'))->toContain('90000011');
@@ -1157,7 +1153,7 @@ it('re-derives the aggregate when recovery downgrades a structure cvr', function
         '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles 'loaded', fase 3 seeded
     $test->call('tick'); // recovery downgrades 11111111 back to 'pending'
 
@@ -1185,7 +1181,7 @@ it('re-derives the aggregate when recovery downgrades a property cvr', function 
         ['11111111' => [personPortfolioRow('11111111', '5001')]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles
     $test->call('tick'); // fase 3 loads the portfolio
 
@@ -1216,7 +1212,7 @@ it('keeps a failed property cvr failed instead of silently retrying it', functio
         ['11111111' => null], // portfolio hard-fails
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles
     $test->call('tick'); // fase 3: the cvr fails
 
@@ -1250,7 +1246,7 @@ it('does not let a recovery downgrade bypass the shared attempts budget', functi
         '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 7]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles
 
     for ($i = 0; $i < 30; $i++) {
@@ -1276,7 +1272,7 @@ it('stops issuing portfolio requests once the budget is spent', function () {
         '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 7]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles
 
     for ($i = 0; $i < 24; $i++) {
@@ -1313,7 +1309,7 @@ it('never counts the shared budget past its own ceiling', function () {
         ],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles
 
     // 3 cvrs burn 3 units per tick — 9 ticks would reach 27 uncapped.
@@ -1350,7 +1346,7 @@ it('never fetches fase-2/3 payloads from inside an interactive request, however 
         ],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
 
     expect($test->get('structuresStatus'))->toBe('loaded')
@@ -1379,7 +1375,7 @@ it('never fetches fase-2/3 payloads from inside an interactive request, however 
     // …and the poll gate is on screen to run it. Asserted on a Testable
     // carrying the recovered state, because the Blade reads $this->graphModel
     // and so cannot be rendered off a bare instance.
-    $rendered = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name'])
+    $rendered = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen'])
         ->set('structureByCompany', $fresh->structureByCompany)
         ->set('structuresStatus', $fresh->structuresStatus)
         ->set('propertiesByCompany', $fresh->propertiesByCompany)
@@ -1399,7 +1395,7 @@ it('does not charge the shared properties budget for a recovery miss', function 
         ['11111111' => [personPortfolioRow('11111111', '5001')]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
 
     expect($test->get('propertiesStatus'))->toBe('loaded')
@@ -1540,7 +1536,7 @@ it('sends only the matrikel-ids of property nodes actually in the graph to prope
         ['11111111' => ['financials' => []]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
     $test->call('loadEnrichment');
 
@@ -1576,7 +1572,7 @@ it('never sends the person root or a person node to the company-info pool', func
         ['11111111' => ['financials' => []]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
     $test->call('loadEnrichment');
 
@@ -1597,7 +1593,7 @@ it('passes API-sourced financials through as hele kroner (no *1000) — shared F
         ]]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
     $test->call('loadEnrichment');
 
@@ -1618,7 +1614,7 @@ it('converts pdf-sourced financials from t.DKK to hele kroner (*1000) — shared
         ]]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
     $test->call('loadEnrichment');
 
@@ -1640,7 +1636,7 @@ it('gates enrichment on both progressive phases having settled', function () {
     fakePersonEnrichment($companies, [], [], collect($companies)
         ->mapWithKeys(fn ($c) => [$c['cvr'] => ['financials' => []]])->all());
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // 3 of 5 structures
 
     expect($test->get('structuresStatus'))->toBe('loading');
@@ -1672,7 +1668,7 @@ it('gates enrichment on fase 3 too, not just fase 2', function () {
         ['11111111' => ['financials' => [['year' => '2024', 'equity' => 500_000, 'profit_loss' => 1]]]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick'); // fase 2 settles, fase 3 seeded
     $test->call('tick'); // fase 3 answers 'building' — still not settled
 
@@ -1692,7 +1688,7 @@ it('runs enrichment from the tick loop once phases 2 and 3 settle, without a sep
         ['11111111' => ['financials' => [['year' => '2024', 'equity' => 500_000, 'profit_loss' => 50_000]]]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
 
     expect($test->get('enrichmentStatus'))->toBe('loaded');
@@ -1717,7 +1713,7 @@ it('does not let a failed phase withhold enrichment', function () {
         ],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
 
     expect($test->get('structuresStatus'))->toBe('failed')
@@ -1756,7 +1752,7 @@ it('treats a single unreachable company as a missing card, not a failed phase', 
         ]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
 
     expect($test->get('enrichmentStatus'))->toBe('loaded');
@@ -1799,7 +1795,7 @@ it('flips enrichment to failed on a total pool failure and lets retryEnrichment 
 
     app()->instance(\TheFountainhead\Metis\Services\RegistryApi::class, $api);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
 
     expect($test->get('enrichmentStatus'))->toBe('failed');
@@ -1837,7 +1833,7 @@ it('reproduces the cards after a rehydrate + chip toggle without a fetch storm',
         ],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
 
     expect($test->get('enrichmentStatus'))->toBe('loaded');
@@ -1883,7 +1879,7 @@ it('hands an unrecoverable enrichment piece back to the poll loop instead of fet
         ],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
     expect($test->get('enrichmentStatus'))->toBe('loaded');
 
@@ -1911,7 +1907,7 @@ it('keeps the graph rendered while a reset enrichment phase is re-run by the pol
         ['11111111' => ['financials' => [['year' => '2024', 'equity' => 500_000, 'profit_loss' => 1]]]],
     );
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     tickUntilSettled($test);
 
     \Illuminate\Support\Facades\Cache::forget('metis:company_info:11111111');
@@ -1959,13 +1955,13 @@ it('rebuilds before resolving enrichment so recovery sees the just-recovered pro
 
     // Warm the caches the recovery reads, the way a previous request would
     // have: one full run through every phase.
-    tickUntilSettled(Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']));
+    tickUntilSettled(Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']));
 
     // A FRESH mount — not rehydratedFrom(), so $graphModel is the one mount
     // built (skeleton only, no property nodes) rather than a copy of the
     // finished graph. The statuses are forced to what a hydrated request
     // would carry.
-    $second = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $second = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     expect(collect($second->get('graphModel')['nodes'])->where('kind', 'property'))->toBeEmpty();
 
@@ -2032,7 +2028,7 @@ it('never renders the raw query into the section markup, in any DOM attribute', 
         personRoleCompany('22222222', 'Bestyrelsesformand', 'Drift A/S'),
     ]);
 
-    $html = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name'])->html();
+    $html = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen'])->html();
 
     $markup = preg_replace('/wire:snapshot="[^"]*"/', '', $html);
 
@@ -2044,15 +2040,15 @@ it('never renders the raw query into the section markup, in any DOM attribute', 
         ->and($markup)->not->toContain('Jens Testsen');
 });
 
-it('lukker CPR-tilstanden: en CPR mountet direkte giver fejltilstand, intet HTTP-kald og intet CPR i markup eller graf', function () {
-    // CPR-opslag er lukket (9/10-2026). Sektionen kan stadig mountes direkte
-    // over /livewire/update med standard-source 'cpr' og et CPR som query
+it('afviser et CPR: mountet direkte giver fejltilstand, intet HTTP-kald og intet CPR i markup eller graf', function () {
+    // CPR-opslag er lukket (9/10-2026), og CPR-tilstanden er fjernet. Sektionen
+    // kan stadig mountes direkte over /livewire/update med et CPR som query
     // (lektionen fra #185) — så lukningen skal holde i KOMPONENTEN, ikke kun
-    // paa siden: ingen opslag, en ærlig fejltilstand (ikke "ingen selskaber"),
-    // og CPR'et maa stadig ikke lække ud i grafen eller markup'en.
+    // paa siden: CPR'et maa ikke sendes til navneopslaget, en ærlig
+    // fejltilstand (ikke "ingen selskaber"), og intet CPR i graf eller markup.
     //
     // Haandhaevet med en catch-all fake + assertNothingSent: et kald til ET
-    // HVILKET SOM HELST endpoint (search-by-cpr, person-portfolio, …) fejler.
+    // HVILKET SOM HELST endpoint (person-companies-by-name, …) fejler.
     Http::fake(['*' => Http::response(['data' => ['companies' => [personOwnershipCompany('11111111')]]])]);
 
     $test = Livewire::test(PersonStructure::class, ['query' => '0101011234']);
@@ -2061,12 +2057,10 @@ it('lukker CPR-tilstanden: en CPR mountet direkte giver fejltilstand, intet HTTP
 
     $test->call('tick');
     $test->call('retrySkeleton');
-    $test->call('retryPrivateProperties');
 
     Http::assertNothingSent();
 
-    expect($test->get('source'))->toBe('cpr')
-        ->and($test->get('skeletonStatus'))->toBe('failed')
+    expect($test->get('skeletonStatus'))->toBe('failed')
         ->and($test->get('graphModel')['nodes'] ?? [])->toBe([])
         ->and(json_encode($test->get('graphModel')))->not->toContain('0101011234');
 
@@ -2081,7 +2075,7 @@ it('lukker CPR-tilstanden: en CPR mountet direkte giver fejltilstand, intet HTTP
 it('keys the graph island and the poll host by a HASH of the query', function () {
     fakeRegistryPerson([personOwnershipCompany('11111111')]);
 
-    $html = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name'])->html();
+    $html = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen'])->html();
 
     // Both keys present, both hashed. The poll host needs its own key at all
     // (julik P2): .metis-org-chart sits among keyed siblings, so morph
@@ -2129,7 +2123,7 @@ it('does not refire cross-ownership on every poll tick', function () {
         personOwnershipCompany('22222222', 40.0, 'Anden Holding ApS'),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     $afterMount = collect(Http::recorded())
         ->filter(fn ($pair) => str_contains($pair[0]->url(), 'cross-ownership'))->count();
@@ -2167,7 +2161,7 @@ it('keeps enrichment loaded across a cold-cache toggle for a person with no prop
         ]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick')->call('tick')->call('tick');
 
     expect($test->get('enrichmentStatus'))->toBe('loaded')
@@ -2223,7 +2217,6 @@ it('judges a no-properties person complete on companies alone, not on an empty p
     };
 
     $probe->query = 'Jens Testsen';
-    $probe->source = 'name';
     $probe->skeletonStatus = 'loaded';
     $probe->enrichmentStatus = 'loaded';
     $probe->graphModel = ['nodes' => [
@@ -2256,7 +2249,7 @@ it('hands enrichment back when the company-info cache is genuinely cold', functi
         ]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick')->call('tick')->call('tick');
 
     expect($test->get('enrichmentStatus'))->toBe('loaded');
@@ -2296,7 +2289,7 @@ it('retries silently when a BACKGROUND poll hits a transient rehydration failure
         '*/property-portfolio*' => Http::response(['data' => ['portfolio' => ['properties' => [], 'property_count' => 0]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $before = $test->get('graphModel');
 
     // Flush, so a cached companies list can never serve the recovery and
@@ -2329,7 +2322,7 @@ it('still surfaces the stale note when an INTERACTIVE action hits the same failu
         '*/v1/cvr/cross-ownership*' => Http::response(['data' => ['relationships' => []]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
 
     // Same reason as the background test above: without the flush the cached
     // companies list satisfies the refetch and no failure occurs at all.
@@ -2359,7 +2352,7 @@ it('drops a card website whose scheme is not http(s)', function () {
         ]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick')->call('tick')->call('tick');
 
     expect($test->get('enrichmentStatus'))->toBe('loaded');
@@ -2385,7 +2378,7 @@ it('keeps an ordinary https website on the card', function () {
         ]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick')->call('tick')->call('tick');
 
     $node = collect($test->get('graphModel')['nodes'])->firstWhere('cvr', '11111111');
@@ -2412,7 +2405,7 @@ it('keeps a SCHEME-LESS website, because that is what registry-api mostly return
         ]]]),
     ]);
 
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen', 'source' => 'name']);
+    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
     $test->call('tick')->call('tick')->call('tick');
 
     $node = collect($test->get('graphModel')['nodes'])->firstWhere('cvr', '11111111');

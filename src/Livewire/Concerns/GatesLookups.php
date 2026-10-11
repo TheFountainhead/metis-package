@@ -102,7 +102,9 @@ trait GatesLookups
 
     protected function kraeverIdentifikation(string $type): bool
     {
-        return in_array(strtolower($type), ['person', 'cpr'], true)
+        // Ingen 'cpr': CPR-opslag er lukket, og Lookup::mount() sender et CPR
+        // til forsiden FOER denne gate (FHT-2348).
+        return strtolower($type) === 'person'
             && ! app(LookupAccess::class)->erIdentificeret();
     }
 

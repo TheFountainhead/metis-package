@@ -1,4 +1,4 @@
-{{-- Fase 2b: the CPR person page's ownership graph. Person as root,
+{{-- Fase 2b: the person page's ownership graph. Person as root,
      ownership chains downward, plus a dashed ROLE layer. Replaces the old
      PersonNetwork org-chart + separate board table.
 
@@ -20,20 +20,13 @@
                     @php
                         // The chips, as (layer, label, count) — declared once so the
                         // $otherCount sum below reads the SAME list the loop renders.
-                        // Two hand-maintained copies is exactly how the third layer
+                        // Two hand-maintained copies is exactly how a new layer
                         // would end up missing from the lock arithmetic while looking
                         // perfectly present on screen.
-                        //
-                        // private_properties is filtered out entirely in name mode: that
-                        // endpoint is CPR-exclusive (PersonStructure::mount()), so the
-                        // layer does not EXIST for a name lookup, not merely "is empty".
-                        // Filtering the list here — rather than an extra @if in the loop
-                        // below — keeps $otherCount's arithmetic correct automatically.
-                        $chips = collect([
+                        $chips = [
                             ['ownership', __('Ejerskab'), $ownershipCount],
                             ['roles', __('Roller'), $roleCount],
-                            ['private_properties', __('Private ejendomme'), $privatePropertiesCount],
-                        ])->reject(fn ($pair) => $pair[0] === 'private_properties' && $source === 'name')->all();
+                        ];
                     @endphp
                     @foreach($chips as [$layer, $label, $count])
                         @php
@@ -50,11 +43,6 @@
                                 ->filter(fn ($pair) => in_array($pair[0], $layers))
                                 ->sum(fn ($pair) => $pair[2]);
                             $locked = $active && $count > 0 && $otherCount === 0;
-                            // "(–)" ONLY for a failed fetch (spec P2-4): the count is
-                            // zeroed in that state, so "(0)" would read as "this person
-                            // owns nothing privately" — a claim about the person made
-                            // out of a claim about the network.
-                            $badge = $layer === 'private_properties' && $privatePropertiesStatus === 'failed' ? '–' : $count;
                         @endphp
                         {{-- 🚨 wire:target is load-bearing: this section polls
                              every 2s, and an UNTARGETED wire:loading would grey
@@ -75,23 +63,20 @@
                             @if($locked) title="{{ __('Kan ikke slås fra — grafen ville være tom') }}" @endif
                         >
                             <span aria-hidden="true">{{ $active ? '✓' : '' }}</span>
-                            {{ $label }} ({{ $badge }})
+                            {{ $label }} ({{ $count }})
                         </button>
                     @endforeach
                 </div>
             @endif
         </div>
 
-        {{-- CPR-noten: navne-mode kan aldrig vise private ejendomme (den
-             endpoint findes kun for CPR), så oplyser vi det synligt i BEGGE
-             tilstande — grafen og den tomme tilstand — fordi personen KAN
-             have private ejendomme vi ikke kan se herfra. Opfordrer IKKE til
-             CPR-søgning: CPR-opslag er lukket (9/10-2026). --}}
-        @if($source === 'name')
-            <p class="mgraph-note" wire:key="cpr-note">
-                {{ __('Personens private ejendomme vises ikke i et navneopslag.') }}
-            </p>
-        @endif
+        {{-- Navneopslaget kan aldrig vise private ejendomme, så vi oplyser
+             det synligt i BEGGE tilstande — grafen og den tomme tilstand —
+             fordi personen KAN have private ejendomme vi ikke kan se herfra.
+             Opfordrer IKKE til CPR-søgning: CPR-opslag er lukket (9/10-2026). --}}
+        <p class="mgraph-note" wire:key="cpr-note">
+            {{ __('Personens private ejendomme vises ikke i et navneopslag.') }}
+        </p>
 
         @if($skeletonStatus === 'failed')
             <p class="mgraph-note" wire:key="skeleton-failed">
@@ -99,28 +84,7 @@
                 <button type="button" wire:click="retrySkeleton" class="underline">{{ __('Prøv igen') }}</button>
             </p>
         @elseif($skeletonStatus === 'empty')
-            {{-- 'empty' is provisional until the private-properties layer has
-                 been consulted: fase 1 counts companies alone, and the private
-                 fetch lives on the poll — which this branch must therefore
-                 host too, or the phase never starts for a person with zero
-                 active companies. loadPrivateProperties() promotes the
-                 skeleton to 'loaded' when rows land, which swaps this whole
-                 branch out for the graph. --}}
-            @if($privatePropertiesStatus === 'pending')
-                <div wire:key="empty-private-poll" wire:poll.2s="tick" class="h-4 w-64 animate-pulse rounded bg-zinc-100"></div>
-            @else
-                <p class="text-sm text-zinc-500" wire:key="skeleton-empty">{{ __('Ingen aktive selskabsrelationer') }}</p>
-
-                {{-- null ≠ tom: a FAILED private fetch must not be read as
-                     "no private properties either" — surface it, with the
-                     phase's own retry (which re-runs the promotion path). --}}
-                @if($privatePropertiesStatus === 'failed')
-                    <p class="mgraph-note" wire:key="empty-private-failed">
-                        {{ __('Private ejendomme kunne ikke hentes.') }}
-                        <button type="button" wire:click="retryPrivateProperties" class="underline">{{ __('Prøv igen') }}</button>
-                    </p>
-                @endif
-            @endif
+            <p class="text-sm text-zinc-500" wire:key="skeleton-empty">{{ __('Ingen aktive selskabsrelationer') }}</p>
         @elseif($skeletonStatus === 'loaded')
             {{-- The progressive-phase poll. GATED: it exists only while a
                  phase actually has work queued, so it stops of its own accord
@@ -131,18 +95,12 @@
                  its own key Livewire's morph falls back to index-matching and
                  can swap this element for one of them — which silently clears
                  the browser's wire:poll interval for good. Hashed, never the
-                 raw $query: it is the CPR (see the graph partial). --}}
+                 raw $query (see the graph partial). --}}
             <div class="metis-org-chart"
                 wire:key="org-chart-{{ sha1($query) }}"
-                {{-- The private-properties phase is part of the gate because
-                     mount() runs fase 1 only: the poll is the ONLY thing that
-                     ever runs it. Ungated, a person whose companies all settle
-                     in the first tick would have the browser stop polling
-                     before the private layer was ever fetched. --}}
                 @if($structuresStatus === 'loading'
                     || in_array($propertiesStatus, ['pending', 'building'], true)
-                    || $enrichmentStatus === 'pending'
-                    || $privatePropertiesStatus === 'pending')
+                    || $enrichmentStatus === 'pending')
                     wire:poll.2s="tick"
                 @endif
             >
@@ -182,16 +140,6 @@
                     <p class="mgraph-note" wire:key="properties-failed">
                         {{ __('Ejendomme kunne ikke hentes.') }}
                         <button type="button" wire:click="retryProperties" class="underline">{{ __('Prøv igen') }}</button>
-                    </p>
-                @endif
-
-                {{-- Its OWN retry, not retryProperties(): that one clears the
-                     shared fase-3 budget and re-opens settled company
-                     portfolios. --}}
-                @if($privatePropertiesStatus === 'failed')
-                    <p class="mgraph-note" wire:key="private-properties-failed">
-                        {{ __('Private ejendomme kunne ikke hentes.') }}
-                        <button type="button" wire:click="retryPrivateProperties" class="underline">{{ __('Prøv igen') }}</button>
                     </p>
                 @endif
 

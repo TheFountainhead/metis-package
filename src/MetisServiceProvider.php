@@ -190,13 +190,8 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-company-funding', \TheFountainhead\Metis\Livewire\Sections\CompanyFunding::class);
 
         // Person sections
-        Livewire::component('metis-person-summary', \TheFountainhead\Metis\Livewire\Sections\PersonSummary::class);
-        Livewire::component('metis-person-info', \TheFountainhead\Metis\Livewire\Sections\PersonInfo::class);
         Livewire::component('metis-person-structure', \TheFountainhead\Metis\Livewire\Sections\PersonStructure::class);
-        Livewire::component('metis-person-companies', \TheFountainhead\Metis\Livewire\Sections\PersonCompanies::class);
         Livewire::component('metis-person-roles', \TheFountainhead\Metis\Livewire\Sections\PersonRoles::class);
-        Livewire::component('metis-person-properties', \TheFountainhead\Metis\Livewire\Sections\PersonProperties::class);
-        Livewire::component('metis-person-relations', \TheFountainhead\Metis\Livewire\Sections\PersonRelations::class);
 
         // Map
         Livewire::component('metis-map-panel', \TheFountainhead\Metis\Livewire\MapPanel::class);

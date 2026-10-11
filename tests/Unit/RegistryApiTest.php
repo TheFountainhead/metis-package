@@ -545,30 +545,6 @@ it('fetchCompanyInfosPooled: bounds Http::pool() to a concurrency of 6, never un
         ->withArgs(fn ($callback, $concurrency) => is_callable($callback) && $concurrency === 6);
 });
 
-/*
-|--------------------------------------------------------------------------
-| CPR-cachen (lukket 9/10-2026)
-|--------------------------------------------------------------------------
-| companies-by-cpr og person-property-portfolio blev cachet 300s paa en
-| sha1-noegle, og testene her beviste at noeglen aldrig bar det RAA CPR.
-| Metoderne er lukket og cacher nu slet intet — sikkerhedspaastanden er
-| skaerpet fra "aldrig raa CPR i noeglen" til "ingen CPR-noegle overhovedet".
-*/
-
-it('skriver ingen CPR-cache-noegle, hverken raa eller hashet, fra de lukkede metoder', function () {
-    Http::fake(['*' => Http::response(['data' => ['companies' => [['cvr' => '1']], 'personal_properties' => [['address' => 'Bredgade 40']]]])]);
-
-    $api = app(RegistryApi::class);
-    $api->fetchCompaniesByCprCached('0101011234');
-    $api->fetchPersonPropertyPortfolioByCprCached('0101011234');
-
-    Http::assertNothingSent();
-    expect(Cache::has('metis:companies_by_cpr:0101011234'))->toBeFalse()
-        ->and(Cache::has('metis:companies_by_cpr:'.sha1('0101011234')))->toBeFalse()
-        ->and(Cache::has('metis:person_property_portfolio:0101011234'))->toBeFalse()
-        ->and(Cache::has('metis:person_property_portfolio:'.sha1('0101011234')))->toBeFalse();
-});
-
 it('pools structure fetches with per-cvr null on failure', function () {
     Http::fake([
         '*/v1/cvr/company-structure' => Http::sequence()
