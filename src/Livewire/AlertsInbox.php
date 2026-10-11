@@ -92,6 +92,12 @@ class AlertsInbox extends Component
         // ellers ville RestorePilotSession lægge tokenet tilbage ved næste request.
         if (session('metis_pilot_account_id')) {
             \TheFountainhead\Metis\Livewire\PilotLogin::logout();
+
+            // logout() roterer CSRF-tokenet. Siden skal genindlaeses, ellers
+            // gaar naeste handling ud med det gamle token og faar 419.
+            $this->redirect(route('metis.alerts'));
+
+            return;
         }
 
         session()->forget(['metis_user_token', 'metis_pilot_verificeret']);

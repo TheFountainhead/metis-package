@@ -47,6 +47,9 @@ class AdminAuthController extends Controller
 
         // Kun flaget: CPR'en bruges til allowlisten ovenfor og laeses aldrig
         // siden. I sessionen ville den foelge med Flare-rapporter (10/10-2026).
+        // Nyt session-id ved login: et id plantet hos admin'en foer login maa
+        // ikke blive til en admin-session (session fixation).
+        session()->regenerate(true);
         session(['metis_admin_authenticated' => true]);
 
         return redirect()->route('metis.admin.dashboard');
@@ -67,7 +70,10 @@ class AdminAuthController extends Controller
 
     public function logout()
     {
+        // regenerate(true), ikke invalidate(): den gamle raekke slettes, men
+        // pilot- og mail-verifikationen i samme session bevares.
         session()->forget(['metis_admin_authenticated', 'metis_admin_cpr']);
+        session()->regenerate(true);
 
         return redirect()->route('metis.admin.login');
     }
