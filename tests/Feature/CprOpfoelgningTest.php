@@ -74,7 +74,24 @@ it('udsteder et nyt session-id ved admin-logout og bevarer resten af sessionen',
         ->post('/admin/logout')
         ->assertRedirect(route('metis.admin.login'));
 
+    // Den GAMLE raekke maa ikke stadig give admin: ellers virker en stjaalet
+    // eller plantet cookie efter logout (review #197 P1).
+    $gammel = app('session')->driver()->getHandler()->read($foer);
+
     expect(session()->getId())->not->toBe($foer)
+        ->and($gammel)->not->toContain('metis_admin_authenticated')
         ->and(session()->has('metis_admin_authenticated'))->toBeFalse()
         ->and(session('metis_verified_email'))->toBe('a@b.dk');
+});
+
+it('sletter den gamle session-raekke ved pilot-logout', function () {
+    $foer = plantSession(['_token' => 'x', 'metis_user_token' => 'hemmelig-token', 'metis_verified_email' => 'a@b.dk']);
+
+    $this->withCookie(config('session.cookie'), $foer)
+        ->post('/log-ud')
+        ->assertRedirect(route('metis.home'));
+
+    expect(app('session')->driver()->getHandler()->read($foer))->not->toContain('hemmelig-token')
+        ->and(session()->getId())->not->toBe($foer)
+        ->and(session()->has('metis_user_token'))->toBeFalse();
 });

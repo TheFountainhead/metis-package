@@ -106,6 +106,9 @@ class PilotLogin extends Component
             MetisPilotAccount::whereKey($id)->update(['remember_token' => null]);
         }
         session()->forget(['metis_user_token', 'metis_pilot_account_id', 'metis_verified_email', 'metis_pilot_verificeret']);
+        // Slet den gamle raekke: ellers baerer et stjaalet session-id stadig
+        // registry-api-tokenet efter logout (review #197).
+        session()->regenerate(true);
         cookie()->queue(cookie()->forget(self::REMEMBER_COOKIE));
         cookie()->queue(cookie()->forget('metis_email'));
     }
