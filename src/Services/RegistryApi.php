@@ -362,6 +362,16 @@ class RegistryApi
      */
     public function segmentCompanies(string $groupBy, array $filtre = [], int $limit = 100): array
     {
+        // 🚨 Segmenteringen er en LICENSYDELSE (ERST-tilbuddet 10/9-2026:
+        // licens til navngivne brugere), ikke en del af det gratis opslag.
+        // Maalt 11/10: siden gav anonyme ubegraenset adgang, fordi en
+        // segmentering aldrig taeller som et opslag og derfor aldrig bruger
+        // af kvoten. Gaten sidder HER og ikke kun paa siden, fordi
+        // `segmentér()` og `hentCsv()` er offentlige over `/livewire/update`.
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
         return $this->postEnvelope('/v1/company-segmentation', [
             'group_by' => $groupBy,
             'limit' => $limit,
@@ -383,6 +393,12 @@ class RegistryApi
      */
     public function segmentationExportLink(string $groupBy, array $filtre = [], int $limit = 100): ?string
     {
+        // 🚨 Samme licens-gate som `segmentCompanies()`. Et signeret link er
+        // hele udtraekket, saa det maa aldrig dannes for en ikke-pilot.
+        if ($this->pilotFejl()) {
+            return null;
+        }
+
         // 🪤 SAMME `limit` som visningen. Uden det ville CSV'en kunne indeholde
         // et andet antal grupper end den tabel brugeren sad og kiggede paa.
         $svar = $this->postEnvelope('/v1/company-segmentation/export-link', [
@@ -1806,7 +1822,7 @@ class RegistryApi
      */
     protected function pilotFejl(): ?array
     {
-        if (app(LookupAccess::class)->gatingAktiv() && ! app(LookupAccess::class)->erPilot()) {
+        if (! app(LookupAccess::class)->harPilotAdgang()) {
             return ['error' => 'pilot_required', 'status' => 403];
         }
 

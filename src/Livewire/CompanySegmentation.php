@@ -2,9 +2,10 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
-use TheFountainhead\Metis\Services\QuotaExceededException;
+use TheFountainhead\Metis\Services\LookupAccess;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -137,6 +138,29 @@ class CompanySegmentation extends Component
     }
 
     /**
+     * Kun for bekraeftede piloter (licensbrugere), samme praedikat som
+     * `RegistryApi::pilotFejl()`. Er gaten slaaet fra (embedded bag vaertens
+     * egen login), er adgangen vaertens ansvar.
+     *
+     * 🪤 Siden viser bare beskeden; det er datalaget der afviser. Gaten her
+     * sparer kun et kald og giver den rigtige besked (lektionen fra #185).
+     */
+    public function harAdgang(): bool
+    {
+        return app(LookupAccess::class)->harPilotAdgang();
+    }
+
+    /**
+     * Bekraefter en pilot sin arbejdsmail paa selve siden, skal resultatet
+     * komme frem uden genindlaesning (samme blindgyde som DebtSearch).
+     */
+    #[On('email-verified')]
+    public function onEmailVerified(): void
+    {
+        $this->segmentér();
+    }
+
+    /**
      * 🚨 `#[Url]`-properties er BRUGERINPUT fra query-strengen og kan vaere hvad
      * som helst — ogsaa et array (`?kommune[]=a&kommune[]=b`). Med typede
      * properties gav det en TypeError, altsaa en 500-side, foer en linje af
@@ -185,28 +209,23 @@ class CompanySegmentation extends Component
 
     public function segmentér(): void
     {
+        if (! $this->harAdgang()) {
+            return;
+        }
+
         $this->fejl = null;
 
         $this->normaliser();
 
-        try {
-            $svar = app(RegistryApi::class)->segmentCompanies(
-                $this->groupBy,
-                $this->filtre(),
-                self::GRUPPE_LOFT,
-            );
-        } catch (QuotaExceededException) {
-            // 🚨 `client()` kaster FOER HTTP-kaldet naar den frie kvote er brugt,
-            // og `postEnvelope()` fanger kun transportfejl. Uden dette ville
-            // enhver besoegende med opbrugt kvote faa en 500 paa siden, fordi
-            // `mount()` kalder herind ved hver page load.
-            $this->harSoegt = true;
-            $this->grupper = [];
-            $this->total = null;
-            $this->fejl = 'Du har brugt dine gratis opslag. Skriv til support@frankston.io for adgang.';
-
-            return;
-        }
+        // 🔑 Ingen QuotaExceededException-catch laengere: kun bekraeftede
+        // piloter (kvote-fritaget) og sessioner med gaten slaaet fra (ingen
+        // kvote) naar hertil, saa `kraevKvote()` kan ikke kaste. Et svar fra
+        // datalaget med `pilot_required` haandteres nedenfor.
+        $svar = app(RegistryApi::class)->segmentCompanies(
+            $this->groupBy,
+            $this->filtre(),
+            self::GRUPPE_LOFT,
+        );
 
         $this->harSoegt = true;
 
@@ -221,7 +240,7 @@ class CompanySegmentation extends Component
             $this->grupper = [];
             $this->total = null;
             $this->fejl = match (true) {
-                ($svar['error'] ?? null) === 'quota_exceeded' => 'Du har brugt dine gratis opslag. Skriv til support@frankston.io for adgang.',
+                ($svar['error'] ?? null) === 'pilot_required' => 'Segmenteringen kræver en pilotkonto. Skriv til support@frankston.io for adgang.',
                 isset($svar['message']) => (string) $svar['message'],
                 default => 'Segmenteringen kunne ikke hentes. Prøv igen, eller skriv til support@frankston.io.',
             };
@@ -285,6 +304,10 @@ class CompanySegmentation extends Component
      */
     public function hentCsv()
     {
+        if (! $this->harAdgang()) {
+            return null;
+        }
+
         // 🪤 Eksportér ALDRIG filtre der ikke er vist. Har den seneste
         // segmentering fejlet, ville CSV'en beskrive en population brugeren
         // aldrig har set paa skaermen.

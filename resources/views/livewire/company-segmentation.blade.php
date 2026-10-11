@@ -11,6 +11,32 @@
         {{ __('Afgræns en population af danske selskaber og se den fordelt på kommune, branche eller selskabsform.') }}
     </p>
 
+    @if(! $this->harAdgang())
+        {{-- Segmenteringen er en licensydelse for navngivne brugere. Uden en
+             bekraeftet pilotkonto vises hverken filtre eller tal, og API'et
+             kaldes ikke (datalaget afviser desuden selv). --}}
+        <div class="max-w-xl bg-sand-50 border border-sand-200 rounded-xl p-6">
+            <h2 class="text-lg font-semibold text-ink-800 mb-2">{{ __('Kun for brugere med konto') }}</h2>
+            <p class="text-sm text-ink-700/70 mb-4">
+                {{ __('Selskabssegmentering er forbeholdt brugere, vi har en aftale med. Log ind med din konto eller bekræft din arbejdsmail, eller skriv til support@frankston.io for adgang.') }}
+            </p>
+            <div class="flex flex-wrap gap-2">
+                @if(Route::has('metis.login'))
+                    <a href="{{ route('metis.login') }}"
+                       class="inline-block px-4 py-2 text-sm font-medium text-white bg-ink-800 rounded-lg hover:bg-ink-700 transition">
+                        {{ __('Log ind') }}
+                    </a>
+                @endif
+                {{-- Piloter paa mail-listen (metis.gating.pilot_users) har ingen
+                     adgangskode; de kommer ind via EmailGate, som sender
+                     `email-verified` tilbage til komponenten. --}}
+                <button type="button" wire:click="$dispatch('show-email-gate')"
+                        class="px-4 py-2 text-sm font-medium border border-sand-200 rounded-lg text-ink-800 hover:bg-white transition">
+                    {{ __('Bekræft arbejdsmail') }}
+                </button>
+            </div>
+        </div>
+    @else
     <div class="grid md:grid-cols-[260px_1fr] gap-6">
 
         {{-- Filtre --}}
@@ -155,4 +181,5 @@
             @endif
         </section>
     </div>
+@endif
 </div>

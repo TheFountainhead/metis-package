@@ -108,6 +108,18 @@ class LookupAccess
      *   - `EmailGate::verifyCode()` saetter `metis_pilot_verificeret`, naar
      *     den verificerede mail staar i `metis.gating.pilot_users`.
      */
+    /**
+     * Maa brugeren bruge en pilot-/licensfunktion (alerts, watchlists,
+     * segmentering)? Gaten slaaet fra = vaertens ansvar.
+     *
+     * 🔑 ÉN definition. Foer 11/10-2026 stod reglen tre steder
+     * (NormalisererAlerts, RegistryApi::pilotFejl og CompanySegmentation).
+     */
+    public function harPilotAdgang(): bool
+    {
+        return ! $this->gatingAktiv() || $this->erPilot();
+    }
+
     public function erPilot(): bool
     {
         return $this->harSession()
