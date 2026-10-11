@@ -23,9 +23,7 @@ trait NormalisererAlerts
 {
     public function harPilotAdgang(): bool
     {
-        $adgang = app(LookupAccess::class);
-
-        return ! $adgang->gatingAktiv() || $adgang->erPilot();
+        return app(LookupAccess::class)->harPilotAdgang();
     }
 
     /** @return array{data: list<array>, current_page: int, last_page: int} */

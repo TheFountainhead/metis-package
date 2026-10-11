@@ -6,7 +6,6 @@ use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use TheFountainhead\Metis\Services\LookupAccess;
-use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
@@ -135,11 +134,6 @@ class CompanySegmentation extends Component
     public function mount(): void
     {
         $this->normaliser();
-
-        if (! $this->harAdgang()) {
-            return;
-        }
-
         $this->segmentér();
     }
 
@@ -153,9 +147,7 @@ class CompanySegmentation extends Component
      */
     public function harAdgang(): bool
     {
-        $adgang = app(LookupAccess::class);
-
-        return ! $adgang->gatingAktiv() || $adgang->erPilot();
+        return app(LookupAccess::class)->harPilotAdgang();
     }
 
     /**
@@ -165,9 +157,7 @@ class CompanySegmentation extends Component
     #[On('email-verified')]
     public function onEmailVerified(): void
     {
-        if ($this->harAdgang()) {
-            $this->segmentér();
-        }
+        $this->segmentér();
     }
 
     /**
@@ -227,24 +217,15 @@ class CompanySegmentation extends Component
 
         $this->normaliser();
 
-        try {
-            $svar = app(RegistryApi::class)->segmentCompanies(
-                $this->groupBy,
-                $this->filtre(),
-                self::GRUPPE_LOFT,
-            );
-        } catch (QuotaExceededException) {
-            // 🚨 `client()` kaster FOER HTTP-kaldet naar den frie kvote er brugt,
-            // og `postEnvelope()` fanger kun transportfejl. Uden dette ville
-            // enhver besoegende med opbrugt kvote faa en 500 paa siden, fordi
-            // `mount()` kalder herind ved hver page load.
-            $this->harSoegt = true;
-            $this->grupper = [];
-            $this->total = null;
-            $this->fejl = 'Du har brugt dine gratis opslag. Skriv til support@frankston.io for adgang.';
-
-            return;
-        }
+        // 🔑 Ingen QuotaExceededException-catch laengere: kun bekraeftede
+        // piloter (kvote-fritaget) og sessioner med gaten slaaet fra (ingen
+        // kvote) naar hertil, saa `kraevKvote()` kan ikke kaste. Et svar fra
+        // datalaget med `pilot_required` haandteres nedenfor.
+        $svar = app(RegistryApi::class)->segmentCompanies(
+            $this->groupBy,
+            $this->filtre(),
+            self::GRUPPE_LOFT,
+        );
 
         $this->harSoegt = true;
 
@@ -259,7 +240,6 @@ class CompanySegmentation extends Component
             $this->grupper = [];
             $this->total = null;
             $this->fejl = match (true) {
-                ($svar['error'] ?? null) === 'quota_exceeded' => 'Du har brugt dine gratis opslag. Skriv til support@frankston.io for adgang.',
                 ($svar['error'] ?? null) === 'pilot_required' => 'Segmenteringen kræver en pilotkonto. Skriv til support@frankston.io for adgang.',
                 isset($svar['message']) => (string) $svar['message'],
                 default => 'Segmenteringen kunne ikke hentes. Prøv igen, eller skriv til support@frankston.io.',

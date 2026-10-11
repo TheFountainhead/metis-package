@@ -1822,7 +1822,7 @@ class RegistryApi
      */
     protected function pilotFejl(): ?array
     {
-        if (app(LookupAccess::class)->gatingAktiv() && ! app(LookupAccess::class)->erPilot()) {
+        if (! app(LookupAccess::class)->harPilotAdgang()) {
             return ['error' => 'pilot_required', 'status' => 403];
         }
 

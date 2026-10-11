@@ -81,20 +81,34 @@ it('🚨 en ikke-pilot ser login-beskeden og ingen tal paa siden', function (arr
     Http::assertNotSent(fn ($r) => erSegmentering($r));
 })->with('segmentering-ikke-piloter');
 
-it('🚨 en ikke-pilot faar INTET over /livewire/update, heller ikke et udtraek', function (array $session) {
+it('🚨 en ikke-pilot faar ingen tal over /livewire/update (segmentér)', function (array $session) {
     if ($session !== []) {
         $this->withSession($session);
     }
 
     $snap = segmenteringSnapshot($this->get('/segmentering')->getContent());
 
-    foreach (['segmentér', 'hentCsv'] as $metode) {
-        segmenteringKald($this, $snap, $metode)->assertOk()
-            ->assertDontSee('987.654')
-            ->assertDontSee('signature=');
-    }
+    segmenteringKald($this, $snap, 'segmentér')->assertOk()->assertDontSee('987.654');
 
     Http::assertNotSent(fn ($r) => erSegmentering($r));
+})->with('segmentering-ikke-piloter');
+
+it('🚨 en ikke-pilot faar intet udtraek, heller ikke med en PILOTS snapshot (hentCsv)', function (array $session) {
+    // 🪤 Snapshot fra en ikke-pilot har total=null, og hentCsv() returnerer
+    // allerede ved `total === null`, saa den test ville vaere groen uden nogen
+    // gate (review af #199). Livewires checksum er bundet til APP_KEY, ikke til
+    // sessionen: en pilots snapshot MED total kan genspilles i en anden session.
+    $this->withSession(['metis_user_token' => '1|aegte', 'metis_pilot_account_id' => 7]);
+    $snap = segmenteringSnapshot($this->get('/segmentering')->assertSee('987.654')->getContent());
+
+    $this->flushSession();
+    if ($session !== []) {
+        $this->withSession($session);
+    }
+
+    segmenteringKald($this, $snap, 'hentCsv')->assertOk()->assertDontSee('signature=');
+
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), '/export-link'));
 })->with('segmentering-ikke-piloter');
 
 it('🚨 datalaget afviser en ikke-pilot uden et HTTP-kald', function () {

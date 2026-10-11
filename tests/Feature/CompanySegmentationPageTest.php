@@ -4,7 +4,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use TheFountainhead\Metis\Livewire\CompanySegmentation;
-use TheFountainhead\Metis\Services\QuotaExceededException;
 
 uses(RefreshDatabase::class);
 
@@ -136,28 +135,6 @@ it('siger fra naar udtraekket ikke kan dannes', function () {
     Livewire::test(CompanySegmentation::class)
         ->call('hentCsv')
         ->assertSee('kunne ikke dannes');
-});
-
-it('🚨 viser en besked i stedet for at crashe naar kvoten er opbrugt', function () {
-    // `client()` kaster FOER HTTP-kaldet, og `mount()` kalder segmentér() ved
-    // hver page load. Uden en catch her ville siden give 500 for enhver
-    // besoegende med opbrugt kvote.
-    //
-    // 🪤 Siden kraever nu en pilot (CompanySegmentationPilotGateTest), saa en
-    // anonym naar slet ikke kaldet. Catchen er stadig vaernet, hvis kvote-
-    // reglen og pilot-reglen en dag skilles ad; derfor koerer testen som pilot.
-    config()->set('metis.gating.enabled', true);
-    config()->set('metis.gating.free_lookups', 0);
-    Http::fake(['*' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
-    $this->withSession(['metis_user_token' => '1|aegte', 'metis_pilot_account_id' => 7]);
-
-    $this->mock(\TheFountainhead\Metis\Services\RegistryApi::class, function ($m) {
-        $m->shouldReceive('segmentCompanies')->andThrow(new QuotaExceededException);
-    });
-
-    Livewire::test(CompanySegmentation::class)
-        ->assertOk()
-        ->assertSee('gratis opslag');
 });
 
 it('🚨 kalder et 422 for en AFVIST forespoergsel — ikke "ingen selskaber"', function () {
