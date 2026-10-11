@@ -30,12 +30,10 @@ use Livewire\Livewire;
  */
 beforeEach(fn () => Cache::flush());
 
+// CPR-sektionerne (overblik, information, relationer, ejendomme) er slettet
+// efter CPR-lukningen (FHT-2348); PersonRoles er den tilbagevaerende.
 dataset('person-sektioner', [
-    'overblik' => [\TheFountainhead\Metis\Livewire\Sections\PersonSummary::class],
     'roller' => [\TheFountainhead\Metis\Livewire\Sections\PersonRoles::class],
-    'information' => [\TheFountainhead\Metis\Livewire\Sections\PersonInfo::class],
-    'relationer' => [\TheFountainhead\Metis\Livewire\Sections\PersonRelations::class],
-    'ejendomme' => [\TheFountainhead\Metis\Livewire\Sections\PersonProperties::class],
 ]);
 
 it('🚨 siger ALDRIG "0" eller "ingen" naar opslaget fejlede', function (string $sektion) {
@@ -67,30 +65,6 @@ it('🪤 fanger ogsaa en TRANSPORTFEJL, ikke kun et misdannet svar', function (s
     expect($test->get('hasError'))->toBeTrue()
         ->and($test->get('errorMessage'))->toBe('lookup_failed');
 })->with('person-sektioner');
-
-it('🚨 PersonSummary flager naar bare ÉN af to halvdele fejler', function () {
-    // Sektionen laver to uafhaengige kald. Fejler kun det ene, ville den
-    // andens tal se komplet ud ved siden af et nul der bare betyder "vi kunne
-    // ikke spoerge". Derfor `||`, ikke `&&` — at kraeve at BEGGE fejler ville
-    // skjule en halv fejl bag et helt tal.
-    Http::fake([
-        // 🪤 BEGGE endpoints slutter paa 'search-by-cpr' — et '*search-by-cpr*'
-        // moenster ville fange dem begge. Brug de fulde stier.
-        '*/v1/cvr/search-by-cpr' => Http::response(['data' => ['companies' => [
-            ['cvr' => '12345678', 'name' => 'Rigtig ApS', 'status' => 'NORMAL'],
-        ]]], 200),
-        // Ejendomskaldet fejler.
-        '*/v1/property-tinglysning/search-by-cpr' => Http::response(['uventet' => 'form'], 200),
-        '*' => Http::response(['data' => []], 200),
-    ]);
-
-    $test = Livewire::test(\TheFountainhead\Metis\Livewire\Sections\PersonSummary::class,
-        ['query' => '0101011234']);
-
-    expect($test->get('hasError'))->toBeTrue()
-        // Og tallet fra den lykkedes halvdel maa ikke staa alene som facit.
-        ->and($test->html())->toContain('opslaget lykkedes ikke');
-});
 
 it('viser stadig den AEGTE tomme tilstand naar kaldet lykkes', function () {
     // Guarden maa ikke goere sandheden utilgaengelig: en person UDEN roller

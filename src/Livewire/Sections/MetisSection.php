@@ -37,8 +37,9 @@ abstract class MetisSection extends Component
      * Maalt (review POC C): `updates: {query: "99999999"}` + `retry` hentede
      * pantebreve for et vilkaarligt CVR.
      *
-     * 🪤 Sikkert her, i modsaetning til `PersonStructure::$source`
-     * (PersonStructure:200): `query` forbruges af `mount(string $query)` og
+     * 🪤 Sikkert her, i modsaetning til den nu fjernede
+     * `PersonStructure::$source` (Locked dér braekkede den lazy rundtur,
+     * Flare #9103976): `query` forbruges af `mount(string $query)` og
      * saettes altsaa af mount, ikke som en property-tildeling ved lazy-
      * hydreringen. Bevist med rigtige `__lazyLoad`-rundture over HTTP.
      */

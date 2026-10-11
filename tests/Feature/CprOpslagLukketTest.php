@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use TheFountainhead\Metis\Livewire\Search;
+use TheFountainhead\Metis\Livewire\Sections\PersonStructure;
 use TheFountainhead\Metis\Models\MetisLookup;
 use TheFountainhead\Metis\Http\Controllers\MetisPdfController;
 use TheFountainhead\Metis\Services\RegistryApi;
@@ -106,28 +107,67 @@ it('bygger aldrig en cpr-URL', function () {
         ->and(MetisLink::urlForEllerHjem('cpr', LUKKET_CPR))->toBe(route('metis.home'));
 });
 
-it('lukker alle CPR-metoder i datalaget uden et HTTP-kald', function (string $metode) {
-    $svar = app(RegistryApi::class)->{$metode}(LUKKET_CPR);
+it('har ingen CPR-metoder i datalaget', function () {
+    // Foer FHT-2348 stod seks CPR-metoder tilbage som stubs, der svarede
+    // cpr_disabled. De er fjernet: "lukket" er nu "findes ikke". Skulle en
+    // CPR-metode komme tilbage (eller en ny blive tilfoejet), fejler testen.
+    $metoder = collect((new ReflectionClass(RegistryApi::class))->getMethods())
+        ->map(fn (ReflectionMethod $m) => $m->getName());
 
-    expect($svar)->toMatchArray(['error' => 'cpr_disabled', 'status' => 403]);
+    expect($metoder)->toContain('fetchCompaniesByName') // positiv kontrol: refleksionen virker
+        ->and($metoder->filter(fn (string $navn) => stripos($navn, 'cpr') !== false)->values()->all())->toBe([]);
+});
+
+it('kalder ingen CPR-endpoints nogen steder i pakken', function () {
+    // Navnetesten ovenfor fanger ikke en CPR-hentning under et andet navn
+    // (review #198). Derfor scannes kilden for selve endpoints og felter.
+    $kilde = collect(\Illuminate\Support\Facades\File::allFiles(dirname(__DIR__, 2).'/src'))
+        // Kun kode, ikke kommentarer: historiske noter maa gerne naevne search-by-cpr.
+        ->mapWithKeys(fn ($f) => [$f->getRelativePathname() => collect(token_get_all($f->getContents()))
+            ->reject(fn ($t) => is_array($t) && in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true))
+            ->map(fn ($t) => is_array($t) ? $t[1] : $t)
+            ->implode('')]);
+
+    $forbudt = ['by-cpr', 'exclude_cpr', "'cpr' =>", '/v1/person/property-portfolio'];
+    $fund = $kilde->flatMap(fn (string $indhold, string $fil) => collect($forbudt)
+        ->filter(fn (string $m) => str_contains($indhold, $m))
+        ->map(fn (string $m) => "$fil: $m"))->values()->all();
+
+    expect($kilde->keys())->toContain('Services/RegistryApi.php') // positiv kontrol: scanningen ser kilden
+        ->and($fund)->toBe([]);
+});
+
+it('har ingen CPR-sektioner: de kan hverken mountes eller laver HTTP', function (string $komponent, string $klasse) {
+    expect(fn () => Livewire::test($komponent, ['query' => LUKKET_CPR]))
+        ->toThrow(\Livewire\Exceptions\ComponentNotFoundException::class)
+        ->and(class_exists($klasse))->toBeFalse();
     Http::assertNothingSent();
 })->with([
-    'fetchCompaniesByCpr',
-    'fetchCompaniesByCprCached',
-    'fetchPropertiesByCpr',
-    'fetchPersonPropertyPortfolioByCpr',
-    'fetchPersonPropertyPortfolioByCprCached',
+    ['metis-person-summary', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonSummary'],
+    ['metis-person-info', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonInfo'],
+    ['metis-person-companies', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonCompanies'],
+    ['metis-person-properties', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonProperties'],
+    ['metis-person-relations', 'TheFountainhead\\Metis\\Livewire\\Sections\\PersonRelations'],
 ]);
 
-it('udleverer ikke et cachet CPR-svar fra foer lukningen', function () {
-    Cache::put('metis:companies_by_cpr:'.sha1(LUKKET_CPR), ['companies' => [['name' => 'HEMMELIG ApS']]], 300);
-    Cache::put('metis:person_property_portfolio:'.sha1(LUKKET_CPR), ['personal_properties' => [['bfe' => 1]]], 300);
+it('sender ikke et CPR til navneopslaget, heller ikke med en varm CPR-cache fra foer lukningen', function (string $cpr) {
+    Cache::put('metis:companies_by_cpr:'.sha1(LUKKET_CPR), ['companies' => [['cvr' => '11111111', 'name' => 'HEMMELIG ApS', 'is_active' => true, 'has_direct_ownership' => true]]], 300);
+    Cache::put('metis:person_property_portfolio:'.sha1(LUKKET_CPR), ['personal_properties' => [['address' => 'HEMMELIG VEJ 1']]], 300);
 
-    $api = app(RegistryApi::class);
+    $test = Livewire::test(PersonStructure::class, ['query' => $cpr])
+        ->call('tick')
+        ->call('retrySkeleton');
 
-    expect($api->fetchCompaniesByCprCached(LUKKET_CPR))->toMatchArray(['error' => 'cpr_disabled'])
-        ->and($api->fetchPersonPropertyPortfolioByCprCached(LUKKET_CPR))->toMatchArray(['error' => 'cpr_disabled'])
-        ->and($api->fetchPersonPropertyPortfolioByCprFromCache(LUKKET_CPR))->toBeNull();
+    expect($test->get('skeletonStatus'))->toBe('failed')
+        ->and(json_encode($test->instance()->all()))->not->toContain('HEMMELIG')
+        ->and($test->html())->not->toContain('HEMMELIG');
+    Http::assertNothingSent();
+})->with(['uden bindestreg' => LUKKET_CPR, 'med bindestreg' => '010101-1234']);
+
+it('modstykke: navneopslaget sender stadig et rigtigt navn', function () {
+    Livewire::test(PersonStructure::class, ['query' => 'Lars Larsen']);
+
+    Http::assertSent(fn ($r) => str_contains($r->url(), '/v1/cvr/person-companies-by-name'));
 });
 
 it('samler ingen CPR-data til en PDF', function () {
