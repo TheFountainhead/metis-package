@@ -200,3 +200,15 @@ it('regner sider ud fra totalen naar last_page mangler, og siger fra naar listen
 
     Livewire::test(CompanySegmentation::class)->call('visSelskaber', '751')->assertSet('sider', 139);
 });
+
+it('ruller listen frem ved klik, og igen ved ny gruppe eller side', function () {
+    fakeListeOk();
+    config()->set('metis.gating.enabled', false);
+
+    $c = Livewire::test(CompanySegmentation::class)->call('visSelskaber', '751');
+
+    expect($c->html())->toContain('scrollIntoView')
+        ->and($c->html())->toContain('wire:key="selskabsliste-751-1"');
+
+    expect($c->call('gaaTilSide', 2)->html())->toContain('wire:key="selskabsliste-751-2"');
+});

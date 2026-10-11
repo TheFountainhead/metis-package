@@ -190,7 +190,13 @@
                 </p>
 
                 @if($valgtGruppe !== null)
-                    <div class="mt-6 border border-sand-200 rounded-xl" id="selskabsliste">
+                    {{-- 🔑 Listen ligger under hele gruppetabellen (op til 100 raekker),
+                         saa uden at rulle saa et klik ud som "der sker ingenting"
+                         (Frederik 11/10). Noeglen skifter med gruppe og side, saa
+                         x-init koerer igen ved hvert klik og hver ny side. --}}
+                    <div class="mt-6 border border-sand-200 rounded-xl scroll-mt-4" id="selskabsliste"
+                         wire:key="selskabsliste-{{ $valgtGruppe }}-{{ $side }}"
+                         x-data x-init="$el.scrollIntoView({ behavior: 'smooth', block: 'start' })">
                         <div class="flex flex-wrap items-baseline justify-between gap-3 px-4 py-3 bg-sand-50 border-b border-sand-200 rounded-t-xl">
                             <h2 class="font-semibold text-ink-800">
                                 {{ $this->valgtEtiket() }}
