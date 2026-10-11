@@ -37,3 +37,44 @@ it('laaser FollowButtons watch-type og -vaerdi', function (string $felt) {
     Livewire::test(FollowButton::class, ['watchType' => 'company', 'watchValue' => '35050027'])
         ->set($felt, 'cpr');
 })->with(['watchType', 'watchValue'])->throws(CannotUpdateLockedPropertyException::class);
+
+/**
+ * Planter en session hos klienten via cookie, som en angriber ville, og
+ * returnerer dens ID. Uden `regenerate()` fortsaetter requesten paa PRAECIS
+ * dette ID, saa "ID'et skiftede" kan kun vaere sandt, hvis koden skifter det.
+ */
+function plantSession(array $data): string
+{
+    $id = str_repeat('a', 40);
+    app('session')->driver()->getHandler()->write($id, serialize($data));
+
+    return $id;
+}
+
+it('udsteder et nyt session-id ved admin-login (session fixation)', function () {
+    config()->set('metis.admin.allowed_cprs', '0101011234');
+    $user = (new SocialiteUser)->setRaw(['cprNumberIdentifier' => '0101011234'])->map(['id' => 'sub-1']);
+    Socialite::shouldReceive('driver')->with('criipto')->andReturnSelf();
+    Socialite::shouldReceive('user')->andReturn($user);
+
+    $plantet = plantSession(['_token' => 'x']);
+
+    $this->withCookie(config('session.cookie'), $plantet)
+        ->get('/admin/auth/callback?code=abc&state=xyz')
+        ->assertRedirect(route('metis.admin.dashboard'));
+
+    expect(session()->getId())->not->toBe($plantet)
+        ->and(session('metis_admin_authenticated'))->toBeTrue();
+});
+
+it('udsteder et nyt session-id ved admin-logout og bevarer resten af sessionen', function () {
+    $foer = plantSession(['_token' => 'x', 'metis_admin_authenticated' => true, 'metis_verified_email' => 'a@b.dk']);
+
+    $this->withCookie(config('session.cookie'), $foer)
+        ->post('/admin/logout')
+        ->assertRedirect(route('metis.admin.login'));
+
+    expect(session()->getId())->not->toBe($foer)
+        ->and(session()->has('metis_admin_authenticated'))->toBeFalse()
+        ->and(session('metis_verified_email'))->toBe('a@b.dk');
+});
