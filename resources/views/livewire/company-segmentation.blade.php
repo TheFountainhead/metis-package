@@ -150,10 +150,20 @@
                         </thead>
                         <tbody wire:loading.class="opacity-40">
                             @forelse($grupper as $gruppe)
-                                <tr class="border-t border-sand-200">
+                                @php $noegle = (string) ($gruppe['key'] ?? ''); @endphp
+                                <tr wire:key="gruppe-{{ $noegle }}"
+                                    class="border-t border-sand-200 {{ $valgtGruppe === $noegle ? 'bg-sand-50' : '' }}">
                                     <td class="px-4 py-2.5 text-ink-800">
-                                        {{ $this->etiket($gruppe) }}
-                                        <span class="text-xs text-ink-700/40">{{ $gruppe['key'] ?? '' }}</span>
+                                        @if($noegle !== '')
+                                            {{-- Klik viser selskaberne bag tallet (samme filtre). --}}
+                                            <button type="button" wire:click="visSelskaber(@js($noegle))"
+                                                    class="text-left underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">
+                                                {{ $this->etiket($gruppe) }}
+                                            </button>
+                                        @else
+                                            {{ $this->etiket($gruppe) }}
+                                        @endif
+                                        <span class="text-xs text-ink-700/40">{{ $noegle }}</span>
                                     </td>
                                     <td class="px-4 py-2.5 text-right tabular-nums text-ink-800">
                                         {{ number_format($gruppe['count'] ?? 0, 0, ',', '.') }}
@@ -176,8 +186,72 @@
                 </div>
 
                 <p class="text-xs text-ink-700/50 mt-3">
-                    {{ __('Kilde: Det Centrale Virksomhedsregister (CVR). Branchekoder er registrets egne DB07-koder.') }}
+                    {{ __('Klik på en række for at se selskaberne bag tallet. Kilde: Det Centrale Virksomhedsregister (CVR). Branchekoder er registrets egne DB07-koder.') }}
                 </p>
+
+                @if($valgtGruppe !== null)
+                    <div class="mt-6 border border-sand-200 rounded-xl" id="selskabsliste">
+                        <div class="flex flex-wrap items-baseline justify-between gap-3 px-4 py-3 bg-sand-50 border-b border-sand-200 rounded-t-xl">
+                            <h2 class="font-semibold text-ink-800">
+                                {{ $this->valgtEtiket() }}
+                                @if($selskabTotal !== null)
+                                    <span class="font-normal text-ink-700/60">
+                                        &middot; {{ number_format($selskabTotal, 0, ',', '.') }} {{ __('selskaber') }}
+                                    </span>
+                                @endif
+                            </h2>
+                            <button type="button" wire:click="lukSelskaber" class="text-sm text-ink-700/70 hover:text-ink-800">
+                                {{ __('Luk') }}
+                            </button>
+                        </div>
+
+                        @if($selskabFejl)
+                            <div class="p-4 text-sm text-red-800">{{ $selskabFejl }}</div>
+                        @else
+                            <div class="overflow-x-auto" wire:loading.class="opacity-40" wire:target="visSelskaber,selskabSide">
+                                <table class="w-full text-sm">
+                                    <thead class="text-left">
+                                        <tr>
+                                            <th class="px-4 py-2 font-semibold text-ink-800">{{ __('Selskab') }}</th>
+                                            <th class="px-4 py-2 font-semibold text-ink-800">{{ __('CVR') }}</th>
+                                            <th class="px-4 py-2 font-semibold text-ink-800">{{ __('Branche') }}</th>
+                                            <th class="px-4 py-2 font-semibold text-ink-800">{{ __('Stiftet') }}</th>
+                                            <th class="px-4 py-2 font-semibold text-ink-800 text-right">{{ __('Højeste årsværk') }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse($selskaber as $selskab)
+                                            <tr wire:key="selskab-{{ $selskab['cvr'] ?? $loop->index }}" class="border-t border-sand-200">
+                                                <td class="px-4 py-2 text-ink-800">
+                                                    <x-metis-link type="cvr" :query="$selskab['cvr'] ?? ''"
+                                                                  class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">{{ $selskab['name'] ?? '' }}</x-metis-link>
+                                                </td>
+                                                <td class="px-4 py-2 tabular-nums text-ink-700/70">{{ $selskab['cvr'] ?? '' }}</td>
+                                                <td class="px-4 py-2 text-ink-700/70">{{ $selskab['industry_description'] ?? ($selskab['industry_code'] ?? '') }}</td>
+                                                <td class="px-4 py-2 tabular-nums text-ink-700/70">
+                                                    {{ ! empty($selskab['founded_date']) ? \Illuminate\Support\Carbon::parse($selskab['founded_date'])->format('d.m.Y') : '' }}
+                                                </td>
+                                                <td class="px-4 py-2 text-right tabular-nums text-ink-800">{{ $selskab['max_fte'] ?? '–' }}</td>
+                                            </tr>
+                                        @empty
+                                            <tr><td colspan="5" class="px-4 py-6 text-center text-ink-700/60">{{ __('Ingen selskaber i gruppen.') }}</td></tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            @if($selskabSider > 1)
+                                <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-sand-200 text-sm">
+                                    <button type="button" wire:click="selskabSide({{ $selskabSide - 1 }})" @disabled($selskabSide <= 1)
+                                            class="px-3 py-1.5 border border-sand-200 rounded-lg disabled:opacity-40">← {{ __('Forrige') }}</button>
+                                    <span class="text-ink-700/70">{{ __('Side') }} {{ $selskabSide }} {{ __('af') }} {{ number_format($selskabSider, 0, ',', '.') }}</span>
+                                    <button type="button" wire:click="selskabSide({{ $selskabSide + 1 }})" @disabled($selskabSide >= $selskabSider)
+                                            class="px-3 py-1.5 border border-sand-200 rounded-lg disabled:opacity-40">{{ __('Næste') }} →</button>
+                                </div>
+                            @endif
+                        @endif
+                    </div>
+                @endif
             @endif
         </section>
     </div>

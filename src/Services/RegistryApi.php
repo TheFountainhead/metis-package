@@ -409,6 +409,29 @@ class RegistryApi
         return $svar['url'] ?? null;
     }
 
+    /**
+     * Selskaberne bag én gruppe i segmenteringen, sidevis.
+     *
+     * 🚨 Samme licens-gate som `segmentCompanies()`: rækkerne er en del af
+     * licensydelsen ("tællinger og lister"), ikke af det gratis opslag.
+     *
+     * @param  array<string, mixed>  $filtre
+     * @return array{data?: array<int,mixed>, meta?: array<string,mixed>, error?: mixed}
+     */
+    public function segmentationCompanies(string $groupBy, string $groupKey, array $filtre = [], int $page = 1, int $perPage = 50): array
+    {
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
+        return $this->postEnvelope('/v1/company-segmentation/companies', [
+            'group_by' => $groupBy,
+            'group_key' => $groupKey,
+            'page' => $page,
+            'per_page' => $perPage,
+        ] + $filtre) ?? ['error' => 'no_response'];
+    }
+
     public function fetchPropertyByAddress(string $address): array
     {
         $parsed = $this->parseAddress($address);

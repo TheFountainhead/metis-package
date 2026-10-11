@@ -69,6 +69,28 @@ class CompanySegmentation extends Component
     public bool $harSoegt = false;
 
     /**
+     * Den gruppe brugeren har klikket paa, og selskaberne bag den.
+     *
+     * 🔑 Nulstilles ved HVER ny taelling (`segmentér()`): en liste fra
+     * "Aarhus med ivaerksaetterfilter" maa aldrig blive staaende under en
+     * tabel uden filteret.
+     */
+    public ?string $valgtGruppe = null;
+
+    /** @var array<int, array<string, mixed>> */
+    public array $selskaber = [];
+
+    public ?int $selskabTotal = null;
+
+    public int $selskabSide = 1;
+
+    public int $selskabSider = 1;
+
+    public ?string $selskabFejl = null;
+
+    public const SELSKABER_PR_SIDE = 50;
+
+    /**
      * 🪤 Kun de kommuner der faktisk optræder i toppen af resultaterne er
      * nødvendige, men en delvis liste ville vise navn for nogle rækker og kode
      * for andre. Hele listen, eller ingen.
@@ -214,6 +236,7 @@ class CompanySegmentation extends Component
         }
 
         $this->fejl = null;
+        $this->lukSelskaber();
 
         $this->normaliser();
 
@@ -331,6 +354,85 @@ class CompanySegmentation extends Component
         }
 
         return $this->redirect($url);
+    }
+
+    public function visSelskaber(string $noegle): void
+    {
+        if (! $this->harAdgang()) {
+            return;
+        }
+
+        // Kun en gruppe der STAAR i den viste tabel kan aabnes. Ellers kunne
+        // en vilkaarlig noegle sendes over /livewire/update.
+        if (! collect($this->grupper)->contains(fn ($g) => (string) ($g['key'] ?? '') === $noegle && $noegle !== '')) {
+            return;
+        }
+
+        $this->valgtGruppe = $noegle;
+        $this->selskabSide = 1;
+        $this->hentSelskaber();
+    }
+
+    public function selskabSide(int $side): void
+    {
+        if ($this->valgtGruppe === null) {
+            return;
+        }
+
+        $this->selskabSide = max(1, min($side, $this->selskabSider));
+        $this->hentSelskaber();
+    }
+
+    public function lukSelskaber(): void
+    {
+        $this->valgtGruppe = null;
+        $this->selskaber = [];
+        $this->selskabTotal = null;
+        $this->selskabSide = 1;
+        $this->selskabSider = 1;
+        $this->selskabFejl = null;
+    }
+
+    protected function hentSelskaber(): void
+    {
+        if (! $this->harAdgang() || $this->valgtGruppe === null) {
+            return;
+        }
+
+        $this->normaliser();
+        $this->selskabFejl = null;
+
+        $svar = app(RegistryApi::class)->segmentationCompanies(
+            $this->groupBy,
+            $this->valgtGruppe,
+            $this->filtre(),
+            $this->selskabSide,
+            self::SELSKABER_PR_SIDE,
+        );
+
+        // 🚨 Samme regel som `segmentér()`: kun et svar der BAERER sin total
+        // er et resultat. Ellers en fejlbesked, ikke en tom liste.
+        if (isset($svar['error']) || ! isset($svar['meta']['total']) || ! is_array($svar['data'] ?? null)) {
+            $this->selskaber = [];
+            $this->selskabTotal = null;
+            $this->selskabFejl = ($svar['error'] ?? null) === 'pilot_required'
+                ? 'Listen kræver en pilotkonto.'
+                : 'Selskaberne kunne ikke hentes. Prøv igen, eller skriv til support@frankston.io.';
+
+            return;
+        }
+
+        $this->selskaber = array_values(array_filter($svar['data'], 'is_array'));
+        $this->selskabTotal = (int) $svar['meta']['total'];
+        $this->selskabSider = max(1, (int) ($svar['meta']['last_page'] ?? 1));
+    }
+
+    /** Navnet paa den valgte gruppe, som i tabellen. */
+    public function valgtEtiket(): string
+    {
+        $gruppe = collect($this->grupper)->first(fn ($g) => (string) ($g['key'] ?? '') === $this->valgtGruppe);
+
+        return $gruppe ? $this->etiket($gruppe) : (string) $this->valgtGruppe;
     }
 
     public function render()
