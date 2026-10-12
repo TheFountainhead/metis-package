@@ -246,9 +246,37 @@ class CompanySegmentation extends Component
         $this->segmentér();
     }
 
+    /** Aldersvinduet iværksætterfilteret foreslår, i år. */
+    public const IVAERKSAETTER_AAR = 5;
+
+    /**
+     * Iværksætterfilteret i API'et ser kun på årsværk, selskabsform og
+     * branche, ikke på alder. Derfor foreslås aldersvinduet her, i det felt
+     * brugeren allerede kan se og rette, i stedet for at blive gemt i API'et.
+     *
+     * 🔑 Et felt brugeren selv har udfyldt, overskrives ikke. Slås filteret
+     * fra, ryddes kun den dato vi selv satte; en anden dato er brugerens.
+     */
     public function updatedIvaerksaetter(): void
     {
+        $forslag = self::ivaerksaetterStiftetFra();
+
+        if ($this->ivaerksaetter && $this->foundedFrom === '') {
+            $this->foundedFrom = $forslag;
+        } elseif (! $this->ivaerksaetter && $this->foundedFrom === $forslag) {
+            $this->foundedFrom = '';
+        }
+
         $this->segmentér();
+    }
+
+    /**
+     * 🪤 `subYearsNoOverflow`: fra 29/2 giver `subYears` 1/3 fem år før,
+     * fordi skæringsåret ikke har en 29/2. Vinduet ville miste en dag.
+     */
+    public static function ivaerksaetterStiftetFra(): string
+    {
+        return now()->subYearsNoOverflow(self::IVAERKSAETTER_AAR)->toDateString();
     }
 
     public function updatedExcludeHolding(): void
