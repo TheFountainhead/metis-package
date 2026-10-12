@@ -260,7 +260,7 @@ it('foreslaar Stiftet fra fem aar tilbage naar iværksætterfilteret slaas til',
     Livewire::test(CompanySegmentation::class)
         ->set('ivaerksaetter', true)
         ->assertSet('foundedFrom', '2021-10-12')
-        ->assertSee('Foreslår "Stiftet fra" 5 år tilbage. Datoen kan rettes.');
+        ->assertSee('Foreslår en stiftelsesdato 5 år tilbage. Datoen kan rettes.');
 
     Http::assertSent(fn ($request) => ($request->data()['founded_from'] ?? null) === '2021-10-12');
 });
@@ -341,6 +341,19 @@ it('glemmer sin dato naar filteret slaas fra, saa en senere brugerdato bliver st
     Livewire::test(CompanySegmentation::class)
         ->set('ivaerksaetter', true)
         ->set('ivaerksaetter', false)
+        ->set('foundedFrom', '2021-10-12') // brugeren taster selv samme dato
+        ->set('ivaerksaetter', true)
+        ->set('ivaerksaetter', false)
+        ->assertSet('foundedFrom', '2021-10-12');
+});
+
+it('glemmer sin dato ved nulstil, saa en senere brugerdato bliver staaende', function () {
+    $this->travelTo('2026-10-12 10:00:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->call('nulstil')
         ->set('foundedFrom', '2021-10-12') // brugeren taster selv samme dato
         ->set('ivaerksaetter', true)
         ->set('ivaerksaetter', false)

@@ -303,6 +303,7 @@ class CompanySegmentation extends Component
         $this->reset([
             'ivaerksaetter', 'excludeHolding', 'industryPrefix',
             'municipalityCode', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
+            'foreslaaetStiftetFra',
         ]);
         $this->segmentér();
     }
