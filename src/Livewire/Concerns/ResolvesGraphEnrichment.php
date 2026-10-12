@@ -183,29 +183,23 @@ trait ResolvesGraphEnrichment
      *
      * KONTRAKT: ALLE beløb i enrichment/card-shapen (dette array, og alt der
      * flyder derfra ind i graphModel/node.card) er HELE KRONER — aldrig
-     * t.DKK/tusinder, aldrig mio. registry-api's financials-rækker er
-     * kilde-afhængige i enhed (company-info.blade.php's $toTdkk er den
-     * autoritative regel, prod-verificeret 26/7 mod Lars Horsbøl Holding
-     * 40072772): rækker med source=pdf er i t.DKK, alle andre (API) er
-     * allerede HELE KRONER. Konverteringen sker HER, ved kilden — én gang,
-     * aldrig længere nede i kæden (builder, Blade, JS). En ubetinget *1000
-     * gjorde API-rækker 1000× for høje (92.438.600 kr. vist som "92.438,6
-     * mio. kr."); ingen konvertering gjorde pdf-rækker 1000× for lave
-     * (2.527 t.DKK vist som "3 tkr."). Ejendoms-beløb
+     * t.DKK/tusinder, aldrig mio. registry-api's financials-rækker er HELE
+     * KRONER og sendes uændret igennem. En ubetinget *1000 gjorde dem 1000×
+     * for høje (Lars Horsbøl Holding 40072772: 92.438.600 kr. vist som
+     * "92.438,6 mio. kr."). PDF-årene i t.DKK, som tidligere krævede *1000
+     * her, findes ikke længere efter registry-api #350. Ejendoms-beløb
      * (valuation/latest_sale_price, se propertyEnrichmentFromBatch()
-     * nedenfor) er altid hele kroner fra kilden — ingen konvertering der.
+     * nedenfor) er ligeledes hele kroner fra kilden.
      *
      * Pinned from BOTH components (CompanyStructureTest + PersonStructureTest
-     * each carry the 92_438_600 / 2_527_000 pair), so an edit that "fixes" the
-     * unit for one caller cannot pass on the strength of the other's silence.
+     * each carry the 92_438_600 case), so an edit that "fixes" the unit for
+     * one caller cannot pass on the strength of the other's silence.
      */
     protected function companyEnrichmentFromInfo(array $company): array
     {
         $latest = collect($company['financials'] ?? [])->sortByDesc('year')->first();
 
-        $toKroner = fn ($value) => $value === null ? null : (
-            ($latest['source'] ?? '') === 'pdf' ? (int) round($value * 1000) : (int) $value
-        );
+        $toKroner = fn ($value) => $value === null ? null : (int) $value;
 
         return [
             'equity' => $toKroner($latest['equity'] ?? null),
@@ -274,10 +268,9 @@ trait ResolvesGraphEnrichment
      * which this batch response does not carry; attachStreetviewUrls() layers
      * those in afterwards, keyed by the same matrikel_id.
      *
-     * Unlike companyEnrichmentFromInfo()'s equity/result (t.DKK → kroner,
-     * see that method's docblock), latest_sale_price/valuation are ALREADY
-     * hele kroner straight from properties/batch — verified against the
-     * existing prod-verbatim fixture (260000/534000-scale values, matching
+     * Like companyEnrichmentFromInfo()'s equity/result, latest_sale_price/
+     * valuation are ALREADY hele kroner straight from properties/batch —
+     * verified against the existing prod-verbatim fixture (260000/534000-scale values, matching
      * the KONTRAKT that this whole enrichment/card shape is hele kroner
      * throughout). No *1000 conversion here.
      */
