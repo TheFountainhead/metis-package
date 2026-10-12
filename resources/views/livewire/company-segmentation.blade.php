@@ -58,6 +58,7 @@
                 <span class="text-sm text-ink-800">
                     {{ __('Kun iværksættervirksomheder') }}
                     <span class="block text-xs text-ink-700/50">{{ __('Erhvervsstyrelsens definition') }}</span>
+                    <span class="block text-xs text-ink-700/50">{{ __('Foreslår en stiftelsesdato :aar år tilbage. Datoen kan rettes.', ['aar' => \TheFountainhead\Metis\Livewire\CompanySegmentation::IVAERKSAETTER_AAR]) }}</span>
                 </span>
             </label>
 

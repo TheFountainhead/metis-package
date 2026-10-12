@@ -252,3 +252,110 @@ it('🪤 laegger ALDRIG to w-full felter i samme flex-raekke', function () {
             'To eller flere w-full felter i samme flex-raekke flyder ud af rammen. Brug flex-1 min-w-0.');
     }
 })->group('layout');
+
+it('foreslaar Stiftet fra fem aar tilbage naar iværksætterfilteret slaas til', function () {
+    $this->travelTo('2026-10-12 10:00:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->assertSet('foundedFrom', '2021-10-12')
+        ->assertSee('Foreslår en stiftelsesdato 5 år tilbage. Datoen kan rettes.');
+
+    Http::assertSent(fn ($request) => ($request->data()['founded_from'] ?? null) === '2021-10-12');
+});
+
+it('overskriver ikke en Stiftet fra-dato brugeren selv har sat', function () {
+    $this->travelTo('2026-10-12 10:00:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('foundedFrom', '2024-01-01')
+        ->set('ivaerksaetter', true)
+        ->assertSet('foundedFrom', '2024-01-01');
+});
+
+it('rydder kun sin egen dato naar filteret slaas fra', function () {
+    $this->travelTo('2026-10-12 10:00:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->set('ivaerksaetter', false)
+        ->assertSet('foundedFrom', '');
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->set('foundedFrom', '2023-06-01')
+        ->set('ivaerksaetter', false)
+        ->assertSet('foundedFrom', '2023-06-01');
+});
+
+it('🪤 mister ikke en dag naar filteret slaas til paa en skuddag', function () {
+    $this->travelTo('2028-02-29 10:00:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->assertSet('foundedFrom', '2023-02-28');
+});
+
+it('🔑 et delt link med iværksætterfilter faar IKKE en dato lagt til', function () {
+    // Linket skal vise det afsenderen saa. Et link uden stiftet_fra er en
+    // bredere population, og den maa ikke snaevres stille ind ved aabning.
+    fakeSegmentering([], 0);
+
+    Livewire::withQueryParams(['ivaerksaetter' => '1'])
+        ->test(CompanySegmentation::class)
+        ->assertSet('ivaerksaetter', true)
+        ->assertSet('foundedFrom', '');
+});
+
+it('🪤 foreslaar den DANSKE dato, ikke UTC-datoen', function () {
+    // 22:30 UTC 12/10 er 00:30 dansk tid 13/10. Appen koerer i UTC.
+    $this->travelTo('2026-10-12 22:30:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->assertSet('foundedFrom', '2021-10-13');
+});
+
+it('🪤 rydder sin egen dato ogsaa naar filteret slaas fra efter midnat', function () {
+    $this->travelTo('2026-10-12 21:59:00'); // 23:59 dansk tid
+    fakeSegmentering([], 0);
+
+    $c = Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->assertSet('foundedFrom', '2021-10-12');
+
+    $this->travelTo('2026-10-12 22:01:00'); // 00:01 dansk tid, forslaget er flyttet
+
+    $c->set('ivaerksaetter', false)->assertSet('foundedFrom', '');
+});
+
+it('glemmer sin dato naar filteret slaas fra, saa en senere brugerdato bliver staaende', function () {
+    $this->travelTo('2026-10-12 10:00:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->set('ivaerksaetter', false)
+        ->set('foundedFrom', '2021-10-12') // brugeren taster selv samme dato
+        ->set('ivaerksaetter', true)
+        ->set('ivaerksaetter', false)
+        ->assertSet('foundedFrom', '2021-10-12');
+});
+
+it('glemmer sin dato ved nulstil, saa en senere brugerdato bliver staaende', function () {
+    $this->travelTo('2026-10-12 10:00:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->call('nulstil')
+        ->set('foundedFrom', '2021-10-12') // brugeren taster selv samme dato
+        ->set('ivaerksaetter', true)
+        ->set('ivaerksaetter', false)
+        ->assertSet('foundedFrom', '2021-10-12');
+});
