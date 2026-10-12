@@ -183,6 +183,19 @@ class CompanySegmentation extends Component
     /** 🔑 Samme loft i visning og eksport — ellers viser CSV'en en anden population. */
     public const GRUPPE_LOFT = 100;
 
+    /** Aldersvinduet iværksætterfilteret foreslår, i år. */
+    public const IVAERKSAETTER_AAR = 5;
+
+    /**
+     * Den dato filteret selv satte i "Stiftet fra", saa den kan ryddes igen.
+     *
+     * 🪤 Huskes i stedet for at sammenligne med dagens forslag: slaas filteret
+     *    til 23:59 og fra 00:01, er forslaget flyttet en dag, og datoen ville
+     *    blive staaende som et filter brugeren tror er slaaet fra (review #203).
+     */
+    #[Locked]
+    public ?string $foreslaaetStiftetFra = null;
+
     public const GRUPPERINGER = [
         'municipality_code' => 'Kommune',
         'industry_code' => 'Branche (DB07)',
@@ -246,9 +259,6 @@ class CompanySegmentation extends Component
         $this->segmentér();
     }
 
-    /** Aldersvinduet iværksætterfilteret foreslår, i år. */
-    public const IVAERKSAETTER_AAR = 5;
-
     /**
      * Iværksætterfilteret i API'et ser kun på årsværk, selskabsform og
      * branche, ikke på alder. Derfor foreslås aldersvinduet her, i det felt
@@ -259,12 +269,13 @@ class CompanySegmentation extends Component
      */
     public function updatedIvaerksaetter(): void
     {
-        $forslag = self::ivaerksaetterStiftetFra();
-
         if ($this->ivaerksaetter && $this->foundedFrom === '') {
-            $this->foundedFrom = $forslag;
-        } elseif (! $this->ivaerksaetter && $this->foundedFrom === $forslag) {
-            $this->foundedFrom = '';
+            $this->foundedFrom = $this->foreslaaetStiftetFra = self::ivaerksaetterStiftetFra();
+        } elseif (! $this->ivaerksaetter) {
+            if ($this->foreslaaetStiftetFra !== null && $this->foundedFrom === $this->foreslaaetStiftetFra) {
+                $this->foundedFrom = '';
+            }
+            $this->foreslaaetStiftetFra = null;
         }
 
         $this->segmentér();
@@ -273,10 +284,13 @@ class CompanySegmentation extends Component
     /**
      * 🪤 `subYearsNoOverflow`: fra 29/2 giver `subYears` 1/3 fem år før,
      * fordi skæringsåret ikke har en 29/2. Vinduet ville miste en dag.
+     *
+     * 🪤 Dansk dato: appen koerer i UTC, saa mellem 22 og 24 dansk tid ville
+     * forslaget ligge en dag for tidligt (review #203).
      */
-    public static function ivaerksaetterStiftetFra(): string
+    private static function ivaerksaetterStiftetFra(): string
     {
-        return now()->subYearsNoOverflow(self::IVAERKSAETTER_AAR)->toDateString();
+        return now('Europe/Copenhagen')->subYearsNoOverflow(self::IVAERKSAETTER_AAR)->toDateString();
     }
 
     public function updatedExcludeHolding(): void

@@ -260,7 +260,7 @@ it('foreslaar Stiftet fra fem aar tilbage naar iværksætterfilteret slaas til',
     Livewire::test(CompanySegmentation::class)
         ->set('ivaerksaetter', true)
         ->assertSet('foundedFrom', '2021-10-12')
-        ->assertSee('Sætter "Stiftet fra" 5 år tilbage. Datoen kan rettes.');
+        ->assertSee('Foreslår "Stiftet fra" 5 år tilbage. Datoen kan rettes.');
 
     Http::assertSent(fn ($request) => ($request->data()['founded_from'] ?? null) === '2021-10-12');
 });
@@ -309,4 +309,40 @@ it('🔑 et delt link med iværksætterfilter faar IKKE en dato lagt til', funct
         ->test(CompanySegmentation::class)
         ->assertSet('ivaerksaetter', true)
         ->assertSet('foundedFrom', '');
+});
+
+it('🪤 foreslaar den DANSKE dato, ikke UTC-datoen', function () {
+    // 22:30 UTC 12/10 er 00:30 dansk tid 13/10. Appen koerer i UTC.
+    $this->travelTo('2026-10-12 22:30:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->assertSet('foundedFrom', '2021-10-13');
+});
+
+it('🪤 rydder sin egen dato ogsaa naar filteret slaas fra efter midnat', function () {
+    $this->travelTo('2026-10-12 21:59:00'); // 23:59 dansk tid
+    fakeSegmentering([], 0);
+
+    $c = Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->assertSet('foundedFrom', '2021-10-12');
+
+    $this->travelTo('2026-10-12 22:01:00'); // 00:01 dansk tid, forslaget er flyttet
+
+    $c->set('ivaerksaetter', false)->assertSet('foundedFrom', '');
+});
+
+it('glemmer sin dato naar filteret slaas fra, saa en senere brugerdato bliver staaende', function () {
+    $this->travelTo('2026-10-12 10:00:00');
+    fakeSegmentering([], 0);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('ivaerksaetter', true)
+        ->set('ivaerksaetter', false)
+        ->set('foundedFrom', '2021-10-12') // brugeren taster selv samme dato
+        ->set('ivaerksaetter', true)
+        ->set('ivaerksaetter', false)
+        ->assertSet('foundedFrom', '2021-10-12');
 });
