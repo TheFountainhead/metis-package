@@ -11,7 +11,7 @@ class CompanyStructure extends MetisSection
     /**
      * Task 8: the enrichment-resolution half of this component now lives in a
      * trait shared with PersonStructure — companyEnrichmentFromInfo() (with
-     * its source-dependent t.DKK/kroner rule), propertyEnrichmentFromBatch(),
+     * its hele-kroner financials contract), propertyEnrichmentFromBatch(),
      * attachStreetviewUrls() and fetchEnrichmentData(). The GATING
      * (loadEnrichment's three gates, retryEnrichment, the rehydration guard)
      * stays here, because it is written against this component's own status

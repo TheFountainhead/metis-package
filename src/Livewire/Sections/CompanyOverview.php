@@ -109,8 +109,8 @@ class CompanyOverview extends MetisSection
      * with EBIT/EBITDA and the period length) and falls back to the plain
      * financials list from an older registry-api. Up to six years.
      *
-     * PDF years arrive in t.DKK, XBRL years in kroner (the 1000× trap the
-     * company-info table also handles), so everything is normalised to kroner here.
+     * All amounts arrive in whole kroner and pass through unchanged. The
+     * PDF years that came in t.DKK are gone since registry-api #350.
      */
     protected function buildFinancialHistory(array $years): array
     {
@@ -119,7 +119,6 @@ class CompanyOverview extends MetisSection
             ->reverse()
             ->values()
             ->map(function (array $year) {
-                $unit = ($year['source'] ?? '') === 'pdf' ? 1000 : 1;
                 $months = isset($year['months']) ? (float) $year['months'] : null;
 
                 return [
@@ -130,7 +129,7 @@ class CompanyOverview extends MetisSection
                     'comparative' => (bool) ($year['comparative'] ?? false),
                     'consolidated' => ($year['scope'] ?? null) === 'consolidated',
                     ...collect(self::KEY_FIGURES)->mapWithKeys(fn (string $key) => [
-                        $key => isset($year[$key]) ? (int) $year[$key] * $unit : null,
+                        $key => isset($year[$key]) ? (int) $year[$key] : null,
                     ])->all(),
                 ];
             })

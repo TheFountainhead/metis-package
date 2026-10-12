@@ -1604,25 +1604,6 @@ it('passes API-sourced financials through as hele kroner (no *1000) — shared F
         ->and($node['card']['result'])->toBe(87_545_200);
 });
 
-it('converts pdf-sourced financials from t.DKK to hele kroner (*1000) — shared F-A pin, person side', function () {
-    fakePersonEnrichment(
-        [personOwnershipCompany('11111111', 100.0, 'Holding ApS')],
-        [],
-        [],
-        ['11111111' => ['financials' => [
-            ['year' => '2024', 'equity' => 2527, 'assets' => 9000, 'profit_loss' => 316, 'source' => 'pdf'],
-        ]]],
-    );
-
-    $test = Livewire::test(PersonStructure::class, ['query' => 'Jens Testsen']);
-    tickUntilSettled($test);
-    $test->call('loadEnrichment');
-
-    $node = collect($test->get('graphModel')['nodes'])->firstWhere('id', '11111111');
-    expect($node['card']['equity'])->toBe(2_527_000)
-        ->and($node['card']['result'])->toBe(316_000);
-});
-
 it('gates enrichment on both progressive phases having settled', function () {
     // Five cvrs = two ticks of fase 2 before it settles, so an enrichment
     // attempt after ONE tick must be a no-op: the cvr set is still growing,
