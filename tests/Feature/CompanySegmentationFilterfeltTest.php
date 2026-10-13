@@ -93,28 +93,3 @@ it('regner kun én gang naar et felt med eget hook aendres', function (string $f
     'uden holding' => ['excludeHolding', true],
     'stiftet fra' => ['foundedFrom', '2020-01-01'],
 ]);
-
-it('🚨 en halv dato naar aldrig Livewire, og Nulstil tømmer den', function () {
-    // 🪤 En halvt udfyldt dato (dd.03.2021) giver value="" med badInput i
-    // browseren og fyrer input+change. Naaede den Livewire, forsvandt filteret,
-    // og tallet sprang til alle selskaber mens feltet stadig viste "03.2021".
-    // Adfaerden er bevist i Chrome (se PR); her vaernes markup'en, saa vagten
-    // ikke kan forsvinde i en refaktorering uden at testen bliver roed.
-    $view = file_get_contents(__DIR__.'/../../resources/views/livewire/company-segmentation.blade.php');
-
-    // 🪤 Ikke `[^>]*`: x-data indeholder pilefunktioner (`=>`).
-    $start = strpos($view, 'x-data="{ halve: []');
-    $slut = $start === false ? false : strpos($view, '</template>', $start);
-    expect($start)->not->toBeFalse()->and($slut)->not->toBeFalse();
-    $blok = substr($view, $start, $slut - $start);
-
-    expect($blok)->toContain('x-on:input.capture="vagt($event)"')
-        ->and($blok)->toContain('if (e.target.validity.badInput) e.stopPropagation();')
-        ->and($blok)->toContain('x-on:keyup.capture="maal($event)"')
-        ->and($blok)->toContain('x-on:focusout.capture="maal($event)"')
-        ->and($blok)->toContain('x-on:segmentering-nulstil.window="nulstil()"')
-        ->and($blok)->toContain('wire:model.change="foundedFrom"')
-        ->and($blok)->toContain('wire:model.change="foundedTo"');
-
-    expect($view)->toContain('wire:click="nulstil" x-on:click="$dispatch(\'segmentering-nulstil\')"');
-});

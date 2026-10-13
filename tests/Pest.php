@@ -3,7 +3,7 @@
 use TheFountainhead\Metis\Tests\TestCase;
 
 pest()->extend(TestCase::class)
-    ->in('Feature', 'Unit');
+    ->in('Feature', 'Unit', 'Browser');
 
 /*
  * 🪤 HELPEREN HOERER HJEMME HER, ikke i en testfil.
