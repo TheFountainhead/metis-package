@@ -298,6 +298,25 @@ class CompanySegmentation extends Component
         $this->segmentér();
     }
 
+    /**
+     * Felterne der regner, naar de faar en ny vaerdi.
+     *
+     * 🚨 Foer 13/10-2026 var de bundet med `wire:model.blur` + et separat
+     * `wire:change="segmentér"`. Kom "change" foer "blur" (en dato tastet ind,
+     * Enter i et tekstfelt, piletaster i aarsvaerk), regnede serveren paa den
+     * GAMLE vaerdi, og den nye kom bagefter uden genberegning: tallet haltede
+     * én aendring bagefter, mens URL'en viste den nye. Nu sendes vaerdien med
+     * `wire:model.change`, og komponenten regner selv her.
+     */
+    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'];
+
+    public function updated(string $felt): void
+    {
+        if (in_array($felt, self::FILTERFELTER, true)) {
+            $this->segmentér();
+        }
+    }
+
     public function nulstil(): void
     {
         $this->reset([

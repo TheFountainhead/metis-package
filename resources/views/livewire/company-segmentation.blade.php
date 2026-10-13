@@ -69,12 +69,12 @@
             </label>
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Branche (DB07)') }}</label>
-            <input wire:model.blur="industryPrefix" wire:change="segmentér" type="text" placeholder="{{ __('fx 62') }}"
+            <input wire:model.change="industryPrefix" type="text" placeholder="{{ __('fx 62') }}"
                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm mb-4"
                    aria-label="{{ __('Branchekode eller præfiks') }}">
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Kommunekode') }}</label>
-            <input wire:model.blur="municipalityCode" wire:change="segmentér" type="text" placeholder="{{ __('fx 101') }}"
+            <input wire:model.change="municipalityCode" type="text" placeholder="{{ __('fx 101') }}"
                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm mb-4"
                    aria-label="{{ __('Kommunekode') }}">
 
@@ -85,20 +85,20 @@
                  saa det hoejre felt flyder ud af rammen. `min-w-0` ophaever
                  flex-elementers default `min-width: auto` og lader dem krympe. --}}
             <div class="flex gap-2 mb-4">
-                <input wire:model.blur="foundedFrom" wire:change="segmentér" type="date"
+                <input wire:model.change="foundedFrom" type="date"
                        class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
                        aria-label="{{ __('Stiftet fra') }}">
-                <input wire:model.blur="foundedTo" wire:change="segmentér" type="date"
+                <input wire:model.change="foundedTo" type="date"
                        class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
                        aria-label="{{ __('Stiftet til') }}">
             </div>
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Årsværk') }}</label>
             <div class="flex gap-2 mb-5">
-                <input wire:model.blur="fteMin" wire:change="segmentér" type="number" min="0" placeholder="{{ __('min') }}"
+                <input wire:model.change="fteMin" type="number" min="0" placeholder="{{ __('min') }}"
                        class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
                        aria-label="{{ __('Mindste antal årsværk') }}">
-                <input wire:model.blur="fteMax" wire:change="segmentér" type="number" min="0" placeholder="{{ __('maks') }}"
+                <input wire:model.change="fteMax" type="number" min="0" placeholder="{{ __('maks') }}"
                        class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
                        aria-label="{{ __('Højeste antal årsværk') }}">
             </div>
