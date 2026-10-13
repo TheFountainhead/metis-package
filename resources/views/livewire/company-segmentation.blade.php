@@ -84,13 +84,59 @@
                  min-bredde fra datovaelgeren og kan ikke krympe under den —
                  saa det hoejre felt flyder ud af rammen. `min-w-0` ophaever
                  flex-elementers default `min-width: auto` og lader dem krympe. --}}
-            <div class="flex gap-2 mb-4">
-                <input wire:model.change="foundedFrom" type="date"
-                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
-                       aria-label="{{ __('Stiftet fra') }}">
-                <input wire:model.change="foundedTo" type="date"
-                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
-                       aria-label="{{ __('Stiftet til') }}">
+            {{-- 🪤 En HALV dato (fx dd.03.2021) giver i browseren value="" med
+                 `validity.badInput` sat, og fyrer baade input og change. Naaede
+                 den Livewire, blev filteret fjernet og tallet sprang til alle
+                 selskaber, mens feltet stadig viste "03.2021". Vagten stopper
+                 eventet i capture-fasen, FOER det naar feltets egen lytter, saa
+                 serveren beholder den seneste hele dato, og hintet siger hvilken.
+                 Et helt tomt felt har ikke badInput og fjerner filteret som foer.
+                 🪤 Gaar value fra "" til "" fyrer browseren INTET event: naar en
+                 halv dato tastes i et tomt felt, og naar resten af en halv dato
+                 slettes. `maal` maaler derfor ogsaa paa tast og fokus-tab, og
+                 sender selv den change, der fjerner filteret, naar feltet er
+                 tømt helt.
+                 🪤 Nulstil: serveren saetter "", men x-model skriver ikke "" i et
+                 felt hvis value allerede er "", saa de halve segmenter blev
+                 staaende. `nulstil` tømmer dem i browseren. --}}
+            <div class="mb-4"
+                 x-data="{ halve: [], synk(f) {
+                     this.halve = this.halve.filter(h => h !== f).concat(f.validity.badInput ? [f] : []);
+                 }, vagt(e) {
+                     if (e.target.validity.badInput) e.stopPropagation();
+                     this.synk(e.target);
+                 }, maal(e) {
+                     if (e.target.type !== 'date') return;
+                     const varHalv = this.halve.includes(e.target);
+                     this.synk(e.target);
+                     if (varHalv && e.target.value === '' && ! e.target.validity.badInput) {
+                         e.target.dispatchEvent(new Event('change', { bubbles: true }));
+                     }
+                 }, nulstil() {
+                     this.halve.forEach(f => f.value = '');
+                     this.halve = [];
+                 }, hint(f) {
+                     const dato = $wire.get(f.getAttribute('wire:model.change'));
+                     return f.getAttribute('aria-label') + {{ Js::from(__(' er ikke udfyldt helt. ')) }}
+                         + (dato ? {{ Js::from(__('Tallet bruger ')) }} + dato.split('-').reverse().join('.') + '.'
+                                 : {{ Js::from(__('Tallet tæller uden denne dato.')) }});
+                 } }"
+                 x-on:input.capture="vagt($event)" x-on:change.capture="vagt($event)"
+                 x-on:keyup.capture="maal($event)" x-on:focusout.capture="maal($event)"
+                 x-on:segmentering-nulstil.window="nulstil()">
+                <div class="flex gap-2">
+                    <input wire:model.change="foundedFrom" type="date"
+                           class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                           :class="halve.includes($el) && '!border-red-500'"
+                           aria-label="{{ __('Stiftet fra') }}">
+                    <input wire:model.change="foundedTo" type="date"
+                           class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                           :class="halve.includes($el) && '!border-red-500'"
+                           aria-label="{{ __('Stiftet til') }}">
+                </div>
+                <template x-for="f in halve">
+                    <p data-halv-dato-hint role="status" class="mt-1 text-xs text-red-700" x-text="hint(f)"></p>
+                </template>
             </div>
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Årsværk') }}</label>
@@ -103,7 +149,7 @@
                        aria-label="{{ __('Højeste antal årsværk') }}">
             </div>
 
-            <button wire:click="nulstil" type="button"
+            <button wire:click="nulstil" x-on:click="$dispatch('segmentering-nulstil')" type="button"
                     class="w-full text-sm border border-sand-200 rounded-lg px-3 py-2 hover:bg-white transition text-ink-700">
                 {{ __('Nulstil filtre') }}
             </button>
