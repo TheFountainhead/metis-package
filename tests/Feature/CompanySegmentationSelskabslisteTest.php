@@ -160,11 +160,14 @@ it('🚨 listen bruger de filtre der GAV tallene, ikke et felt der er aendret si
     fakeListeOk();
     config()->set('metis.gating.enabled', false);
 
-    // industryPrefix har ingen updated-hook: et .blur-felt kan synce i samme
-    // request som klikket uden at taellingen er koert igen.
-    Livewire::test(CompanySegmentation::class)
-        ->set('industryPrefix', '62')
-        ->call('visSelskaber', '751');
+    // Siden 13/10-2026 regner hvert filterfelt selv, naar det aendres, saa
+    // via browseren kan et felt ikke laengere aendre sig uden ny taelling.
+    // `vistFiltre` er stadig vaernet bag det: her aendres feltet direkte paa
+    // instansen, uden om hooks, og listen skal STADIG bruge de filtre der
+    // gav tallene paa skaermen.
+    $komponent = Livewire::test(CompanySegmentation::class)->instance();
+    $komponent->industryPrefix = '62';
+    $komponent->visSelskaber('751');
 
     Http::assertSent(fn ($r) => erListekald($r) && ! isset($r['industry_prefix']));
 });
