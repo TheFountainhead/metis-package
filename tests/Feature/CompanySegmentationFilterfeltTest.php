@@ -63,8 +63,14 @@ it('binder filterfelterne saa vaerdien sendes med den samme change, der regner',
     // 🔑 Hvert felt bundet med `.change` SKAL regne. Tilfoejes et nyt
     // filterfelt i markup'en uden at komme paa listen, kommer fejlen tilbage
     // stille. Listen laeses fra komponenten, ikke skrevet af her.
-    preg_match_all('/wire:model\.change="(\w+)"/', $view, $bundne);
+    preg_match_all('/wire:model\.change(?:\.number)?="(\w+)"/', $view, $bundne);
     $regner = (new ReflectionClassConstant(CompanySegmentation::class, 'FILTERFELTER'))->getValue();
+
+    // 🪤 Aarsvaerk SKAL have `.number`: uden det sender browseren "5", serveren
+    // normaliserer til 5, og Livewire ser forskellen som en aendring og
+    // skriver vaerdien tilbage i feltet midt i brugerens piletryk (review #204).
+    expect($view)->toContain('wire:model.change.number="fteMin"')
+        ->and($view)->toContain('wire:model.change.number="fteMax"');
 
     expect($bundne[1])->not->toBeEmpty()
         ->and(array_values(array_diff($bundne[1], $regner)))->toBe([])

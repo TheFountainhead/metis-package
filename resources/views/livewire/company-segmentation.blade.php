@@ -95,10 +95,10 @@
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Årsværk') }}</label>
             <div class="flex gap-2 mb-5">
-                <input wire:model.change="fteMin" type="number" min="0" placeholder="{{ __('min') }}"
+                <input wire:model.change.number="fteMin" type="number" min="0" placeholder="{{ __('min') }}"
                        class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
                        aria-label="{{ __('Mindste antal årsværk') }}">
-                <input wire:model.change="fteMax" type="number" min="0" placeholder="{{ __('maks') }}"
+                <input wire:model.change.number="fteMax" type="number" min="0" placeholder="{{ __('maks') }}"
                        class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
                        aria-label="{{ __('Højeste antal årsværk') }}">
             </div>
