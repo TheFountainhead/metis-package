@@ -55,3 +55,8 @@ jobs:
 
       - name: Run Tests
         run: ./vendor/bin/pest
+
+      # 🪤 Plain `pest` koerer kun Unit/Feature (phpunit.xml), saa
+      # browsertestene skal kaldes eksplicit, ellers springes de stille over.
+      - name: Run Browser Tests
+        run: ./vendor/bin/pest tests/Browser
