@@ -72,7 +72,12 @@
                        }
                    },
                    tomHalve() {
-                       this.$root.querySelectorAll('[data-felt]').forEach(f => { if (f.validity.badInput) f.value = ''; });
+                       // 🪤 WebKit/Safari ignorerer value='' naar value allerede er '' (maalt
+                       // 13/10-2026), og valueAsDate=null henter den GAMLE dato frem. En gyldig
+                       // dato foerst nulstiller segmenterne i alle tre motorer; fyrer intet event.
+                       this.$root.querySelectorAll('[data-felt]').forEach(f => {
+                           if (f.validity.badInput) { f.value = '2000-01-01'; f.value = ''; }
+                       });
                        this.halve = [];
                    },
                    hint(felt) {
