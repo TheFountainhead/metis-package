@@ -26,6 +26,9 @@ beforeEach(function () {
     config()->set('metis.mode', 'standalone');
     config()->set('metis.registry_api.url', 'https://registry.test');
     config()->set('metis.registry_api.key', 'test-noegle');
+    // Gaten er slaaet fra i TestCase; her eksplicit, saa testene ikke
+    // bliver roede af en anden grund, hvis den default aendres.
+    config()->set('metis.gating.enabled', false);
     Http::preventStrayRequests();
     Http::fake([
         '*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]]),
@@ -48,25 +51,36 @@ it('regner paa den nye vaerdi saa snart et filterfelt aendres', function (string
 
 it('binder filterfelterne saa vaerdien sendes med den samme change, der regner', function () {
     // 🪤 Livewire::test() kender ikke browserens event-raekkefoelge, saa den
-    // kan ikke selv se fejlen. Markup'en er derfor ogsaa kontrakten: ingen
-    // `.blur`-binding og ingen separat `wire:change` paa felterne.
+    // kan ikke selv se fejlen. Markup'en er derfor ogsaa vaernet: intet input
+    // maa have en `.blur`-binding eller en separat change-handler.
     $view = file_get_contents(__DIR__.'/../../resources/views/livewire/company-segmentation.blade.php');
+    preg_match_all('/<input\b[^>]*>/s', $view, $inputs);
 
-    foreach (['industryPrefix', 'municipalityCode', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'] as $felt) {
-        expect($view)->toContain('wire:model.change="'.$felt.'"');
+    foreach ($inputs[0] as $input) {
+        expect($input)->not->toMatch('/wire:model\.[\w.]*blur|wire:change|x-on:change|@change/');
     }
 
-    expect($view)->not->toContain('wire:model.blur')
-        ->and($view)->not->toContain('wire:change=');
+    // 🔑 Hvert felt bundet med `.change` SKAL regne. Tilfoejes et nyt
+    // filterfelt i markup'en uden at komme paa listen, kommer fejlen tilbage
+    // stille. Listen laeses fra komponenten, ikke skrevet af her.
+    preg_match_all('/wire:model\.change="(\w+)"/', $view, $bundne);
+    $regner = (new ReflectionClassConstant(CompanySegmentation::class, 'FILTERFELTER'))->getValue();
+
+    expect($bundne[1])->not->toBeEmpty()
+        ->and(array_values(array_diff($bundne[1], $regner)))->toBe([])
+        ->and(array_values(array_diff($regner, $bundne[1])))->toBe([]);
 });
 
 it('regner kun én gang naar et felt med eget hook aendres', function (string $felt, mixed $vaerdi) {
     // 🪤 `groupBy`, `ivaerksaetter` og `excludeHolding` har egne hooks der
     // regner. Fanger det generelle hook dem ogsaa, gaar der to kald til
     // registret pr. klik.
-    Livewire::test(CompanySegmentation::class)->set($felt, $vaerdi);
+    $c = Livewire::test(CompanySegmentation::class);
+    $foer = count(Http::recorded());
 
-    Http::assertSentCount(2); // mount + aendringen
+    $c->set($felt, $vaerdi);
+
+    expect(count(Http::recorded()) - $foer)->toBe(1);
 })->with([
     'grupper paa' => ['groupBy', 'company_type'],
     'ivaerksaetter' => ['ivaerksaetter', true],

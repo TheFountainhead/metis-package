@@ -160,21 +160,16 @@ it('🚨 listen bruger de filtre der GAV tallene, ikke et felt der er aendret si
     fakeListeOk();
     config()->set('metis.gating.enabled', false);
 
-    // Foer 13/10-2026 kunne et .blur-felt synce i samme request som klikket
-    // uden at taellingen blev koert igen; listen brugte derfor de frosne
-    // filtre og udelod branchen. Nu regner feltet selv, naar det aendres
-    // (FILTERFELTER), saa taellingen paa skaermen OG listen bruger branchen.
-    // Kontrakten er den samme: listen hoerer til tallene paa skaermen.
-    Livewire::test(CompanySegmentation::class)
-        ->set('industryPrefix', '62')
-        ->call('visSelskaber', '751');
+    // Siden 13/10-2026 regner hvert filterfelt selv, naar det aendres, saa
+    // via browseren kan et felt ikke laengere aendre sig uden ny taelling.
+    // `vistFiltre` er stadig vaernet bag det: her aendres feltet direkte paa
+    // instansen, uden om hooks, og listen skal STADIG bruge de filtre der
+    // gav tallene paa skaermen.
+    $komponent = Livewire::test(CompanySegmentation::class)->instance();
+    $komponent->industryPrefix = '62';
+    $komponent->visSelskaber('751');
 
-    $kald = Http::recorded()->map(fn ($par) => $par[0]);
-    $sidsteTaelling = $kald->reject(fn ($r) => erListekald($r))->last();
-    $liste = $kald->first(fn ($r) => erListekald($r));
-
-    expect($sidsteTaelling['industry_prefix'] ?? null)->toBe('62')
-        ->and($liste['industry_prefix'] ?? null)->toBe('62');
+    Http::assertSent(fn ($r) => erListekald($r) && ! isset($r['industry_prefix']));
 });
 
 it('🚨 en payload kan ikke saette den valgte gruppe eller tabellen', function () {
