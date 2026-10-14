@@ -40,7 +40,56 @@
     <div class="grid md:grid-cols-[260px_1fr] gap-6">
 
         {{-- Filtre --}}
-        <aside class="bg-sand-50 border border-sand-200 rounded-xl p-4 h-fit">
+        {{-- 🪤 `halve` holder FELTNAVNE, ikke elementer: ved morph evaluerer
+             Livewire `:class` paa en KLON, hvor `$el` ikke er det levende felt.
+             🪤 Gaar value fra "" til "" (halv dato i tomt felt; resten af en
+             halv dato slettet) fyrer browseren INTET event, saa `maal` maaler
+             ogsaa paa tast og fokus-tab og sender selv den change, der fjerner
+             filteret naar feltet er tømt helt.
+             🪤 x-model skriver ikke "" i et felt hvis value allerede er "", saa
+             Nulstil efterlod halve segmenter: `tomHalve` tømmer dem.
+             `x-effect` maaler igen naar serveren skriver en dato (iværksætter,
+             tilbage/frem), saa hintet ikke haenger ved et nu helt felt. --}}
+        <aside class="bg-sand-50 border border-sand-200 rounded-xl p-4 h-fit"
+               x-data="{
+                   halve: [],
+                   synk(f) {
+                       this.halve = this.halve.filter(h => h !== f.dataset.felt).concat(f.validity.badInput ? [f.dataset.felt] : []);
+                   },
+                   synkAlle() { this.$root.querySelectorAll('[data-felt]').forEach(f => this.synk(f)); },
+                   vagt(e) {
+                       if (! e.target.dataset.felt) return;
+                       if (e.target.validity.badInput) e.stopPropagation();
+                       this.synk(e.target);
+                   },
+                   maal(e) {
+                       if (! e.target.dataset.felt) return;
+                       const varHalv = this.halve.includes(e.target.dataset.felt);
+                       this.synk(e.target);
+                       if (varHalv && e.target.value === '' && ! e.target.validity.badInput) {
+                           // 🪤 x-model (`.change`) skriver vaerdien paa INPUT; `change` sender kun.
+                           ['input', 'change'].forEach(t => e.target.dispatchEvent(new Event(t, { bubbles: true })));
+                       }
+                   },
+                   tomHalve() {
+                       // 🪤 WebKit/Safari ignorerer value='' naar value allerede er '' (maalt
+                       // 13/10-2026), og valueAsDate=null henter den GAMLE dato frem. En gyldig
+                       // dato foerst nulstiller segmenterne i alle tre motorer; fyrer intet event.
+                       this.$root.querySelectorAll('[data-felt]').forEach(f => {
+                           if (f.validity.badInput) { f.value = '2000-01-01'; f.value = ''; }
+                       });
+                       this.halve = [];
+                   },
+                   hint(felt) {
+                       const dato = String($wire.get(felt) ?? '');
+                       const etiket = this.$root.querySelector(`[data-felt='${felt}']`).getAttribute('aria-label');
+                       return (dato
+                           ? {{ Js::from(__(':felt er ikke udfyldt helt. Tallet bruger :dato.')) }}
+                           : {{ Js::from(__(':felt er ikke udfyldt helt. Tallet tæller uden denne dato.')) }}
+                       ).replace(':felt', etiket).replace(':dato', dato.split('-').reverse().join('.'));
+                   },
+               }"
+               x-effect="$wire.foundedFrom; $wire.foundedTo; $nextTick(() => synkAlle())">
             <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3">{{ __('Fordel på') }}</h2>
             <select wire:model.live="groupBy"
                     class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-5"
@@ -84,13 +133,32 @@
                  min-bredde fra datovaelgeren og kan ikke krympe under den —
                  saa det hoejre felt flyder ud af rammen. `min-w-0` ophaever
                  flex-elementers default `min-width: auto` og lader dem krympe. --}}
-            <div class="flex gap-2 mb-4">
-                <input wire:model.change="foundedFrom" type="date"
-                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
-                       aria-label="{{ __('Stiftet fra') }}">
-                <input wire:model.change="foundedTo" type="date"
-                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
-                       aria-label="{{ __('Stiftet til') }}">
+            {{-- 🪤 HALV DATO (fx dd.03.2021): browseren giver value="" med
+                 `validity.badInput` og fyrer input+change. Naaede den Livewire,
+                 forsvandt filteret, og tallet sprang til alle selskaber mens
+                 feltet viste "03.2021". `vagt` stopper eventet i capture-fasen,
+                 saa serveren beholder den seneste hele dato. Se `halve` paa aside. --}}
+            <div class="mb-4" x-on:input.capture="vagt($event)" x-on:change.capture="vagt($event)"
+                 x-on:keyup.capture="maal($event)" x-on:focusout.capture="maal($event)">
+                <div class="flex gap-2">
+                    <input wire:model.change="foundedFrom" type="date" data-felt="foundedFrom"
+                           class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                           :class="halve.includes('foundedFrom') && '!border-red-500'"
+                           :aria-invalid="halve.includes('foundedFrom')"
+                           aria-describedby="halv-dato-{{ $this->getId() }}"
+                           aria-label="{{ __('Stiftet fra') }}">
+                    <input wire:model.change="foundedTo" type="date" data-felt="foundedTo"
+                           class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                           :class="halve.includes('foundedTo') && '!border-red-500'"
+                           :aria-invalid="halve.includes('foundedTo')"
+                           aria-describedby="halv-dato-{{ $this->getId() }}"
+                           aria-label="{{ __('Stiftet til') }}">
+                </div>
+                <div id="halv-dato-{{ $this->getId() }}" role="status" aria-live="polite" class="mt-1 text-xs text-red-700">
+                    <template x-for="felt in halve" :key="felt">
+                        <p data-halv-dato-hint x-text="hint(felt)"></p>
+                    </template>
+                </div>
             </div>
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Årsværk') }}</label>
@@ -103,7 +171,7 @@
                        aria-label="{{ __('Højeste antal årsværk') }}">
             </div>
 
-            <button wire:click="nulstil" type="button"
+            <button wire:click="nulstil" x-on:click="tomHalve()" type="button"
                     class="w-full text-sm border border-sand-200 rounded-lg px-3 py-2 hover:bg-white transition text-ink-700">
                 {{ __('Nulstil filtre') }}
             </button>

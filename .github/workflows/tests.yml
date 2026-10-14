@@ -35,12 +35,28 @@ jobs:
           php-version: 8.4
           # sqlite: the RefreshDatabase tests (EmailGate*, LeadNotifier) run
           # against Testbench's default in-memory sqlite connection.
-          extensions: pdo_sqlite, sqlite3
+          # sockets: pest-plugin-browser (tests/Browser) kraever ext-sockets.
+          extensions: pdo_sqlite, sqlite3, sockets
           tools: composer:v2
           coverage: none
 
       - name: Install Dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
+      # Browsertests (tests/Browser) styrer Chromium via Playwright. Kun
+      # en rigtig browser kan se fx en halv dato (validity.badInput).
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        run: npm ci && npx playwright install --with-deps chromium
+
       - name: Run Tests
         run: ./vendor/bin/pest
+
+      # 🪤 Plain `pest` koerer kun Unit/Feature (phpunit.xml), saa
+      # browsertestene skal kaldes eksplicit, ellers springes de stille over.
+      - name: Run Browser Tests
+        run: ./vendor/bin/pest tests/Browser
