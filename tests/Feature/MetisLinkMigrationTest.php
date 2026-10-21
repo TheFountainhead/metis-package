@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Routing\EncodedParameter;
 use Illuminate\Support\Facades\Route;
 use TheFountainhead\Metis\View\Components\MetisLink;
 
@@ -25,8 +26,10 @@ it('bygger urlFor() med samme regler som komponenten', function () {
     expect(MetisLink::urlFor('address', 'Søndergade 43A, 4653'))
         ->toBe(route('metis.lookup', [
             'type' => 'address',
-            'query' => rawurlencode('Søndergade 43A, 4653'),
-        ]));
+            'query' => new EncodedParameter(rawurlencode('Søndergade 43A, 4653')),
+        ]))
+        ->and(MetisLink::urlFor('address', 'Søndergade 43A, 4653'))
+        ->toEndWith('/lookup/address/S%C3%B8ndergade%2043A%2C%204653');
 });
 
 it('urlFor() afviser en tom query i stedet for at kaste', function () {
