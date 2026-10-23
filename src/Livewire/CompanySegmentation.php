@@ -44,6 +44,13 @@ class CompanySegmentation extends Component
     #[Url(as: 'kommune', except: '')]
     public $municipalityCode = '';
 
+    /** DAGI-regionskode (1081-1085). Utypet af samme grund som de andre #[Url]-felter. */
+    #[Url(as: 'region', except: '')]
+    public $region = '';
+
+    #[Url(as: 'vertikal', except: '')]
+    public $vertikal = '';
+
     #[Url(as: 'stiftet_fra', except: '')]
     public $foundedFrom = '';
 
@@ -198,8 +205,60 @@ class CompanySegmentation extends Component
 
     public const GRUPPERINGER = [
         'municipality_code' => 'Kommune',
+        'region' => 'Region',
         'industry_code' => 'Branche (DB07)',
+        'vertikal' => 'Vertikal',
         'company_type' => 'Selskabsform',
+    ];
+
+    /** Koderne datalaget accepterer (DAGI). Visningsnavnet kommer med i svaret. */
+    public const REGIONER = [
+        '1084' => 'Region Hovedstaden',
+        '1085' => 'Region Sjælland',
+        '1083' => 'Region Syddanmark',
+        '1082' => 'Region Midtjylland',
+        '1081' => 'Region Nordjylland',
+    ];
+
+    /**
+     * Vertikalerne datalaget kender, afledt af branchekoden.
+     *
+     * 🪤 Noeglerne SKAL matche registry-api's VerticalMapper. En noegle her som
+     * datalaget ikke kender giver 422, og siden viser fejlen i stedet for tal.
+     */
+    public const VERTIKALER = [
+        'software' => 'Software og IT',
+        'life-science' => 'Life science',
+        'forskning-udvikling' => 'Forskning og udvikling',
+        'hardware' => 'Hardware og elektronik',
+        'telekom' => 'Telekommunikation',
+        'energi' => 'Energi',
+        'miljoe' => 'Miljø og forsyning',
+        'industri' => 'Industri',
+        'kemi' => 'Kemi',
+        'foedevarer' => 'Fødevarer',
+        'landbrug' => 'Landbrug og fiskeri',
+        'raastoffer' => 'Råstoffer',
+        'finans' => 'Finans',
+        'engroshandel' => 'Engroshandel',
+        'detailhandel' => 'Detailhandel',
+        'transport-logistik' => 'Transport og logistik',
+        'medier' => 'Medier og udgivelse',
+        'marketing' => 'Marketing og reklame',
+        'raadgivning' => 'Rådgivning',
+        'hr' => 'HR og rekruttering',
+        'rejser' => 'Rejser',
+        'uddannelse' => 'Uddannelse',
+        'ejendom' => 'Fast ejendom',
+        'byggeri' => 'Byggeri',
+        'hotel-restauration' => 'Hotel og restauration',
+        'udlejning-leasing' => 'Udlejning og leasing',
+        'sikkerhed' => 'Sikkerhed',
+        'facility' => 'Facility services',
+        'forretningsservice' => 'Forretningsservice',
+        'sport-fritid' => 'Sport og fritid',
+        'foreninger' => 'Foreninger',
+        'oevrige' => 'Øvrige brancher',
     ];
 
     public function mount(): void
@@ -240,7 +299,7 @@ class CompanySegmentation extends Component
      */
     private function normaliser(): void
     {
-        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'foundedFrom', 'foundedTo'] as $felt) {
+        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'region', 'vertikal', 'foundedFrom', 'foundedTo'] as $felt) {
             $this->{$felt} = is_scalar($this->{$felt}) ? (string) $this->{$felt} : '';
         }
 
@@ -250,6 +309,16 @@ class CompanySegmentation extends Component
 
         if (! array_key_exists($this->groupBy, self::GRUPPERINGER)) {
             $this->groupBy = 'municipality_code';
+        }
+
+        // En ukendt region eller vertikal fra URL'en ville give 422 fra
+        // datalaget. Den falder bort i stedet for at vaelte siden.
+        if (! array_key_exists($this->region, self::REGIONER)) {
+            $this->region = '';
+        }
+
+        if (! array_key_exists($this->vertikal, self::VERTIKALER)) {
+            $this->vertikal = '';
         }
     }
 
@@ -308,7 +377,7 @@ class CompanySegmentation extends Component
      * én aendring bagefter, mens URL'en viste den nye. Nu sendes vaerdien med
      * `wire:model.change`, og komponenten regner selv her.
      */
-    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'];
+    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'region', 'vertikal', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'];
 
     public function updated(string $felt): void
     {
@@ -321,7 +390,7 @@ class CompanySegmentation extends Component
     {
         $this->reset([
             'ivaerksaetter', 'excludeHolding', 'industryPrefix',
-            'municipalityCode', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
+            'municipalityCode', 'region', 'vertikal', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
             'foreslaaetStiftetFra',
         ]);
         $this->segmentér();
@@ -390,6 +459,8 @@ class CompanySegmentation extends Component
             'exclude_holding' => $this->excludeHolding ?: null,
             'industry_prefix' => $this->industryPrefix ?: null,
             'municipality_code' => $this->municipalityCode ?: null,
+            'region' => $this->region ?: null,
+            'vertikal' => $this->vertikal ?: null,
             'founded_from' => $this->foundedFrom ?: null,
             'founded_to' => $this->foundedTo ?: null,
             'fte_min' => $this->fteMin,
@@ -414,6 +485,8 @@ class CompanySegmentation extends Component
         return match ($this->groupBy) {
             'municipality_code' => self::KOMMUNER[$key] ?? "Kommune $key",
             'company_type' => self::SELSKABSFORMER[$key] ?? mb_strtoupper($key),
+            'region' => self::REGIONER[$key] ?? $key,
+            'vertikal' => self::VERTIKALER[$key] ?? $key,
             default => $key,
         };
     }

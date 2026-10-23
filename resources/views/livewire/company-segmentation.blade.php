@@ -122,6 +122,26 @@
                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm mb-4"
                    aria-label="{{ __('Branchekode eller præfiks') }}">
 
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Vertikal') }}</label>
+            <select wire:model.change="vertikal"
+                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-4"
+                    aria-label="{{ __('Vertikal') }}">
+                <option value="">{{ __('Alle vertikaler') }}</option>
+                @foreach($this::VERTIKALER as $vaerdi => $navn)
+                    <option value="{{ $vaerdi }}">{{ __($navn) }}</option>
+                @endforeach
+            </select>
+
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Region') }}</label>
+            <select wire:model.change="region"
+                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-4"
+                    aria-label="{{ __('Region') }}">
+                <option value="">{{ __('Hele landet') }}</option>
+                @foreach($this::REGIONER as $vaerdi => $navn)
+                    <option value="{{ $vaerdi }}">{{ __($navn) }}</option>
+                @endforeach
+            </select>
+
             <label class="block text-sm text-ink-800 mb-1">{{ __('Kommunekode') }}</label>
             <input wire:model.change="municipalityCode" type="text" placeholder="{{ __('fx 101') }}"
                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm mb-4"
