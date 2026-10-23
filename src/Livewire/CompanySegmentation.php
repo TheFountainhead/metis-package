@@ -92,6 +92,16 @@ class CompanySegmentation extends Component
     public ?int $total = null;
 
     /**
+     * Selskaber i totalen UDEN grupperingsnoegle (ingen kommune, branche osv.).
+     *
+     * 🪤 Uden denne linje tav tabellen om dem: fordelt paa region uden filtre
+     *    summede regionerne til 407.349 af 752.949 — 46 % var usynlige, mens
+     *    totalen ovenfor talte dem med (ERST-test 23/10-2026).
+     */
+    #[Locked]
+    public ?int $udenSegmentering = null;
+
+    /**
      * Gruppering og filtre der FAKTISK gav tallene paa skaermen. Listen bruger
      * disse, ikke de aktuelle (klient-skrivbare) filterfelter: et `.blur`-felt
      * kan synce i samme request som klikket og ellers give en liste over en
@@ -183,6 +193,11 @@ class CompanySegmentation extends Component
         '813' => 'Frederikshavn', '820' => 'Vesthimmerlands', '825' => 'Læsø',
         '840' => 'Rebild', '846' => 'Mariagerfjord', '849' => 'Jammerbugt',
         '851' => 'Aalborg', '860' => 'Hjørring',
+        // Grønlandske kommuner med selskaber i CVR. Navnene er CVR's egne
+        // (beliggenhedsadresse.kommune.kommuneNavn), slaaet op 23/10-2026.
+        '955' => 'Kujalleq (Grønland)', '956' => 'Sermersooq (Grønland)',
+        '957' => 'Qeqqata (Grønland)', '959' => 'Qeqertalik (Grønland)',
+        '960' => 'Avannaata (Grønland)',
     ];
 
     public const SELSKABSFORMER = [
@@ -214,6 +229,21 @@ class CompanySegmentation extends Component
     #[Locked]
     public ?string $foreslaaetStiftetFra = null;
 
+    /**
+     * Linjen for selskaber uden grupperingsnoegle. Kun koder der ER koder
+     * vises ved siden af navnet; region og vertikal har interne noegler.
+     */
+    public const UDEN_NOEGLE = [
+        'municipality_code' => 'Uden kommune i CVR',
+        'region' => 'Uden dansk region (ingen kommune i CVR, eller Grønland)',
+        'industry_code' => 'Uden branchekode i CVR',
+        'vertikal' => 'Uden branchekode i CVR',
+        'company_type' => 'Uden selskabsform i CVR',
+    ];
+
+    /** Grupperinger hvis noegle er en officiel kode, der giver mening at vise. */
+    public const VIS_KODE = ['municipality_code', 'industry_code', 'company_type'];
+
     public const GRUPPERINGER = [
         'municipality_code' => 'Kommune',
         'region' => 'Region',
@@ -230,7 +260,7 @@ class CompanySegmentation extends Component
      * 🪤 Noeglerne SKAL matche registry-api's InvestortypeFilter.
      */
     public const INVESTORTYPER = [
-        'angel_eifo' => 'Business angel, EIFO-definitionen',
+        'angel_eifo' => 'Business angel, EIFO-definitionen (uden kravet om runde på 1 mio. kr.)',
         'angel_ekstern' => 'Business angel, alle ikke-stiftere',
         'angel_flere' => 'Business angel, ejer i mindst 3 selskaber',
         'angel_person' => 'Business angel, enhver person',
@@ -244,7 +274,7 @@ class CompanySegmentation extends Component
     public const INVESTORTYPE_FORKLARING = [
         'angel_eifo' => 'Privatperson der ejer under 50 %, direkte eller gennem eget holdingselskab, hverken har stiftet eller driver selskabet, og sidder i bestyrelsen eller leder sit holdingselskab (EIFO, juli 2026). EIFO kræver også mindst én runde på 1 mio. kr.; det led indgår ikke endnu. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
         'angel_ekstern' => 'Privatperson der ejer direkte eller gennem eget holdingselskab og ikke er registreret som stifter. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
-        'angel_flere' => 'Privatperson der ejer andele i mindst 3 selskaber, direkte eller gennem eget holdingselskab.',
+        'angel_flere' => 'Privatperson der ejer andele i mindst 3 selskaber, direkte eller gennem eget holdingselskab. Forbehold: CVR identificerer ikke alle ældre ejere entydigt, så to personer med samme navn kan i enkelte tilfælde tælle som én, og tallet kan være for højt.',
         'angel_person' => 'Enhver privatperson med ejerandel, også stifterne.',
         'venture' => 'Venturefond der ejer under 50 % af selskabet.',
     ];
@@ -267,6 +297,7 @@ class CompanySegmentation extends Component
     public const VERTIKALER = [
         'software' => 'Software og IT',
         'life-science' => 'Life science',
+        'sundhed' => 'Sundhed',
         'forskning-udvikling' => 'Forskning og udvikling',
         'hardware' => 'Hardware og elektronik',
         'telekom' => 'Telekommunikation',
@@ -474,6 +505,7 @@ class CompanySegmentation extends Component
         if (isset($svar['error']) || ! isset($svar['meta']['total'])) {
             $this->grupper = [];
             $this->total = null;
+            $this->udenSegmentering = null;
             $this->ejerdata = null;
             $this->fejl = match (true) {
                 ($svar['error'] ?? null) === 'pilot_required' => 'Segmenteringen kræver en pilotkonto. Skriv til support@frankston.io for adgang.',
@@ -490,6 +522,9 @@ class CompanySegmentation extends Component
         $data = $svar['data'] ?? [];
         $this->grupper = is_array($data) ? $data : [];
         $this->total = (int) $svar['meta']['total'];
+        $this->udenSegmentering = isset($svar['meta']['uden_segmentering'])
+            ? (int) $svar['meta']['uden_segmentering']
+            : null;
         $ejerdata = $svar['meta']['ejerdata'] ?? null;
         $this->ejerdata = is_array($ejerdata) && isset($ejerdata['med'], $ejerdata['af'])
             ? ['med' => (int) $ejerdata['med'], 'af' => (int) $ejerdata['af']]

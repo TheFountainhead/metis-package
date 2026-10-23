@@ -61,11 +61,12 @@ it('nulstil fjerner region og vertikal', function () {
 
 it('har de samme vertikal-noegler som registry-api kender', function () {
     // Spejl af registry-api VerticalMapper (MAPPING-vaerdier + OEVRIGE), 23/10-2026.
+    // 'sundhed' fra registry-api #381 (branche 86 ud af life science).
     // En noegle her som datalaget ikke kender giver 422 og en fejlbesked i stedet for tal.
     $registry = ['byggeri', 'detailhandel', 'ejendom', 'energi', 'engroshandel', 'facility', 'finans', 'foedevarer',
         'foreninger', 'forretningsservice', 'forskning-udvikling', 'hardware', 'hotel-restauration', 'hr', 'industri',
         'kemi', 'landbrug', 'life-science', 'marketing', 'medier', 'miljoe', 'raadgivning', 'raastoffer', 'rejser',
-        'sikkerhed', 'software', 'sport-fritid', 'telekom', 'transport-logistik', 'uddannelse', 'udlejning-leasing', 'oevrige'];
+        'sikkerhed', 'software', 'sport-fritid', 'sundhed', 'telekom', 'transport-logistik', 'uddannelse', 'udlejning-leasing', 'oevrige'];
 
     expect(array_keys(CompanySegmentation::VERTIKALER))->toEqualCanonicalizing($registry);
 });
@@ -97,4 +98,60 @@ it('har de samme investortype-noegler som registry-api kender', function () {
         'angel_eifo', 'angel_ekstern', 'angel_flere', 'angel_person',
         'venture', 'public', 'foundation', 'udenlandsk',
     ]);
+});
+
+it('viser selskaberne uden grupperingsnoegle som egen linje, saa tabellen summer til totalen', function () {
+    // Region uden filtre paa prod 23/10-2026: 407.349 i regionerne, 345.600 uden.
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => '1084', 'label' => 'Region Hovedstaden', 'count' => 600]],
+        'meta' => ['total' => 1000, 'uden_segmentering' => 400],
+    ])]);
+
+    $c = Livewire::test(CompanySegmentation::class)->set('groupBy', 'region');
+
+    $c->assertSet('udenSegmentering', 400)
+        ->assertSeeHtml('data-uden-noegle')
+        ->assertSee('Uden dansk region (ingen kommune i CVR, eller Grønland)')
+        ->assertSee('40,0 %');
+});
+
+it('viser ingen uden-linje naar alle har en noegle', function () {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => '1084', 'label' => 'Region Hovedstaden', 'count' => 7]],
+        'meta' => ['total' => 7, 'uden_segmentering' => 0],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)->set('groupBy', 'region')
+        ->assertDontSeeHtml('data-uden-noegle');
+});
+
+it('viser ikke vertikalens interne noegle ved siden af navnet', function () {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => 'finans', 'label' => 'Finans', 'count' => 7]],
+        'meta' => ['total' => 7, 'uden_segmentering' => 0],
+    ])]);
+
+    // 🪤 "finans" staar ogsaa i dropdownens option-value, saa maal paa spannet.
+    Livewire::test(CompanySegmentation::class)->set('groupBy', 'vertikal')
+        ->assertSee('Finans')
+        ->assertDontSeeHtml('<span class="text-xs text-ink-700/40">finans</span>');
+});
+
+it('viser kommunekoden ved siden af navnet', function () {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => '101', 'label' => null, 'count' => 7]],
+        'meta' => ['total' => 7, 'uden_segmentering' => 0],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)->set('groupBy', 'municipality_code')
+        ->assertSeeHtml('<span class="text-xs text-ink-700/40">101</span>');
+});
+
+it('kender de groenlandske kommuner og sundhed som vertikal', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
+
+    $c = Livewire::test(CompanySegmentation::class)->set('groupBy', 'municipality_code');
+
+    expect($c->instance()->etiket(['key' => '956', 'label' => null]))->toBe('Sermersooq (Grønland)')
+        ->and(CompanySegmentation::VERTIKALER)->toHaveKey('sundhed');
 });
