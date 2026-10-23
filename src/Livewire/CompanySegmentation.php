@@ -237,17 +237,16 @@ class CompanySegmentation extends Component
         'venture' => 'Venturefond',
         'public' => 'Offentlig investor',
         'foundation' => 'Erhvervsdrivende fond',
-        'corporate' => 'Corporate venture',
-        'holding' => 'Holdingselskab',
         'udenlandsk' => 'Udenlandsk ejer',
     ];
 
     /** Uddybning vist under dropdownen for den valgte definition. */
     public const INVESTORTYPE_FORKLARING = [
-        'angel_eifo' => 'Privatperson der ejer direkte eller gennem eget holdingselskab, hverken har stiftet eller driver selskabet, og sidder i bestyrelsen eller leder sit holdingselskab (EIFO, juli 2026). EIFO kræver også mindst én runde på 1 mio. kr.; det led indgår ikke endnu.',
-        'angel_ekstern' => 'Privatperson der ejer direkte eller gennem eget holdingselskab og ikke er registreret som stifter.',
+        'angel_eifo' => 'Privatperson der ejer under 50 %, direkte eller gennem eget holdingselskab, hverken har stiftet eller driver selskabet, og sidder i bestyrelsen eller leder sit holdingselskab (EIFO, juli 2026). EIFO kræver også mindst én runde på 1 mio. kr.; det led indgår ikke endnu. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
+        'angel_ekstern' => 'Privatperson der ejer direkte eller gennem eget holdingselskab og ikke er registreret som stifter. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
         'angel_flere' => 'Privatperson der ejer andele i mindst 3 selskaber, direkte eller gennem eget holdingselskab.',
         'angel_person' => 'Enhver privatperson med ejerandel, også stifterne.',
+        'venture' => 'Venturefond der ejer under 50 % af selskabet.',
     ];
 
     /** Koderne datalaget accepterer (DAGI). Visningsnavnet kommer med i svaret. */

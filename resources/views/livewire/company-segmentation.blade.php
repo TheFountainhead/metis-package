@@ -229,7 +229,7 @@
                         </p>
                         @if($ejerdata)
                             <p class="text-xs text-ink-700/60 mt-1" data-ejerdaekning>
-                                {{ __('Investortype bygger på de :med af :af selskaber i udvalget, hvor ejerne er hentet fra CVR.', [
+                                {{ __('Investortype kendes for de :med af :af selskaber i udvalget, hvor ejerne er registreret. CVR viser kun ejere med mindst 5 %.', [
                                     'med' => number_format($ejerdata['med'], 0, ',', '.'),
                                     'af' => number_format($ejerdata['af'], 0, ',', '.'),
                                 ]) }}

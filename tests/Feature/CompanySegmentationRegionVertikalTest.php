@@ -79,6 +79,7 @@ it('sender investortype og viser ejerdaekningen', function () {
     Livewire::test(CompanySegmentation::class)
         ->set('investortype', 'angel_eifo')
         ->assertSee('13.482 af 117.323')
+        ->assertSee('mindst 5 %')
         ->assertSee('EIFO kræver også mindst én runde');
 
     Http::assertSent(fn ($r) => ($r->data()['investortype'] ?? null) === 'angel_eifo');
@@ -94,6 +95,6 @@ it('har de samme investortype-noegler som registry-api kender', function () {
     // Spejl af registry-api App\Enums\InvestortypeFilter, 23/10-2026.
     expect(array_keys(CompanySegmentation::INVESTORTYPER))->toEqualCanonicalizing([
         'angel_eifo', 'angel_ekstern', 'angel_flere', 'angel_person',
-        'venture', 'public', 'foundation', 'corporate', 'holding', 'udenlandsk',
+        'venture', 'public', 'foundation', 'udenlandsk',
     ]);
 });
