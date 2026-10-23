@@ -37,12 +37,15 @@ it('kan fordele paa region og vertikal og viser navnene', function (string $grou
 it('dropper en ukendt region eller vertikal fra URL-en i stedet for at sende den', function () {
     Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
 
-    Livewire::withQueryParams(['region' => 'Hovedstaden', 'vertikal' => 'fintech'])
+    Livewire::withQueryParams(['region' => 'Hovedstaden', 'vertikal' => 'fintech', 'investortype' => 'familyoffice'])
         ->test(CompanySegmentation::class)
         ->assertSet('region', '')
-        ->assertSet('vertikal', '');
+        ->assertSet('vertikal', '')
+        ->assertSet('investortype', '');
 
-    Http::assertSent(fn ($r) => ! array_key_exists('region', $r->data()) && ! array_key_exists('vertikal', $r->data()));
+    Http::assertSent(fn ($r) => ! array_key_exists('region', $r->data())
+        && ! array_key_exists('vertikal', $r->data())
+        && ! array_key_exists('investortype', $r->data()));
 });
 
 it('nulstil fjerner region og vertikal', function () {
@@ -65,4 +68,32 @@ it('har de samme vertikal-noegler som registry-api kender', function () {
         'sikkerhed', 'software', 'sport-fritid', 'telekom', 'transport-logistik', 'uddannelse', 'udlejning-leasing', 'oevrige'];
 
     expect(array_keys(CompanySegmentation::VERTIKALER))->toEqualCanonicalizing($registry);
+});
+
+it('sender investortype og viser ejerdaekningen', function () {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => 'aps', 'label' => null, 'count' => 212]],
+        'meta' => ['total' => 212, 'ejerdata' => ['med' => 13482, 'af' => 117323]],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('investortype', 'angel_eifo')
+        ->assertSee('13.482 af 117.323')
+        ->assertSee('EIFO kræver også mindst én runde');
+
+    Http::assertSent(fn ($r) => ($r->data()['investortype'] ?? null) === 'angel_eifo');
+});
+
+it('viser ingen ejerdaekning uden investortype', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 5]])]);
+
+    Livewire::test(CompanySegmentation::class)->assertDontSeeHtml('data-ejerdaekning');
+});
+
+it('har de samme investortype-noegler som registry-api kender', function () {
+    // Spejl af registry-api App\Enums\InvestortypeFilter, 23/10-2026.
+    expect(array_keys(CompanySegmentation::INVESTORTYPER))->toEqualCanonicalizing([
+        'angel_eifo', 'angel_ekstern', 'angel_flere', 'angel_person',
+        'venture', 'public', 'foundation', 'corporate', 'holding', 'udenlandsk',
+    ]);
 });
