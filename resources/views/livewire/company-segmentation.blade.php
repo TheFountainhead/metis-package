@@ -275,7 +275,9 @@
                                         @else
                                             {{ $this->etiket($gruppe) }}
                                         @endif
-                                        <span class="text-xs text-ink-700/40">{{ $noegle }}</span>
+                                        @if(in_array($groupBy, $this::VIS_KODE, true))
+                                            <span class="text-xs text-ink-700/40">{{ $noegle }}</span>
+                                        @endif
                                     </td>
                                     <td class="px-4 py-2.5 text-right tabular-nums text-ink-800">
                                         {{ number_format($gruppe['count'] ?? 0, 0, ',', '.') }}
@@ -289,10 +291,34 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="3" class="px-4 py-6 text-center text-ink-700/60">
-                                    {{ __('Ingen selskaber matcher de valgte afgrænsninger.') }}
-                                </td></tr>
+                                {{-- Kun naar der heller ingen er UDEN noegle: ellers stod
+                                     "ingen matcher" over en linje med dem alle (review #209). --}}
+                                @if(($udenSegmentering ?? 0) === 0)
+                                    <tr><td colspan="3" class="px-4 py-6 text-center text-ink-700/60">
+                                        {{ __('Ingen selskaber matcher de valgte afgrænsninger.') }}
+                                    </td></tr>
+                                @endif
                             @endforelse
+
+                            {{-- 🔑 Uden denne linje summer tabellen ikke til totalen, og
+                                 resten er usynlig (region uden filtre: 46 %). --}}
+                            @if(($udenSegmentering ?? 0) > 0)
+                                <tr wire:key="gruppe-uden-noegle" class="border-t border-sand-200 text-ink-700/70" data-uden-noegle>
+                                    <td class="px-4 py-2.5 italic">
+                                        {{ __($this::UDEN_NOEGLE[$groupBy] ?? 'Uden gruppe') }}
+                                    </td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums">
+                                        {{ number_format($udenSegmentering, 0, ',', '.') }}
+                                    </td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums">
+                                        @if($this->andel($udenSegmentering) !== null)
+                                            {{ number_format($this->andel($udenSegmentering), 1, ',', '.') }} %
+                                        @else
+                                            &ndash;
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endif
                         </tbody>
                     </table>
                 </div>
