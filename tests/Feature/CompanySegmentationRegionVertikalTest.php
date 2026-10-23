@@ -155,3 +155,25 @@ it('kender de groenlandske kommuner og sundhed som vertikal', function () {
     expect($c->instance()->etiket(['key' => '956', 'label' => null]))->toBe('Sermersooq (Grønland)')
         ->and(CompanySegmentation::VERTIKALER)->toHaveKey('sundhed');
 });
+
+it('siger ikke "ingen matcher" naar alle selskaber ligger i uden-linjen', function () {
+    // Filter paa kommune 956 (Groenland), fordelt paa region: ingen grupper, 3 uden.
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [],
+        'meta' => ['total' => 3, 'uden_segmentering' => 3],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)->set('groupBy', 'region')
+        ->assertSeeHtml('data-uden-noegle')
+        ->assertDontSee('Ingen selskaber matcher de valgte afgrænsninger.');
+});
+
+it('siger stadig "ingen matcher" naar udvalget er tomt', function () {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [],
+        'meta' => ['total' => 0, 'uden_segmentering' => 0],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->assertSee('Ingen selskaber matcher de valgte afgrænsninger.');
+});

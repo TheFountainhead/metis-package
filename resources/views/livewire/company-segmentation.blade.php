@@ -291,9 +291,13 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="3" class="px-4 py-6 text-center text-ink-700/60">
-                                    {{ __('Ingen selskaber matcher de valgte afgrænsninger.') }}
-                                </td></tr>
+                                {{-- Kun naar der heller ingen er UDEN noegle: ellers stod
+                                     "ingen matcher" over en linje med dem alle (review #209). --}}
+                                @if(($udenSegmentering ?? 0) === 0)
+                                    <tr><td colspan="3" class="px-4 py-6 text-center text-ink-700/60">
+                                        {{ __('Ingen selskaber matcher de valgte afgrænsninger.') }}
+                                    </td></tr>
+                                @endif
                             @endforelse
 
                             {{-- 🔑 Uden denne linje summer tabellen ikke til totalen, og
