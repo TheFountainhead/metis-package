@@ -44,6 +44,24 @@ class CompanySegmentation extends Component
     #[Url(as: 'kommune', except: '')]
     public $municipalityCode = '';
 
+    /** DAGI-regionskode (1081-1085). Utypet af samme grund som de andre #[Url]-felter. */
+    #[Url(as: 'region', except: '')]
+    public $region = '';
+
+    #[Url(as: 'vertikal', except: '')]
+    public $vertikal = '';
+
+    #[Url(as: 'investortype', except: '')]
+    public $investortype = '';
+
+    /**
+     * Hvor mange af udvalget (uden investortype-filteret) ejerne kendes for.
+     * Kun sat naar investortype er valgt. Se registry-api ejerdaekning().
+     *
+     * @var array{med: int, af: int}|null
+     */
+    public ?array $ejerdata = null;
+
     #[Url(as: 'stiftet_fra', except: '')]
     public $foundedFrom = '';
 
@@ -198,8 +216,87 @@ class CompanySegmentation extends Component
 
     public const GRUPPERINGER = [
         'municipality_code' => 'Kommune',
+        'region' => 'Region',
         'industry_code' => 'Branche (DB07)',
+        'vertikal' => 'Vertikal',
         'company_type' => 'Selskabsform',
+    ];
+
+    /**
+     * Investortyper. Business angel kan vaelges efter fire definitioner, fordi
+     * der ikke findes én officiel (Frederik 23/10-2026). EIFO-definitionen er
+     * fra "How business angels shape the Danish startup ecosystem", juli 2026.
+     *
+     * 🪤 Noeglerne SKAL matche registry-api's InvestortypeFilter.
+     */
+    public const INVESTORTYPER = [
+        'angel_eifo' => 'Business angel, EIFO-definitionen',
+        'angel_ekstern' => 'Business angel, alle ikke-stiftere',
+        'angel_flere' => 'Business angel, ejer i mindst 3 selskaber',
+        'angel_person' => 'Business angel, enhver person',
+        'venture' => 'Venturefond',
+        'public' => 'Offentlig investor',
+        'foundation' => 'Erhvervsdrivende fond',
+        'udenlandsk' => 'Udenlandsk ejer',
+    ];
+
+    /** Uddybning vist under dropdownen for den valgte definition. */
+    public const INVESTORTYPE_FORKLARING = [
+        'angel_eifo' => 'Privatperson der ejer under 50 %, direkte eller gennem eget holdingselskab, hverken har stiftet eller driver selskabet, og sidder i bestyrelsen eller leder sit holdingselskab (EIFO, juli 2026). EIFO kræver også mindst én runde på 1 mio. kr.; det led indgår ikke endnu. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
+        'angel_ekstern' => 'Privatperson der ejer direkte eller gennem eget holdingselskab og ikke er registreret som stifter. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
+        'angel_flere' => 'Privatperson der ejer andele i mindst 3 selskaber, direkte eller gennem eget holdingselskab.',
+        'angel_person' => 'Enhver privatperson med ejerandel, også stifterne.',
+        'venture' => 'Venturefond der ejer under 50 % af selskabet.',
+    ];
+
+    /** Koderne datalaget accepterer (DAGI). Visningsnavnet kommer med i svaret. */
+    public const REGIONER = [
+        '1084' => 'Region Hovedstaden',
+        '1085' => 'Region Sjælland',
+        '1083' => 'Region Syddanmark',
+        '1082' => 'Region Midtjylland',
+        '1081' => 'Region Nordjylland',
+    ];
+
+    /**
+     * Vertikalerne datalaget kender, afledt af branchekoden.
+     *
+     * 🪤 Noeglerne SKAL matche registry-api's VerticalMapper. En noegle her som
+     * datalaget ikke kender giver 422, og siden viser fejlen i stedet for tal.
+     */
+    public const VERTIKALER = [
+        'software' => 'Software og IT',
+        'life-science' => 'Life science',
+        'forskning-udvikling' => 'Forskning og udvikling',
+        'hardware' => 'Hardware og elektronik',
+        'telekom' => 'Telekommunikation',
+        'energi' => 'Energi',
+        'miljoe' => 'Miljø og forsyning',
+        'industri' => 'Industri',
+        'kemi' => 'Kemi',
+        'foedevarer' => 'Fødevarer',
+        'landbrug' => 'Landbrug og fiskeri',
+        'raastoffer' => 'Råstoffer',
+        'finans' => 'Finans',
+        'engroshandel' => 'Engroshandel',
+        'detailhandel' => 'Detailhandel',
+        'transport-logistik' => 'Transport og logistik',
+        'medier' => 'Medier og udgivelse',
+        'marketing' => 'Marketing og reklame',
+        'raadgivning' => 'Rådgivning',
+        'hr' => 'HR og rekruttering',
+        'rejser' => 'Rejser',
+        'uddannelse' => 'Uddannelse',
+        'ejendom' => 'Fast ejendom',
+        'byggeri' => 'Byggeri',
+        'hotel-restauration' => 'Hotel og restauration',
+        'udlejning-leasing' => 'Udlejning og leasing',
+        'sikkerhed' => 'Sikkerhed',
+        'facility' => 'Facility services',
+        'forretningsservice' => 'Forretningsservice',
+        'sport-fritid' => 'Sport og fritid',
+        'foreninger' => 'Foreninger',
+        'oevrige' => 'Øvrige brancher',
     ];
 
     public function mount(): void
@@ -240,7 +337,7 @@ class CompanySegmentation extends Component
      */
     private function normaliser(): void
     {
-        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'foundedFrom', 'foundedTo'] as $felt) {
+        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'foundedFrom', 'foundedTo'] as $felt) {
             $this->{$felt} = is_scalar($this->{$felt}) ? (string) $this->{$felt} : '';
         }
 
@@ -250,6 +347,20 @@ class CompanySegmentation extends Component
 
         if (! array_key_exists($this->groupBy, self::GRUPPERINGER)) {
             $this->groupBy = 'municipality_code';
+        }
+
+        // En ukendt region eller vertikal fra URL'en ville give 422 fra
+        // datalaget. Den falder bort i stedet for at vaelte siden.
+        if (! array_key_exists($this->region, self::REGIONER)) {
+            $this->region = '';
+        }
+
+        if (! array_key_exists($this->vertikal, self::VERTIKALER)) {
+            $this->vertikal = '';
+        }
+
+        if (! array_key_exists($this->investortype, self::INVESTORTYPER)) {
+            $this->investortype = '';
         }
     }
 
@@ -308,7 +419,7 @@ class CompanySegmentation extends Component
      * én aendring bagefter, mens URL'en viste den nye. Nu sendes vaerdien med
      * `wire:model.change`, og komponenten regner selv her.
      */
-    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'];
+    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'];
 
     public function updated(string $felt): void
     {
@@ -321,7 +432,7 @@ class CompanySegmentation extends Component
     {
         $this->reset([
             'ivaerksaetter', 'excludeHolding', 'industryPrefix',
-            'municipalityCode', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
+            'municipalityCode', 'region', 'vertikal', 'investortype', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
             'foreslaaetStiftetFra',
         ]);
         $this->segmentér();
@@ -363,6 +474,7 @@ class CompanySegmentation extends Component
         if (isset($svar['error']) || ! isset($svar['meta']['total'])) {
             $this->grupper = [];
             $this->total = null;
+            $this->ejerdata = null;
             $this->fejl = match (true) {
                 ($svar['error'] ?? null) === 'pilot_required' => 'Segmenteringen kræver en pilotkonto. Skriv til support@frankston.io for adgang.',
                 isset($svar['message']) => (string) $svar['message'],
@@ -378,6 +490,10 @@ class CompanySegmentation extends Component
         $data = $svar['data'] ?? [];
         $this->grupper = is_array($data) ? $data : [];
         $this->total = (int) $svar['meta']['total'];
+        $ejerdata = $svar['meta']['ejerdata'] ?? null;
+        $this->ejerdata = is_array($ejerdata) && isset($ejerdata['med'], $ejerdata['af'])
+            ? ['med' => (int) $ejerdata['med'], 'af' => (int) $ejerdata['af']]
+            : null;
         $this->vistGroupBy = $this->groupBy;
         $this->vistFiltre = $this->filtre();
     }
@@ -390,6 +506,9 @@ class CompanySegmentation extends Component
             'exclude_holding' => $this->excludeHolding ?: null,
             'industry_prefix' => $this->industryPrefix ?: null,
             'municipality_code' => $this->municipalityCode ?: null,
+            'region' => $this->region ?: null,
+            'vertikal' => $this->vertikal ?: null,
+            'investortype' => $this->investortype ?: null,
             'founded_from' => $this->foundedFrom ?: null,
             'founded_to' => $this->foundedTo ?: null,
             'fte_min' => $this->fteMin,
@@ -414,6 +533,8 @@ class CompanySegmentation extends Component
         return match ($this->groupBy) {
             'municipality_code' => self::KOMMUNER[$key] ?? "Kommune $key",
             'company_type' => self::SELSKABSFORMER[$key] ?? mb_strtoupper($key),
+            'region' => self::REGIONER[$key] ?? $key,
+            'vertikal' => self::VERTIKALER[$key] ?? $key,
             default => $key,
         };
     }

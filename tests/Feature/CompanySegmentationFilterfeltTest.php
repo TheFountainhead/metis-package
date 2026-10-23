@@ -45,6 +45,9 @@ it('regner paa den nye vaerdi saa snart et filterfelt aendres', function (string
     'stiftet til' => ['foundedTo', '2024-12-31', 'founded_to'],
     'branche' => ['industryPrefix', '62', 'industry_prefix'],
     'kommune' => ['municipalityCode', '101', 'municipality_code'],
+    'region' => ['region', '1084', 'region'],
+    'vertikal' => ['vertikal', 'software', 'vertikal'],
+    'investortype' => ['investortype', 'venture', 'investortype'],
     'aarsvaerk min' => ['fteMin', 2, 'fte_min'],
     'aarsvaerk maks' => ['fteMax', 9, 'fte_max'],
 ]);

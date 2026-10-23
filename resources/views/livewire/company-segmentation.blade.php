@@ -122,6 +122,41 @@
                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm mb-4"
                    aria-label="{{ __('Branchekode eller præfiks') }}">
 
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Investortype blandt ejerne') }}</label>
+            <select wire:model.change="investortype"
+                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-1"
+                    aria-label="{{ __('Investortype') }}">
+                <option value="">{{ __('Alle') }}</option>
+                @foreach($this::INVESTORTYPER as $vaerdi => $navn)
+                    <option value="{{ $vaerdi }}">{{ __($navn) }}</option>
+                @endforeach
+            </select>
+            @if(isset($this::INVESTORTYPE_FORKLARING[$investortype]))
+                <p class="text-xs text-ink-700/60 mb-4">{{ __($this::INVESTORTYPE_FORKLARING[$investortype]) }}</p>
+            @else
+                <div class="mb-4"></div>
+            @endif
+
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Vertikal') }}</label>
+            <select wire:model.change="vertikal"
+                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-4"
+                    aria-label="{{ __('Vertikal') }}">
+                <option value="">{{ __('Alle vertikaler') }}</option>
+                @foreach($this::VERTIKALER as $vaerdi => $navn)
+                    <option value="{{ $vaerdi }}">{{ __($navn) }}</option>
+                @endforeach
+            </select>
+
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Region') }}</label>
+            <select wire:model.change="region"
+                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-4"
+                    aria-label="{{ __('Region') }}">
+                <option value="">{{ __('Hele landet') }}</option>
+                @foreach($this::REGIONER as $vaerdi => $navn)
+                    <option value="{{ $vaerdi }}">{{ __($navn) }}</option>
+                @endforeach
+            </select>
+
             <label class="block text-sm text-ink-800 mb-1">{{ __('Kommunekode') }}</label>
             <input wire:model.change="municipalityCode" type="text" placeholder="{{ __('fx 101') }}"
                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm mb-4"
@@ -192,6 +227,14 @@
                         <p class="text-sm text-ink-700/60">
                             {{ __('selskaber i alt med de valgte afgrænsninger') }}
                         </p>
+                        @if($ejerdata)
+                            <p class="text-xs text-ink-700/60 mt-1" data-ejerdaekning>
+                                {{ __('Investortype kendes for de :med af :af selskaber i udvalget, hvor ejerne er registreret. CVR viser kun ejere med mindst 5 %.', [
+                                    'med' => number_format($ejerdata['med'], 0, ',', '.'),
+                                    'af' => number_format($ejerdata['af'], 0, ',', '.'),
+                                ]) }}
+                            </p>
+                        @endif
                     </div>
 
                     <button wire:click="hentCsv" type="button" wire:loading.attr="disabled" wire:target="hentCsv"
