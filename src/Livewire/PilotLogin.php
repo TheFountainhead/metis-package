@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 use Livewire\Component;
 use TheFountainhead\Metis\Models\MetisLead;
 use TheFountainhead\Metis\Models\MetisPilotAccount;
+use TheFountainhead\Metis\Services\LookupAccess;
 
 /**
  * Log ind for pilotbrugere: mail + kodeord.
@@ -31,7 +32,9 @@ class PilotLogin extends Component
 
     public function mount(): void
     {
-        if (! empty(session('metis_user_token'))) {
+        // Samme regel som segmenteringen: et token alene (fx indtastet under
+        // "Mine alerts") er ikke en pilot. Ellers kører login i ring.
+        if (app(LookupAccess::class)->erPilot()) {
             $this->redirect($this->destination());
         }
     }

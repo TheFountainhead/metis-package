@@ -119,3 +119,27 @@ it('login holder lead-rækken ajour, så piloten forudfyldes og ses i admin', fu
 
     expect(\TheFountainhead\Metis\Models\MetisLead::where('email', 'rasmus@laangiver.test')->value('name'))->toBe('Rasmus Test');
 });
+
+it('et token uden pilotstatus viser formularen i stedet for at sende videre (login-ring)', function () {
+    // Som efter AlertsInbox::setToken(): tokenet står, pilotflaget er fjernet.
+    // Segmenteringen afviser sessionen (LookupAccess::erPilot), så login-siden
+    // må ikke sende brugeren videre, ellers kører det i ring.
+    $this->withSession(['metis_user_token' => '19|indtastet-token'])
+        ->get('/log-ind')
+        ->assertOk()
+        ->assertSee('wire:submit="login"', false);
+});
+
+it('en pilot, der allerede er logget ind, sendes stadig videre fra login-siden', function () {
+    $account = pilotAccount();
+
+    $this->withSession(['metis_user_token' => $account->registry_token, 'metis_pilot_account_id' => $account->id])
+        ->get('/log-ind')
+        ->assertRedirect(route('metis.engagements'));
+
+    $this->flushSession();
+
+    $this->withSession(['metis_user_token' => '19|registry-token-abc', 'metis_pilot_verificeret' => true])
+        ->get('/log-ind')
+        ->assertRedirect(route('metis.engagements'));
+});
