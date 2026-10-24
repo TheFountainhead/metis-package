@@ -94,5 +94,6 @@ it('regner kun én gang naar et felt med eget hook aendres', function (string $f
     'grupper paa' => ['groupBy', 'company_type'],
     'ivaerksaetter' => ['ivaerksaetter', true],
     'uden holding' => ['excludeHolding', true],
+    'medtag ophoerte' => ['inklOphoerte', true],
     'stiftet fra' => ['foundedFrom', '2020-01-01'],
 ]);
