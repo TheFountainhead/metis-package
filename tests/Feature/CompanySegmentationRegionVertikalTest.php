@@ -177,3 +177,11 @@ it('siger stadig "ingen matcher" naar udvalget er tomt', function () {
     Livewire::test(CompanySegmentation::class)
         ->assertSee('Ingen selskaber matcher de valgte afgrænsninger.');
 });
+
+it('forklarer at "ejer i mindst 3 selskaber" kun taeller entydigt identificerede ejere', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
+
+    Livewire::test(CompanySegmentation::class)->set('investortype', 'angel_flere')
+        ->assertSee('Kun ejerskaber, hvor CVR identificerer personen entydigt, tæller med')
+        ->assertDontSee('tallet kan være for højt');
+});
