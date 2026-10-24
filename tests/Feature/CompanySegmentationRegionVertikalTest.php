@@ -185,3 +185,62 @@ it('forklarer at "ejer i mindst 3 selskaber" kun taeller entydigt identificerede
         ->assertSee('Kun ejerskaber, hvor CVR identificerer personen entydigt, tæller med')
         ->assertDontSee('tallet kan være for højt');
 });
+
+it('sender fintech-filteret til datalaget', function (string $vaerdi) {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 3]])]);
+
+    Livewire::test(CompanySegmentation::class)->set('fintech', $vaerdi);
+
+    Http::assertSent(fn ($r) => ($r->data()['fintech'] ?? null) === $vaerdi);
+})->with(['reguleret', 'udledt']);
+
+it('dropper en ukendt fintech-vaerdi fra URL-en i stedet for at sende den', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
+
+    Livewire::withQueryParams(['fintech' => 'krypto'])
+        ->test(CompanySegmentation::class)
+        ->assertSet('fintech', '');
+
+    Http::assertSent(fn ($r) => ! array_key_exists('fintech', $r->data()));
+});
+
+it('nulstil fjerner fintech-filteret', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('fintech', 'udledt')
+        ->call('nulstil')
+        ->assertSet('fintech', '');
+});
+
+it('viser forklaringen under fintech-dropdownen for det valgte', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->assertDontSee('Crowdfunding indgår ikke endnu')
+        ->set('fintech', 'reguleret')
+        ->assertSee('Crowdfunding indgår ikke endnu')
+        ->assertDontSee('Den udledte del er et skøn')
+        ->set('fintech', 'udledt')
+        ->assertSee('Den udledte del er et skøn');
+});
+
+it('har de samme fintech-noegler som registry-api kender', function () {
+    // Spejl af registry-api Rule::in(['reguleret', 'udledt']), 24/10-2026.
+    // En noegle her som datalaget ikke kender giver 422.
+    expect(array_keys(CompanySegmentation::FINTECH))->toEqualCanonicalizing(['reguleret', 'udledt']);
+    expect(array_keys(CompanySegmentation::FINTECH_FORKLARING))->toEqualCanonicalizing(['reguleret', 'udledt']);
+});
+
+it('har fintech som den SIDSTE offentlige property', function () {
+    // 🚨 Livewire 3.8's klient-diff sender hele komponenten under stien "" naar
+    // noeglernes raekkefoelge afviger. En property indsat i midten gav 500
+    // "Public property [$] not found" paa aabne faner hen over et deploy
+    // (prod 23/10-2026). Nye properties skal i bunden.
+    $props = array_values(array_filter(
+        (new ReflectionClass(CompanySegmentation::class))->getProperties(ReflectionProperty::IS_PUBLIC),
+        fn (ReflectionProperty $p) => ! $p->isStatic() && $p->getDeclaringClass()->getName() === CompanySegmentation::class,
+    ));
+
+    expect(end($props)->getName())->toBe('fintech');
+});

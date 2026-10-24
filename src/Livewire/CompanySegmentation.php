@@ -230,6 +230,16 @@ class CompanySegmentation extends Component
     public ?string $foreslaaetStiftetFra = null;
 
     /**
+     * 🚨 SKAL staa SIDST blandt de offentlige properties. Livewire 3.8's
+     * klient-diff sender hele komponenten under stien "" naar noeglernes
+     * RAEKKEFOELGE afviger, saa en property indsat i midten gav 500 "Public
+     * property [$] not found" paa faner der stod aabne hen over et deploy
+     * (maalt i prod 23/10-2026). Nye properties tilfoejes derfor i bunden.
+     */
+    #[Url(as: 'fintech', except: '')]
+    public $fintech = '';
+
+    /**
      * Linjen for selskaber uden grupperingsnoegle. Kun koder der ER koder
      * vises ved siden af navnet; region og vertikal har interne noegler.
      */
@@ -278,6 +288,21 @@ class CompanySegmentation extends Component
         'angel_flere' => 'Privatperson der ejer andele i mindst 3 selskaber, direkte eller gennem eget holdingselskab. Kun ejerskaber, hvor CVR identificerer personen entydigt, tæller med, så personer med samme navn ikke lægges sammen. Ejerskaber uden den identifikation tæller ikke, så tallet kan være for lavt.',
         'angel_person' => 'Enhver privatperson med ejerandel, også stifterne.',
         'venture' => 'Venturefond der ejer under 50 % af selskabet.',
+    ];
+
+    /**
+     * Fintech-afgraensning. 🪤 Noeglerne SKAL matche registry-api's
+     * Rule::in(['reguleret', 'udledt']); alt andet giver 422.
+     */
+    public const FINTECH = [
+        'reguleret' => 'Fintech, reguleret',
+        'udledt' => 'Fintech, reguleret + udledt af formål',
+    ];
+
+    /** Uddybning vist under dropdownen for den valgte afgraensning. */
+    public const FINTECH_FORKLARING = [
+        'reguleret' => 'Selskaber med tilladelse som betalingsinstitut, e-pengeinstitut eller kontooplysningstjeneste (EBA\'s register) eller som udbyder af kryptoaktivtjenester (ESMA\'s MiCA-register), matchet på CVR. Gavekort- og brændstofkortordninger undtaget fra betalingsloven tæller ikke med. Crowdfunding indgår ikke endnu.',
+        'udledt' => 'De regulerede plus softwarevirksomheder (branche 62, 63.1 og 58.2), hvis registrerede formål i CVR nævner fx betaling, finansiering, lån, forsikring eller kryptovaluta. Den udledte del er et skøn ud fra formålsteksten og kan have fejltræf.',
     ];
 
     /** Koderne datalaget accepterer (DAGI). Visningsnavnet kommer med i svaret. */
@@ -369,7 +394,7 @@ class CompanySegmentation extends Component
      */
     private function normaliser(): void
     {
-        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'foundedFrom', 'foundedTo'] as $felt) {
+        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo'] as $felt) {
             $this->{$felt} = is_scalar($this->{$felt}) ? (string) $this->{$felt} : '';
         }
 
@@ -393,6 +418,10 @@ class CompanySegmentation extends Component
 
         if (! array_key_exists($this->investortype, self::INVESTORTYPER)) {
             $this->investortype = '';
+        }
+
+        if (! array_key_exists($this->fintech, self::FINTECH)) {
+            $this->fintech = '';
         }
     }
 
@@ -451,7 +480,7 @@ class CompanySegmentation extends Component
      * én aendring bagefter, mens URL'en viste den nye. Nu sendes vaerdien med
      * `wire:model.change`, og komponenten regner selv her.
      */
-    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'];
+    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'];
 
     public function updated(string $felt): void
     {
@@ -464,7 +493,7 @@ class CompanySegmentation extends Component
     {
         $this->reset([
             'ivaerksaetter', 'excludeHolding', 'industryPrefix',
-            'municipalityCode', 'region', 'vertikal', 'investortype', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
+            'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
             'foreslaaetStiftetFra',
         ]);
         $this->segmentér();
@@ -545,6 +574,7 @@ class CompanySegmentation extends Component
             'region' => $this->region ?: null,
             'vertikal' => $this->vertikal ?: null,
             'investortype' => $this->investortype ?: null,
+            'fintech' => $this->fintech ?: null,
             'founded_from' => $this->foundedFrom ?: null,
             'founded_to' => $this->foundedTo ?: null,
             'fte_min' => $this->fteMin,
