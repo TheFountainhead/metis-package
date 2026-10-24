@@ -232,7 +232,7 @@ it('har de samme fintech-noegler som registry-api kender', function () {
     expect(array_keys(CompanySegmentation::FINTECH_FORKLARING))->toEqualCanonicalizing(['reguleret', 'udledt']);
 });
 
-it('har fintech som den SIDSTE offentlige property', function () {
+it('har inklOphoerte som den SIDSTE offentlige property', function () {
     // 🚨 Livewire 3.8's klient-diff sender hele komponenten under stien "" naar
     // noeglernes raekkefoelge afviger. En property indsat i midten gav 500
     // "Public property [$] not found" paa aabne faner hen over et deploy
@@ -242,5 +242,57 @@ it('har fintech som den SIDSTE offentlige property', function () {
         fn (ReflectionProperty $p) => ! $p->isStatic() && $p->getDeclaringClass()->getName() === CompanySegmentation::class,
     ));
 
-    expect(end($props)->getName())->toBe('fintech');
+    expect(end($props)->getName())->toBe('inklOphoerte');
+});
+
+it('sender inkl_ophoerte=true kun naar fluebenet er sat', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 3]])]);
+
+    Livewire::test(CompanySegmentation::class)->call('segmentér');
+    Http::assertSent(fn ($r) => ! array_key_exists('inkl_ophoerte', $r->data()));
+    Http::assertNotSent(fn ($r) => array_key_exists('inkl_ophoerte', $r->data()));
+
+    Livewire::test(CompanySegmentation::class)->set('inklOphoerte', true);
+    Http::assertSent(fn ($r) => ($r->data()['inkl_ophoerte'] ?? null) === true);
+});
+
+it('sender ikke inkl_ophoerte naar fluebenet fjernes igen', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 3]])]);
+
+    $c = Livewire::test(CompanySegmentation::class)->set('inklOphoerte', true);
+    expect($c->instance()->filtre())->toHaveKey('inkl_ophoerte', true);
+
+    $c->set('inklOphoerte', false);
+    expect($c->instance()->filtre())->not->toHaveKey('inkl_ophoerte');
+});
+
+it('laeser inkl_ophoerte fra URL-en og sender den', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 3]])]);
+
+    Livewire::withQueryParams(['inkl_ophoerte' => '1'])
+        ->test(CompanySegmentation::class)
+        ->call('segmentér')
+        ->assertSet('inklOphoerte', true);
+
+    Http::assertSent(fn ($r) => ($r->data()['inkl_ophoerte'] ?? null) === true);
+});
+
+it('nulstil fjerner inkl_ophoerte', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
+
+    $c = Livewire::test(CompanySegmentation::class)
+        ->set('inklOphoerte', true)
+        ->call('nulstil')
+        ->assertSet('inklOphoerte', false);
+
+    expect($c->instance()->filtre())->not->toHaveKey('inkl_ophoerte');
+});
+
+it('viser fluebenet "Medtag ophørte selskaber" med forklaring', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 0]])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->assertSee('Medtag ophørte selskaber')
+        ->assertSee('Som standard tæller kun selskaber, der findes i CVR i dag.')
+        ->assertSeeHtml('wire:model.live="inklOphoerte"');
 });

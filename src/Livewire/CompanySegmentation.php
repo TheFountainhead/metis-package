@@ -240,6 +240,17 @@ class CompanySegmentation extends Component
     public $fintech = '';
 
     /**
+     * Medtag selskaber der ikke laengere findes i CVR. registry-api udelader
+     * dem som standard (maalt 23/10-2026: ~344.000 af 752.949 var ophoerte og
+     * pustede totaler og andele op). Utypet af samme grund som de andre
+     * #[Url]-felter; `normaliser()` tvinger den til bool.
+     *
+     * 🚨 SKAL staa SIDST blandt de offentlige properties (se `$fintech`).
+     */
+    #[Url(as: 'inkl_ophoerte', except: false)]
+    public $inklOphoerte = false;
+
+    /**
      * Linjen for selskaber uden grupperingsnoegle. Kun koder der ER koder
      * vises ved siden af navnet; region og vertikal har interne noegler.
      */
@@ -423,6 +434,9 @@ class CompanySegmentation extends Component
         if (! array_key_exists($this->fintech, self::FINTECH)) {
             $this->fintech = '';
         }
+
+        $this->inklOphoerte = is_scalar($this->inklOphoerte)
+            && filter_var($this->inklOphoerte, FILTER_VALIDATE_BOOLEAN);
     }
 
     /** Livewire-hook: kaldes automatisk naar $groupBy aendres. */
@@ -471,6 +485,15 @@ class CompanySegmentation extends Component
     }
 
     /**
+     * Eget hook som de andre afkrydsningsfelter: FILTERFELTER er listen over
+     * `wire:model.change`-felter (vaernet i CompanySegmentationFilterfeltTest).
+     */
+    public function updatedInklOphoerte(): void
+    {
+        $this->segmentér();
+    }
+
+    /**
      * Felterne der regner, naar de faar en ny vaerdi.
      *
      * 🚨 Foer 13/10-2026 var de bundet med `wire:model.blur` + et separat
@@ -494,7 +517,7 @@ class CompanySegmentation extends Component
         $this->reset([
             'ivaerksaetter', 'excludeHolding', 'industryPrefix',
             'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
-            'foreslaaetStiftetFra',
+            'inklOphoerte', 'foreslaaetStiftetFra',
         ]);
         $this->segmentér();
     }
@@ -579,6 +602,7 @@ class CompanySegmentation extends Component
             'founded_to' => $this->foundedTo ?: null,
             'fte_min' => $this->fteMin,
             'fte_max' => $this->fteMax,
+            'inkl_ophoerte' => $this->inklOphoerte ?: null,
         ], fn ($v) => $v !== null && $v !== '');
     }
 

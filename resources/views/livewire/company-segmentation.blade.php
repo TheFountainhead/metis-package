@@ -111,10 +111,19 @@
                 </span>
             </label>
 
-            <label class="flex items-start gap-2 mb-4 cursor-pointer">
+            <label class="flex items-start gap-2 mb-3 cursor-pointer">
                 <input type="checkbox" wire:model.live="excludeHolding"
                        class="mt-0.5 rounded border-sand-300 text-warm-500 focus:ring-warm-500/30">
                 <span class="text-sm text-ink-800">{{ __('Uden holdingselskaber') }}</span>
+            </label>
+
+            <label class="flex items-start gap-2 mb-4 cursor-pointer">
+                <input type="checkbox" wire:model.live="inklOphoerte"
+                       class="mt-0.5 rounded border-sand-300 text-warm-500 focus:ring-warm-500/30">
+                <span class="text-sm text-ink-800">
+                    {{ __('Medtag ophørte selskaber') }}
+                    <span class="block text-xs text-ink-700/50">{{ __('Som standard tæller kun selskaber, der findes i CVR i dag. Sæt flueben for fx at tælle iværksættere stiftet i en periode, også dem der siden er lukket.') }}</span>
+                </span>
             </label>
 
             <label class="block text-sm text-ink-800 mb-1">{{ __('Branche (DB07)') }}</label>
