@@ -232,7 +232,7 @@ it('har de samme fintech-noegler som registry-api kender', function () {
     expect(array_keys(CompanySegmentation::FINTECH_FORKLARING))->toEqualCanonicalizing(['reguleret', 'udledt']);
 });
 
-it('har inklOphoerte som den SIDSTE offentlige property', function () {
+it('har inklOphoerte og derefter kun de nyere properties i bunden', function () {
     // 🚨 Livewire 3.8's klient-diff sender hele komponenten under stien "" naar
     // noeglernes raekkefoelge afviger. En property indsat i midten gav 500
     // "Public property [$] not found" paa aabne faner hen over et deploy
@@ -242,7 +242,13 @@ it('har inklOphoerte som den SIDSTE offentlige property', function () {
         fn (ReflectionProperty $p) => ! $p->isStatic() && $p->getDeclaringClass()->getName() === CompanySegmentation::class,
     ));
 
-    expect(end($props)->getName())->toBe('inklOphoerte');
+    // Kapitalfelterne (#udviklingsstadie) kom til EFTER inklOphoerte, i bunden.
+    $navne = array_map(fn (ReflectionProperty $p) => $p->getName(), $props);
+
+    expect(array_slice($navne, array_search('inklOphoerte', $navne, true)))->toBe([
+        'inklOphoerte', 'kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax',
+        'senesteForhoejelseFra', 'senesteForhoejelseTil', 'udenKapitalhistorik',
+    ]);
 });
 
 it('sender inkl_ophoerte=true kun naar fluebenet er sat', function () {

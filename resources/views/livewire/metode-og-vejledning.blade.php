@@ -55,6 +55,7 @@
                 <li><a href="#investortype" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Investortype blandt ejerne</a></li>
                 <li><a href="#stoerrelse" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Årsværk og stiftelsesdato</a></li>
                 <li><a href="#kapital" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Kapitalhistorik</a></li>
+                <li><a href="#udviklingsstadie" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Kapital (udviklingsstadie)</a></li>
             </ol>
         </nav>
 
@@ -70,7 +71,7 @@
                 </li>
                 <li>
                     <strong>Vælg fordeling.</strong> Under <em>Fordel på</em> vælger du, hvordan selskaberne skal fordeles:
-                    kommune, region, branche, vertikal eller selskabsform.
+                    kommune, region, branche, vertikal, selskabsform eller antal kapitalforhøjelser.
                 </li>
                 <li>
                     <strong>Afgræns.</strong> Brug filtrene i venstre side. Tallet opdateres, når du ændrer et filter.
@@ -90,7 +91,15 @@
                 <li>
                     <strong>Hent til Excel.</strong> Knappen <em>Hent til Excel (CSV)</em> henter fordelingen som en fil, der kan åbnes direkte i Excel.
                     Filen har kode, betegnelse og antal for hver gruppe. Nederst står totalen, hvor mange der er uden gruppe,
-                    om ophørte selskaber er med, og den valgte investortype eller fintech-afgrænsning, hvis du har valgt en.
+                    om ophørte selskaber er med, og den valgte investortype, fintech-afgrænsning eller de valgte kapitalfiltre, hvis du har valgt nogen.
+                </li>
+                <li>
+                    <strong>Hent selskabslisten.</strong> Knappen <em>Hent selskabslisten (CSV)</em> henter selskaberne bag hele det viste udvalg.
+                    Har du åbnet listen bag et tal i tabellen, henter <em>Hent til Excel (CSV)</em> over listen kun selskaberne i den gruppe.
+                    Begge filer bruger de samme afgrænsninger som tallene på skærmen og har én række pr. selskab med CVR-nummer, navn, selskabsform,
+                    kommune, branche, stiftelsesdato, højeste årsværk og status i CVR. Rækkerne står med flest årsværk først.
+                    En fil har højst 10.000 selskaber. Er udvalget større, står der <em>AFKORTET</em> nederst i filen, og filnavnet ender på <em>-afkortet.csv</em>.
+                    Nederst står også gruppen, antallet af selskaber i udvalget, antallet af rækker i filen og de afgrænsninger, du har valgt.
                 </li>
                 <li>
                     <strong>Gem eller del et udvalg.</strong> Adressen i browseren indeholder dine valg. Gem linket for at komme tilbage til samme udvalg.
@@ -294,7 +303,11 @@
                         <li>ejer under 50 %,</li>
                         <li>og enten ejer gennem sit personlige holdingselskab eller sidder i selskabets bestyrelse.</li>
                     </ul>
-                    <span class="block mt-1">EIFO kræver også mindst én kapitalrunde på 1 mio. kr. Det led indgår ikke, fordi kapitalrunderne ikke er samlet på tværs af selskaber.</span>
+                    <span class="block mt-1">
+                        EIFO kræver også mindst én kapitalrunde på 1 mio. kr. Det led er ikke en del af investortype-filteret.
+                        Du kan kombinere filteret med <em>Rejst kapital i alt</em> under kapitalfiltrene (afsnit 10). Vær opmærksom på, at det filter lægger alle
+                        kendte forhøjelser sammen og ikke ser på den enkelte runde, at beløbet er en nedre grænse, og at kun selskaber med hentet kapitalhistorik tæller med.
+                    </span>
                 </li>
                 <li><strong>Alle ikke-stiftere.</strong> En person, der ejer direkte eller gennem sit personlige holdingselskab, og som ikke er stifter af selskabet.</li>
                 <li>
@@ -352,11 +365,36 @@
                     Koblingen mellem en ejer og en runde er udledt af datoen. CVR siger ikke direkte, hvem der deltog i en runde.
                     Kun ejere i ejerregistret indgår, og ejere registreres i CVR fra 5 %.
                 </li>
+                <li>
+                    <strong>Udenlandske ejere</strong> vises med land og enhedstype, fx <em>Sverige · selskab/fond</em>, både i ejergrafen og ved rundens ejerændringer,
+                    hvor der står <em>Udenlandsk ejer</em> foran. Navnet vises som tekst uden link, fordi en udenlandsk ejer ikke har et dansk CVR-nummer.
+                    Koblingen mellem den udenlandske ejer og runden er udledt af datoen på samme måde som for andre ejere.
+                </li>
             </ul>
             <p>
                 <strong>Omsætning.</strong> For virksomheder i regnskabsklasse B offentliggøres nettoomsætningen ikke (årsregnskabsloven § 138, stk. 6).
                 De fleste små og nye selskaber er i klasse B. For dem er bruttofortjenesten typisk det tal, der findes i det offentlige regnskab.
             </p>
+        </section>
+
+        {{-- 10. Kapital (udviklingsstadie). Reglerne staar i registry-api
+             CompanySegmentation::medKapital() og applyFilters(). --}}
+        <section id="udviklingsstadie" class="scroll-mt-20">
+            <h2 class="text-lg font-semibold text-ink-800 mb-3">10. Kapital (udviklingsstadie)</h2>
+            <p class="mb-3">
+                CVR registrerer ikke, hvilket udviklingsstadie et selskab er i. Filtrene under <em>Kapital (udviklingsstadie)</em> viser derfor kun det,
+                der kan ses i registret: hvor mange gange selskabet har forhøjet sin kapital, hvor meget der er rejst, og hvornår den seneste forhøjelse var.
+                Du kan også fordele selskaberne på antal kapitalforhøjelser.
+            </p>
+            <ul class="list-disc pl-5 space-y-2 mb-3">
+                <li><strong>En kapitalforhøjelse</strong> er en registreret stigning i selskabskapitalen efter stiftelsen. Stiftelsen, kapitalnedsættelser og ændringer uden ny kapital tæller ikke.</li>
+                <li><strong>Fondsforhøjelser tæller ikke</strong>, fordi der ikke kommer nye penge ind. Mangler registreringsteksten, kan vi ikke se, om det var en fondsforhøjelse, og så tæller forhøjelsen med.</li>
+                <li><strong>Rejst kapital</strong> er summen af beløbene for kapitalforhøjelserne. Beløbet står i registreringsteksten, og den mangler for mange ældre forhøjelser. En forhøjelse uden beløb tæller som 0 kr. Rejst kapital er derfor en nedre grænse. Kun beløb i kroner lægges sammen. Selskaber med kapital i en anden valuta tæller med i antallet af forhøjelser, men ikke i rejst kapital.</li>
+                <li><strong>Intern kapital er med.</strong> Gældskonvertering, apportindskud og kapital fra et moderselskab tæller som rejst kapital på samme måde som kontante indskud. Vi skiller dem ikke ad endnu. Også store, etablerede selskaber kan have store forhøjelser.</li>
+                <li><strong>Seneste kapitalforhøjelse</strong> er datoen for den seneste forhøjelse, der tæller. Begge datoer er med. Selskaber uden forhøjelser har ingen dato og er ikke med, når du bruger datofilteret.</li>
+                <li><strong>Kun selskaber med hentet kapitalhistorik.</strong> Kapitalhistorikken hentes for iværksætterpopulationen, ikke for alle selskaber. Bruger du et kapitalfilter, tæller kun selskaber, hvor den er hentet, så et ukendt selskab ikke ser ud som et selskab uden forhøjelser. Siden viser, hvor mange selskaber i udvalget der er udeladt af den grund.</li>
+                <li><strong>Fordel på kapitalforhøjelser</strong> giver grupperne <em>Ingen efter stiftelse</em>, <em>1</em>, <em>2-3</em>, <em>4-6</em> og <em>7 eller flere</em>. Selskaber uden hentet kapitalhistorik står på linjen <em>Kapitalhistorik ikke hentet</em>.</li>
+            </ul>
         </section>
 
         <p class="text-xs text-ink-700/50 border-t border-sand-200 pt-4">

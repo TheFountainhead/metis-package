@@ -251,6 +251,42 @@ class CompanySegmentation extends Component
     public $inklOphoerte = false;
 
     /**
+     * Kapital (udviklingsstadie), ERST krav 2. CVR har ingen stadier som
+     * pre-seed eller seed; filtrene viser kun det der kan observeres: antal
+     * kapitalforhoejelser efter stiftelse, rejst beloeb og seneste dato.
+     * Utypede af samme grund som de andre #[Url]-felter.
+     *
+     * 🚨 SKAL staa SIDST blandt de offentlige properties (se `$fintech`).
+     */
+    #[Url(as: 'kapitalforhoejelser_min', except: null)]
+    public $kapitalforhoejelserMin = null;
+
+    #[Url(as: 'kapitalforhoejelser_maks', except: null)]
+    public $kapitalforhoejelserMax = null;
+
+    #[Url(as: 'rejst_min', except: null)]
+    public $rejstMin = null;
+
+    #[Url(as: 'rejst_maks', except: null)]
+    public $rejstMax = null;
+
+    #[Url(as: 'seneste_forhoejelse_fra', except: '')]
+    public $senesteForhoejelseFra = '';
+
+    #[Url(as: 'seneste_forhoejelse_til', except: '')]
+    public $senesteForhoejelseTil = '';
+
+    /**
+     * Selskaber i udvalget (uden kapitalfiltrene) der er udeladt, fordi
+     * kapitalhistorikken ikke er hentet. Kun sat med kapitalfilter.
+     *
+     * 🪤 Uden tallet laeses "40 selskaber har rejst over 5 mio." som en
+     * paastand om hele udvalget (registry-api meta.uden_kapitalhistorik).
+     */
+    #[Locked]
+    public ?int $udenKapitalhistorik = null;
+
+    /**
      * Linjen for selskaber uden grupperingsnoegle. Kun koder der ER koder
      * vises ved siden af navnet; region og vertikal har interne noegler.
      */
@@ -260,6 +296,7 @@ class CompanySegmentation extends Component
         'industry_code' => 'Uden branchekode i CVR',
         'vertikal' => 'Uden branchekode i CVR',
         'company_type' => 'Uden selskabsform i CVR',
+        'kapitalforhoejelser' => 'Kapitalhistorik ikke hentet',
     ];
 
     /** Grupperinger hvis noegle er en officiel kode, der giver mening at vise. */
@@ -271,6 +308,19 @@ class CompanySegmentation extends Component
         'industry_code' => 'Branche (DB25)',
         'vertikal' => 'Vertikal',
         'company_type' => 'Selskabsform',
+        'kapitalforhoejelser' => 'Kapitalforhøjelser',
+    ];
+
+    /**
+     * Grupperne for kapitalforhoejelser. 🪤 Noeglerne SKAL matche registry-api's
+     * CompanySegmentation::KAPITAL_ETIKETTER. API'et sender ogsaa selv navnet.
+     */
+    public const KAPITALGRUPPER = [
+        '0' => 'Ingen efter stiftelse',
+        '1' => '1',
+        '2-3' => '2-3',
+        '4-6' => '4-6',
+        '7-plus' => '7 eller flere',
     ];
 
     /**
@@ -405,12 +455,18 @@ class CompanySegmentation extends Component
      */
     private function normaliser(): void
     {
-        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo'] as $felt) {
+        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'senesteForhoejelseFra', 'senesteForhoejelseTil'] as $felt) {
             $this->{$felt} = is_scalar($this->{$felt}) ? (string) $this->{$felt} : '';
         }
 
         foreach (['fteMin', 'fteMax'] as $felt) {
             $this->{$felt} = is_numeric($this->{$felt}) ? (int) $this->{$felt} : null;
+        }
+
+        // Et negativt antal eller beloeb giver 422 fra datalaget; det falder
+        // bort i stedet for at vaelte siden.
+        foreach (['kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax'] as $felt) {
+            $this->{$felt} = is_numeric($this->{$felt}) && $this->{$felt} >= 0 ? (int) $this->{$felt} : null;
         }
 
         if (! array_key_exists($this->groupBy, self::GRUPPERINGER)) {
@@ -503,7 +559,8 @@ class CompanySegmentation extends Component
      * én aendring bagefter, mens URL'en viste den nye. Nu sendes vaerdien med
      * `wire:model.change`, og komponenten regner selv her.
      */
-    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax'];
+    private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
+        'kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax', 'senesteForhoejelseFra', 'senesteForhoejelseTil'];
 
     public function updated(string $felt): void
     {
@@ -518,6 +575,7 @@ class CompanySegmentation extends Component
             'ivaerksaetter', 'excludeHolding', 'industryPrefix',
             'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
             'inklOphoerte', 'foreslaaetStiftetFra',
+            'kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax', 'senesteForhoejelseFra', 'senesteForhoejelseTil',
         ]);
         $this->segmentér();
     }
@@ -560,6 +618,7 @@ class CompanySegmentation extends Component
             $this->total = null;
             $this->udenSegmentering = null;
             $this->ejerdata = null;
+            $this->udenKapitalhistorik = null;
             $this->fejl = match (true) {
                 ($svar['error'] ?? null) === 'pilot_required' => 'Segmenteringen kræver en pilotkonto. Skriv til support@frankston.io for adgang.',
                 isset($svar['message']) => (string) $svar['message'],
@@ -582,6 +641,9 @@ class CompanySegmentation extends Component
         $this->ejerdata = is_array($ejerdata) && isset($ejerdata['med'], $ejerdata['af'])
             ? ['med' => (int) $ejerdata['med'], 'af' => (int) $ejerdata['af']]
             : null;
+        $this->udenKapitalhistorik = isset($svar['meta']['uden_kapitalhistorik'])
+            ? (int) $svar['meta']['uden_kapitalhistorik']
+            : null;
         $this->vistGroupBy = $this->groupBy;
         $this->vistFiltre = $this->filtre();
     }
@@ -603,6 +665,12 @@ class CompanySegmentation extends Component
             'fte_min' => $this->fteMin,
             'fte_max' => $this->fteMax,
             'inkl_ophoerte' => $this->inklOphoerte ?: null,
+            'kapitalforhoejelser_min' => $this->kapitalforhoejelserMin,
+            'kapitalforhoejelser_max' => $this->kapitalforhoejelserMax,
+            'rejst_min' => $this->rejstMin,
+            'rejst_max' => $this->rejstMax,
+            'seneste_forhoejelse_fra' => $this->senesteForhoejelseFra ?: null,
+            'seneste_forhoejelse_til' => $this->senesteForhoejelseTil ?: null,
         ], fn ($v) => $v !== null && $v !== '');
     }
 
@@ -625,6 +693,7 @@ class CompanySegmentation extends Component
             'company_type' => self::SELSKABSFORMER[$key] ?? mb_strtoupper($key),
             'region' => self::REGIONER[$key] ?? $key,
             'vertikal' => self::VERTIKALER[$key] ?? $key,
+            'kapitalforhoejelser' => self::KAPITALGRUPPER[$key] ?? $key,
             default => $key,
         };
     }

@@ -105,3 +105,27 @@ it('🚨 embedded: /metis/metode er lukket uden login', function () {
 
     $this->get('/metis/metode')->assertRedirect('/login');
 });
+
+it('beskriver kapitalfiltrene, selskabslisten og udenlandske ejere', function () {
+    config()->set('metis.gating.enabled', false);
+
+    $this->get('/metode')->assertOk()
+        // Kapital (udviklingsstadie)
+        ->assertSee('id="udviklingsstadie"', false)
+        ->assertSee('Fondsforhøjelser tæller ikke')
+        ->assertSee('Rejst kapital er derfor en nedre grænse')
+        ->assertSee('Gældskonvertering, apportindskud og kapital fra et moderselskab')
+        ->assertSee('Kun selskaber med hentet kapitalhistorik')
+        ->assertSee('Kapitalhistorik ikke hentet')
+        ->assertDontSee('seed')
+        // Selskabslisten (#215)
+        ->assertSee('Hent selskabslisten (CSV)')
+        ->assertSee('-afkortet.csv')
+        ->assertSee('højst 10.000 selskaber')
+        // EIFO: ikke laengere "ikke samlet paa tvaers"
+        ->assertDontSee('ikke er samlet på tværs af selskaber')
+        ->assertSee('Det led er ikke en del af investortype-filteret')
+        // Udenlandske ejere (#214)
+        ->assertSee('Sverige · selskab/fond')
+        ->assertSee('Udenlandsk ejer');
+});
