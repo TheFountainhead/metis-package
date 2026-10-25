@@ -81,7 +81,7 @@
                 </li>
                 <li>
                     <strong>Læs resultatet.</strong> Det store tal er alle selskaber med de valgte afgrænsninger.
-                    Tabellen viser de største grupper med antal og andel. Selskaber uden en værdi for den valgte fordeling
+                    Tabellen viser de største grupper med antal og andel. Tælles koncerner, vises ingen andel, fordi en koncern kan tælle i flere grupper. Selskaber uden en værdi for den valgte fordeling
                     står på en særskilt linje nederst, fx <em>Uden kommune i CVR</em>.
                 </li>
                 <li>

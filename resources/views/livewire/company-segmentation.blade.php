@@ -389,7 +389,10 @@
                             <tr>
                                 <th class="px-4 py-2.5 font-semibold text-ink-800">{{ __($this::GRUPPERINGER[$groupBy] ?? 'Gruppe') }}</th>
                                 <th class="px-4 py-2.5 font-semibold text-ink-800 text-right">{{ __('Antal') }}</th>
+                                {{-- Ingen andel paa koncernniveau: grupperne overlapper (se andel()). --}}
+                                @if($vistNiveau !== 'koncern')
                                 <th class="px-4 py-2.5 font-semibold text-ink-800 text-right">{{ __('Andel') }}</th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody wire:loading.class="opacity-40">
@@ -414,6 +417,7 @@
                                     <td class="px-4 py-2.5 text-right tabular-nums text-ink-800">
                                         {{ number_format($gruppe['count'] ?? 0, 0, ',', '.') }}
                                     </td>
+                                    @if($vistNiveau !== 'koncern')
                                     <td class="px-4 py-2.5 text-right tabular-nums text-ink-700/60">
                                         @if($this->andel($gruppe['count'] ?? 0) !== null)
                                             {{ number_format($this->andel($gruppe['count'] ?? 0), 1, ',', '.') }} %
@@ -421,12 +425,13 @@
                                             &ndash;
                                         @endif
                                     </td>
+                                    @endif
                                 </tr>
                             @empty
                                 {{-- Kun naar der heller ingen er UDEN noegle: ellers stod
                                      "ingen matcher" over en linje med dem alle (review #209). --}}
                                 @if(($udenSegmentering ?? 0) === 0)
-                                    <tr><td colspan="3" class="px-4 py-6 text-center text-ink-700/60">
+                                    <tr><td colspan="{{ $vistNiveau === 'koncern' ? 2 : 3 }}" class="px-4 py-6 text-center text-ink-700/60">
                                         {{ __('Ingen selskaber matcher de valgte afgrænsninger.') }}
                                     </td></tr>
                                 @endif
@@ -442,6 +447,7 @@
                                     <td class="px-4 py-2.5 text-right tabular-nums">
                                         {{ number_format($udenSegmentering, 0, ',', '.') }}
                                     </td>
+                                    @if($vistNiveau !== 'koncern')
                                     <td class="px-4 py-2.5 text-right tabular-nums">
                                         @if($this->andel($udenSegmentering) !== null)
                                             {{ number_format($this->andel($udenSegmentering), 1, ',', '.') }} %
@@ -449,6 +455,7 @@
                                             &ndash;
                                         @endif
                                     </td>
+                                    @endif
                                 </tr>
                             @endif
                         </tbody>
