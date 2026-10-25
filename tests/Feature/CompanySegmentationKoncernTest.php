@@ -106,3 +106,28 @@ it('sender det VISTE niveau med til CSV-linket', function () {
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/company-segmentation/export-link')
         && ($r->data()['niveau'] ?? null) === 'koncern');
 });
+
+it('kalder kapitaldaekningen koncerner paa koncernniveau', function () {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => '751', 'label' => null, 'count' => 40]],
+        'meta' => ['total' => 90, 'niveau' => 'koncern', 'uden_kapitalhistorik' => 12, 'uden_kendt_beloeb' => 3],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('niveau', 'koncern')
+        ->set('rejstMax', 1000000)
+        ->assertSee('12 koncerner i udvalget er udeladt')
+        ->assertSee('3 koncerner er udeladt');
+});
+
+it('kalder kapitaldaekningen selskaber paa selskabsniveau', function () {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => '751', 'label' => null, 'count' => 40]],
+        'meta' => ['total' => 90, 'niveau' => 'selskab', 'uden_kapitalhistorik' => 12, 'uden_kendt_beloeb' => 3],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('rejstMax', 1000000)
+        ->assertSee('12 selskaber i udvalget er udeladt')
+        ->assertSee('3 selskaber er udeladt');
+});

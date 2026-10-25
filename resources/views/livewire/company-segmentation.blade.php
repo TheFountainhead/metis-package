@@ -341,15 +341,18 @@
                         @endif
                         @if($udenKapitalhistorik !== null)
                             <p class="text-xs text-ink-700/60 mt-1" data-kapitaldaekning>
-                                {{ __('Kun selskaber, hvor kapitalhistorikken er hentet. :antal selskaber i udvalget er udeladt, fordi den ikke er hentet.', [
+                                {{ __('Kun selskaber, hvor kapitalhistorikken er hentet. :antal :enhed i udvalget er udeladt, fordi den ikke er hentet.', [
                                     'antal' => number_format($udenKapitalhistorik, 0, ',', '.'),
+                                    // Datalaget taeller tallet paa samme niveau som totalen.
+                                    'enhed' => $vistNiveau === 'koncern' ? __('koncerner') : __('selskaber'),
                                 ]) }}
                             </p>
                         @endif
                         @if($udenKendtBeloeb !== null)
                             <p class="text-xs text-ink-700/60 mt-1" data-kendt-beloeb>
-                                {{ __('Højst rejst kapital tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner. :antal selskaber er udeladt, fordi et beløb mangler eller er i en anden valuta.', [
+                                {{ __('Højst rejst kapital tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner. :antal :enhed er udeladt, fordi et beløb mangler eller er i en anden valuta.', [
                                     'antal' => number_format($udenKendtBeloeb, 0, ',', '.'),
+                                    'enhed' => $vistNiveau === 'koncern' ? __('koncerner') : __('selskaber'),
                                 ]) }}
                             </p>
                         @endif
