@@ -185,6 +185,12 @@
     .mgraph-node__usage {
         font-family: var(--fm); font-size: 11px; color: var(--ink-3);
     }
+    /* Land + enhedstype på en udenlandsk ejer. Noden er 210px bred, så et
+       langt landenavn afkortes; den fulde tekst ligger i title. */
+    .mgraph-node__foreign {
+        font-family: var(--fm); font-size: 11px; color: var(--ink-3);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    }
     /* fase 2a.2 enrichment: value aggregate (properties rolled up onto an
        owner node) + signal icons (negative equity / newly founded / no
        financials yet). Same mono/ink-3 treatment as the other meta rows —

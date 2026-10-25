@@ -93,3 +93,32 @@ it('renders Phase 2 amounts, valuations, payment types and chart island', functi
         ->assertSee(__('Seneste implied valuation'))
         ->assertSeeHtml('data-metis-funding-chart');
 });
+
+it('marks a foreign owner entering at a round with Danish country name and entity type (ERST krav 1.5)', function () {
+    $history = fakeFundingHistory();
+    $history['data']['rounds'][1]['owner_changes'] = [
+        ['date' => '2020-10-23', 'owner' => 'Caesar Ventures Fund I GmbH', 'cvr' => '4000123456', 'share_pct' => 12.0, 'until' => null, 'is_company' => true, 'country' => 'DE', 'unit_type' => 'ANDEN_DELTAGER'],
+        ['date' => '2020-10-23', 'owner' => 'Venture Fond K/S', 'cvr' => '12345678', 'share_pct' => 18.0, 'until' => null, 'is_company' => true, 'country' => null, 'unit_type' => null],
+    ];
+    Http::fake(['*company/41527080/funding-history*' => Http::response($history)]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertSee('Udenlandsk ejer: Tyskland · selskab/fond')
+        // CVR's noegle for en udenlandsk deltager er ikke et dansk CVR: intet link.
+        ->assertDontSeeHtml('lookup/cvr/4000123456')
+        // Den danske ejer i samme runde er uaendret: link, ingen markering.
+        ->assertSeeHtml('lookup/cvr/12345678')
+        ->assertSee('Ejer-ændringerne er udledt');
+
+    // Praecis én markering: den danske ejer faar ingen.
+    $html = Livewire::test(CompanyFunding::class, ['query' => '41527080'])->html();
+    expect(substr_count($html, 'Udenlandsk ejer:'))->toBe(1);
+});
+
+it('does not mark owners when the API sends no country (registry-api before krav 1.5)', function () {
+    Http::fake(['*company/41527080/funding-history*' => Http::response(fakeFundingHistory())]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertDontSee('Udenlandsk ejer:')
+        ->assertSeeHtml('lookup/person/Stifter%20Stiftersen');
+});
