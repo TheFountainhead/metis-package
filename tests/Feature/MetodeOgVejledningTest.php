@@ -137,7 +137,7 @@ it('beskriver koncernreglen som den er bygget', function () {
     $this->get('/metode')->assertOk()
         ->assertSee('Selskaber og koncerner')
         ->assertSee('ejer mindst 66,67 % af selskabet')
-        ->assertSee('ejer 50 % og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har 50 % eller mere.')
+        ->assertSee('ejer 50 % og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har en kendt andel på 50 % eller mere.')
         ->assertSee('Er det øverste moderselskab udenlandsk eller en person, stopper kæden ved det øverste danske selskab.')
         ->assertSee('kontrol gennem flere mindre ejerandele')
         ->assertSee('højst 10 led');

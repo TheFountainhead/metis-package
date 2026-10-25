@@ -413,11 +413,11 @@
             <p class="mb-2">Et dansk selskab er moderselskab, når det i dag er registreret som ejer i CVR og</p>
             <ul class="list-disc pl-5 space-y-2 mb-3">
                 <li>ejer mindst 66,67 % af selskabet, eller</li>
-                <li>ejer 50 % og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har 50 % eller mere.</li>
+                <li>ejer 50 % og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har en kendt andel på 50 % eller mere.</li>
             </ul>
             <p class="mb-3">
                 CVR oplyser ejerandele i intervaller. "50 %" betyder mellem 50 % og 66,66 % og kan være præcis halvdelen.
-                Derfor tæller en ejer med 50 % kun, når ingen anden ejer har lige så meget. Ejer to parter hver 50 %, har selskabet intet moderselskab.
+                Derfor tæller en ejer med 50 % kun, når ingen anden ejer har lige så meget. Ejer to parter hver 50 %, har selskabet intet moderselskab. En ejer, hvis andel ikke står i CVR, regnes ikke med her.
                 Opfylder flere danske selskaber reglen (typisk fordi et gammelt ejerskab ikke er afsluttet i CVR), bruges det selskab, hvis ejerskab senest er begyndt.
                 Kan det ikke afgøres, får selskabet intet moderselskab.
             </p>
@@ -425,7 +425,7 @@
             <ul class="list-disc pl-5 space-y-2 mb-3">
                 <li>Vi følger moderselskaberne opad, højst 10 led. Det øverste danske selskab er koncernens top.</li>
                 <li>Er det øverste moderselskab udenlandsk eller en person, stopper kæden ved det øverste danske selskab.</li>
-                <li>Ejer selskaberne hinanden i ring (A ejer B, og B ejer A), regnes de alle til samme koncern.</li>
+                <li>Ejer selskaberne hinanden i ring (A ejer B, og B ejer A), regnes de alle til samme koncern, også når ringen har mere end 10 led.</li>
             </ul>
             <p class="mb-3">
                 <strong>Ikke med:</strong> kontrol gennem flere mindre ejerandele, fx to datterselskaber der hver ejer 40 % af et tredje selskab.
