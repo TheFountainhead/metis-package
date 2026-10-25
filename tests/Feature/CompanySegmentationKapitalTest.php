@@ -96,7 +96,7 @@ it('kan fordele paa kapitalforhoejelser med "Kapitalhistorik ikke hentet" som ud
     Http::fake(['*/company-segmentation' => Http::response([
         'data' => [
             ['key' => '0', 'label' => 'Ingen efter stiftelse', 'count' => 60],
-            ['key' => '7-plus', 'label' => '7 eller flere', 'count' => 10],
+            ['key' => '7plus', 'label' => '7 eller flere', 'count' => 10],
         ],
         'meta' => ['total' => 100, 'uden_segmentering' => 30],
     ])]);
@@ -107,7 +107,7 @@ it('kan fordele paa kapitalforhoejelser med "Kapitalhistorik ikke hentet" som ud
         ->assertSee('Kapitalhistorik ikke hentet')
         ->assertSee('30,0 %');
     // Navnet ogsaa uden API'ets label, og ingen intern noegle ved siden af.
-    expect($c->instance()->etiket(['key' => '7-plus', 'label' => null]))->toBe('7 eller flere')
+    expect($c->instance()->etiket(['key' => '4til6', 'label' => null]))->toBe('4 til 6')
         ->and(CompanySegmentation::VIS_KODE)->not->toContain('kapitalforhoejelser');
 
     Http::assertSent(fn ($r) => ($r->data()['group_by'] ?? null) === 'kapitalforhoejelser');
@@ -116,7 +116,7 @@ it('kan fordele paa kapitalforhoejelser med "Kapitalhistorik ikke hentet" som ud
 it('har de samme kapitalgruppe-noegler som registry-api', function () {
     // Spejl af registry-api CompanySegmentation::KAPITAL_ETIKETTER (#392).
     expect(CompanySegmentation::KAPITALGRUPPER)->toBe([
-        '0' => 'Ingen efter stiftelse', '1' => '1', '2-3' => '2-3', '4-6' => '4-6', '7-plus' => '7 eller flere',
+        '0' => 'Ingen efter stiftelse', '1' => '1', '2til3' => '2 til 3', '4til6' => '4 til 6', '7plus' => '7 eller flere',
     ]);
 });
 
@@ -139,4 +139,32 @@ it('🚨 et array i en kapitaldato fra URL-en giver ikke 500', function () {
         ->test(CompanySegmentation::class)
         ->assertSet('senesteForhoejelseFra', '')
         ->assertSet('senesteForhoejelseTil', '');
+});
+
+it('viser hvor mange rejst-maks udelod paa grund af ukendt beloeb', function () {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [],
+        'meta' => ['total' => 3, 'uden_kapitalhistorik' => 0, 'uden_kendt_beloeb' => 4567],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('rejstMax', 1000000)
+        ->assertSet('udenKendtBeloeb', 4567)
+        ->assertSeeHtml('data-kendt-beloeb')
+        ->assertSee('4.567 selskaber er udeladt');
+});
+
+it('viser ingen ukendt-beloeb-linje uden rejst-maks', function () {
+    Http::fake(['*/company-segmentation' => Http::response(['data' => [], 'meta' => ['total' => 3, 'uden_kendt_beloeb' => null]])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->assertSet('udenKendtBeloeb', null)
+        ->assertDontSeeHtml('data-kendt-beloeb');
+});
+
+it('har ingen gruppenavne som dansk Excel ville laese som en dato', function () {
+    foreach (CompanySegmentation::KAPITALGRUPPER as $noegle => $navn) {
+        expect((string) $noegle)->not->toMatch('/^\d{1,2}[-\/.]\d{1,2}$/')
+            ->and($navn)->not->toMatch('/^\d{1,2}[-\/.]\d{1,2}$/');
+    }
 });

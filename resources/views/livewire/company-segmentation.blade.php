@@ -322,6 +322,13 @@
                                 ]) }}
                             </p>
                         @endif
+                        @if($udenKendtBeloeb !== null)
+                            <p class="text-xs text-ink-700/60 mt-1" data-kendt-beloeb>
+                                {{ __('Højst rejst kapital tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner. :antal selskaber er udeladt, fordi et beløb mangler eller er i en anden valuta.', [
+                                    'antal' => number_format($udenKendtBeloeb, 0, ',', '.'),
+                                ]) }}
+                            </p>
+                        @endif
                     </div>
 
                     <div class="flex flex-wrap items-center gap-2">

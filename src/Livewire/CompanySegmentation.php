@@ -287,6 +287,14 @@ class CompanySegmentation extends Component
     public ?int $udenKapitalhistorik = null;
 
     /**
+     * Selskaber "Rejst kapital, maks" udelod, fordi mindst én forhoejelse har
+     * ukendt beloeb eller anden valuta end kroner (registry-api
+     * meta.uden_kendt_beloeb). Kun sat med rejst-maks.
+     */
+    #[Locked]
+    public ?int $udenKendtBeloeb = null;
+
+    /**
      * Linjen for selskaber uden grupperingsnoegle. Kun koder der ER koder
      * vises ved siden af navnet; region og vertikal har interne noegler.
      */
@@ -318,9 +326,9 @@ class CompanySegmentation extends Component
     public const KAPITALGRUPPER = [
         '0' => 'Ingen efter stiftelse',
         '1' => '1',
-        '2-3' => '2-3',
-        '4-6' => '4-6',
-        '7-plus' => '7 eller flere',
+        '2til3' => '2 til 3',
+        '4til6' => '4 til 6',
+        '7plus' => '7 eller flere',
     ];
 
     /**
@@ -619,6 +627,7 @@ class CompanySegmentation extends Component
             $this->udenSegmentering = null;
             $this->ejerdata = null;
             $this->udenKapitalhistorik = null;
+            $this->udenKendtBeloeb = null;
             $this->fejl = match (true) {
                 ($svar['error'] ?? null) === 'pilot_required' => 'Segmenteringen kræver en pilotkonto. Skriv til support@frankston.io for adgang.',
                 isset($svar['message']) => (string) $svar['message'],
@@ -643,6 +652,9 @@ class CompanySegmentation extends Component
             : null;
         $this->udenKapitalhistorik = isset($svar['meta']['uden_kapitalhistorik'])
             ? (int) $svar['meta']['uden_kapitalhistorik']
+            : null;
+        $this->udenKendtBeloeb = isset($svar['meta']['uden_kendt_beloeb'])
+            ? (int) $svar['meta']['uden_kendt_beloeb']
             : null;
         $this->vistGroupBy = $this->groupBy;
         $this->vistFiltre = $this->filtre();

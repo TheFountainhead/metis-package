@@ -247,7 +247,7 @@ it('har inklOphoerte og derefter kun de nyere properties i bunden', function () 
 
     expect(array_slice($navne, array_search('inklOphoerte', $navne, true)))->toBe([
         'inklOphoerte', 'kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax',
-        'senesteForhoejelseFra', 'senesteForhoejelseTil', 'udenKapitalhistorik',
+        'senesteForhoejelseFra', 'senesteForhoejelseTil', 'udenKapitalhistorik', 'udenKendtBeloeb',
     ]);
 });
 
