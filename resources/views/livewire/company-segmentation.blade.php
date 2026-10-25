@@ -130,7 +130,7 @@
                 </span>
             </label>
 
-            <label class="block text-sm text-ink-800 mb-1">{{ __('Branche (DB07)') }}</label>
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Branche (DB25)') }}</label>
             <input wire:model.change="industryPrefix" type="text" placeholder="{{ __('fx 62') }}"
                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm mb-4"
                    aria-label="{{ __('Branchekode eller præfiks') }}">
@@ -352,7 +352,7 @@
                 </div>
 
                 <p class="text-xs text-ink-700/50 mt-3">
-                    {{ __('Klik på et navn for at se selskaberne bag tallet. Kilde: Det Centrale Virksomhedsregister (CVR). Branchekoder er registrets egne DB07-koder.') }}
+                    {{ __('Klik på et navn for at se selskaberne bag tallet. Kilde: Det Centrale Virksomhedsregister (CVR). Branchekoder er registrets egne koder efter Dansk Branchekode 2025 (DB25).') }}
                     @if(Route::has('metis.metode'))
                         <a href="{{ route('metis.metode') }}" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">{{ __('Sådan er tallene dannet') }}</a>
                     @endif

@@ -268,7 +268,7 @@ class CompanySegmentation extends Component
     public const GRUPPERINGER = [
         'municipality_code' => 'Kommune',
         'region' => 'Region',
-        'industry_code' => 'Branche (DB07)',
+        'industry_code' => 'Branche (DB25)',
         'vertikal' => 'Vertikal',
         'company_type' => 'Selskabsform',
     ];

@@ -155,7 +155,7 @@
         <section id="branche" class="scroll-mt-20">
             <h2 class="text-lg font-semibold text-ink-800 mb-3">5. Branche og vertikaler</h2>
             <ul class="list-disc pl-5 space-y-2 mb-4">
-                <li><strong>Branche</strong> er selskabets hovedbranche i CVR efter Danmarks Statistiks branchekoder (DB07). I filteret kan du skrive starten af en kode: <em>62</em> giver alle koder, der begynder med 62, og <em>62.01</em> giver kun dem, der begynder med 62.01.</li>
+                <li><strong>Branche</strong> er selskabets hovedbranche i CVR efter Dansk Branchekode 2025 (DB25). I filteret kan du skrive starten af en kode: <em>62</em> giver alle koder, der begynder med 62, og <em>62.10</em> giver kun dem, der begynder med 62.10 (computerprogrammering).</li>
                 <li><strong>Uden holdingselskaber</strong> udelader selskaber med branchekode 64.21 (holdingselskaber). Selskaber uden branchekode bliver.</li>
             </ul>
             <h3 class="font-semibold mb-2">Vertikaler</h3>
@@ -236,7 +236,7 @@
                         <tr class="border-t border-sand-200"><td class="px-4 py-2">Lån</td><td class="px-4 py-2">udlån, forbrugslån, billån, studielån, boliglån, låneplatform, låneformidling, lånetjeneste, lending, crowdlending</td></tr>
                         <tr class="border-t border-sand-200"><td class="px-4 py-2">Kredit</td><td class="px-4 py-2">kreditvurdering, kreditgivning, kreditformidling, kreditydelse, kreditscore</td></tr>
                         <tr class="border-t border-sand-200"><td class="px-4 py-2">Forsikring</td><td class="px-4 py-2">forsikringsløsning, forsikringstjeneste, forsikringsplatform, forsikringsformidling, forsikringsteknologi, forsikringssoftware, forsikringsbranche, insurtech</td></tr>
-                        <tr class="border-t border-sand-200"><td class="px-4 py-2">Krypto</td><td class="px-4 py-2">kryptovaluta, kryptoaktiv, kryptomønt, cryptocurrency, crypto asset, bitcoin, blockchainbaseret betaling</td></tr>
+                        <tr class="border-t border-sand-200"><td class="px-4 py-2">Krypto</td><td class="px-4 py-2">kryptovaluta, kryptoaktiv, kryptomønt, cryptocurrency, crypto asset, bitcoin, blockchainbaserede betalinger</td></tr>
                         <tr class="border-t border-sand-200"><td class="px-4 py-2">Valuta</td><td class="px-4 py-2">valutahandel, valutaveksling</td></tr>
                         <tr class="border-t border-sand-200"><td class="px-4 py-2">Crowdfunding</td><td class="px-4 py-2">crowdfunding</td></tr>
                         <tr class="border-t border-sand-200"><td class="px-4 py-2">E-penge</td><td class="px-4 py-2">e-penge, elektroniske penge</td></tr>
@@ -245,7 +245,14 @@
                     </tbody>
                 </table>
             </div>
-            <p class="mb-1">Ordene tæller også som del af et længere ord. Nogle ord tæller bevidst ikke alene:</p>
+            <p class="mb-2">
+                Store og små bogstaver er ligegyldige. De fleste ord tæller også som del af et længere ord, fx <em>mobilbetalingsløsning</em>. Undtagelserne er:
+                <em>payment</em>, <em>payments</em> og <em>lending</em> tæller kun som hele ord.
+                <em>fintech</em> tæller kun i begyndelsen af et ord, fx <em>fintechløsning</em>.
+                <em>betalinger</em> tæller kun i slutningen af et ord, fx <em>kortbetalinger</em>.
+                <em>blockchainbaserede betalinger</em> tæller også med bindestreg (<em>blockchain-baserede</em>), men ikke i ental (<em>blockchainbaseret betaling</em>).
+            </p>
+            <p class="mb-1">Nogle ord tæller bevidst ikke alene:</p>
             <ul class="list-disc pl-5 space-y-1">
                 <li><em>finansiering</em>, <em>investering</em> og <em>finansiel virksomhed</em>, fordi de står i mange almindelige formål, fx "drive handel, industri og finansiel virksomhed".</li>
                 <li><em>lån</em>, <em>krypto</em> og <em>pension</em>, fordi de også indgår i ord som "lån af værktøj", "kryptografi" og "pensionat".</li>
@@ -261,7 +268,7 @@
                 Et selskab kan have flere investortyper.
             </p>
             <ul class="list-disc pl-5 space-y-1 mb-4">
-                <li>CVR viser kun ejere med mindst 5 %. Mindre ejere indgår ikke.</li>
+                <li>CVR's ejerregister viser kun ejere med mindst 5 %. Mindre ejere indgår ikke. Interessenter i et interessentskab (I/S) står i CVR som ejere uanset deres andel og tæller derfor med.</li>
                 <li>Kun selskaber, hvor vi kender ejerne, kan have en investortype. Når du vælger en investortype, viser siden, hvor mange af selskaberne i udvalget ejerne kendes for.</li>
                 <li>Ejerandelen mangler for nogle ejerskaber i CVR. Hvor en regel kræver en andel under 50 %, tæller en ukendt andel ikke.</li>
             </ul>

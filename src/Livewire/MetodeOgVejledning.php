@@ -22,7 +22,7 @@ use TheFountainhead\Metis\Services\LookupAccess;
 class MetodeOgVejledning extends Component
 {
     /**
-     * Branchekoder (DB07-praefikser) pr. vertikal, som i registry-api's
+     * Branchekode-praefikser pr. vertikal, som i registry-api's
      * VerticalMapper::MAPPING. Det laengste praefiks vinder.
      *
      * 🪤 Noeglerne SKAL vaere de samme som CompanySegmentation::VERTIKALER;
