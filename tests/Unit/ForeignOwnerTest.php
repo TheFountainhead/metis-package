@@ -24,6 +24,11 @@ it('falls back to intl for a country outside the fixed table', function () {
     expect(ForeignOwner::countryName('BR'))->toBe('Brasilien');
 })->skip(! class_exists(Locale::class), 'intl ikke installeret');
 
+it('prefers the fixed table over intl, so names do not depend on the server', function () {
+    // intl siger "SAR Hongkong"; tabellen siger det, folk skriver.
+    expect(ForeignOwner::countryName('HK'))->toBe('Hongkong');
+});
+
 it('shows the code rather than nothing for an unknown country', function () {
     expect(ForeignOwner::countryName('XX'))->toBe('XX')
         ->and(ForeignOwner::countryName(null))->toBeNull()
