@@ -33,6 +33,13 @@
         <div class="mgraph-node__meta" x-show="node.cvr" x-cloak>
             <span class="mgraph-node__cvr" x-text="node.cvr"></span>
         </div>
+        {{-- Udenlandsk ejer (ERST krav 1.5): land + enhedstype i meta-linjen,
+             som ellers er tom, fordi en udenlandsk ejer intet CVR har. Samme
+             ?? ''-fallback som de andre x-text'er: Alpine evaluerer dem på
+             ALLE noder, også dem uden foreign_label. --}}
+        <div class="mgraph-node__meta" x-show="node.kind === 'foreign' && node.foreign_label" x-cloak>
+            <span class="mgraph-node__foreign" x-text="node.foreign_label ?? ''" :title="node.foreign_label ?? ''"></span>
+        </div>
         {{-- Property meta rows: BFE + anvendelse (rows omitted when null).
              Optional chaining + ?? fallback on the x-text expressions too, not
              just the x-show guards: Alpine evaluates x-text on every node

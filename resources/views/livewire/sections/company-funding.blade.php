@@ -100,12 +100,21 @@
                                         {{-- 🪤 Procenten maa ALDRIG rives fra sit navn: en linje der
                                              begynder med "→ 15%" hoerer visuelt til ejeren OVENOVER.
                                              `whitespace-nowrap` paa pilen+tallet holder dem samlet. --}}
+                                        {{-- Udenlandsk ejer (ERST krav 1.5): navnet som ren tekst, for
+                                             CVR's noegle for en udenlandsk deltager er ikke et dansk CVR, og
+                                             et navneopslag ville finde danske personer. Land + enhedstype
+                                             staar paa linjen under. --}}
                                         <div class="mb-0.5 last:mb-0">
-                                            @if($oc['cvr'] ?? null)
+                                            @if($oc['foreign_label'] ?? null)
+                                                <span class="text-zinc-700 dark:text-zinc-300">{{ $oc['owner'] }}</span>
+                                            @elseif($oc['cvr'] ?? null)
                                                 <x-metis-link type="cvr" :query="$oc['cvr']" :label="$oc['owner']" />
                                             @else
                                                 <x-metis-link type="person" :query="$oc['owner']" />
                                             @endif<span class="whitespace-nowrap"> → {{ number_format($oc['share_pct'], $oc['share_pct'] == (int) $oc['share_pct'] ? 0 : 2, ',', '.') }}%</span>
+                                            @if($oc['foreign_label'] ?? null)
+                                                <div class="text-[11px] text-[#7a1f1f] dark:text-red-300">{{ __('Udenlandsk ejer') }}: {{ $oc['foreign_label'] }}</div>
+                                            @endif
                                         </div>
                                     @empty
                                         -
@@ -117,7 +126,7 @@
                 </table>
             </div>
             <p class="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 italic">
-                {{ __('Kilde:') }} {{ __('CVR-registrets kapitalhistorik og registreringstekster (kurs ved kapitalændringer). Implied valuation antager hele kapitalen prissat til rundens kurs; reelle vilkår som præferencer og warrants kan afvige. Beløb er indbetalt kapital, ikke omsætning.') }}
+                {{ __('Kilde:') }} {{ __('CVR-registrets kapitalhistorik og registreringstekster (kurs ved kapitalændringer). Implied valuation antager hele kapitalen prissat til rundens kurs; reelle vilkår som præferencer og warrants kan afvige. Beløb er indbetalt kapital, ikke omsætning. Ejer-ændringerne er udledt: de er registreret samme dato som kapitalændringen, men CVR oplyser ikke, hvem der tegnede kapitalen.') }}
             </p>
         </flux:card>
 
