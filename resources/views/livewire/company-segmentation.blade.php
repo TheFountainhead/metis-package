@@ -93,7 +93,7 @@
                        ).replace(':felt', etiket).replace(':dato', dato.split('-').reverse().join('.'));
                    },
                }"
-               x-effect="$wire.foundedFrom; $wire.foundedTo; $nextTick(() => synkAlle())">
+               x-effect="$wire.foundedFrom; $wire.foundedTo; $wire.senesteForhoejelseFra; $wire.senesteForhoejelseTil; $nextTick(() => synkAlle())">
             <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3">{{ __('Fordel på') }}</h2>
             <select wire:model.live="groupBy"
                     class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-5"
@@ -218,7 +218,7 @@
                            aria-label="{{ __('Stiftet til') }}">
                 </div>
                 <div id="halv-dato-{{ $this->getId() }}" role="status" aria-live="polite" class="mt-1 text-xs text-red-700">
-                    <template x-for="felt in halve" :key="felt">
+                    <template x-for="felt in halve.filter(f => ! f.startsWith('seneste'))" :key="felt">
                         <p data-halv-dato-hint x-text="hint(felt)"></p>
                     </template>
                 </div>
@@ -233,6 +233,58 @@
                        class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
                        aria-label="{{ __('Højeste antal årsværk') }}">
             </div>
+
+            {{-- Kapital (ERST krav 2, udviklingsstadier). Kun det CVR viser:
+                 antal forhoejelser, beloeb og dato. Ingen stadie-betegnelser.
+                 Med et af felterne udfyldt taeller kun selskaber, hvor
+                 kapitalhistorikken er hentet; siden siger hvor mange der faldt ud. --}}
+            <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3" data-kapitalfiltre>{{ __('Kapital (udviklingsstadie)') }}</h2>
+
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Kapitalforhøjelser efter stiftelse') }}</label>
+            <div class="flex gap-2 mb-4">
+                <input wire:model.change.number="kapitalforhoejelserMin" type="number" min="0" placeholder="{{ __('min') }}"
+                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
+                       aria-label="{{ __('Mindste antal kapitalforhøjelser') }}">
+                <input wire:model.change.number="kapitalforhoejelserMax" type="number" min="0" placeholder="{{ __('maks') }}"
+                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
+                       aria-label="{{ __('Højeste antal kapitalforhøjelser') }}">
+            </div>
+
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Rejst kapital i alt (kr.)') }}</label>
+            <div class="flex gap-2 mb-1">
+                <input wire:model.change.number="rejstMin" type="number" min="0" step="1" placeholder="{{ __('min') }}"
+                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
+                       aria-label="{{ __('Mindst rejst kapital i kr.') }}">
+                <input wire:model.change.number="rejstMax" type="number" min="0" step="1" placeholder="{{ __('maks') }}"
+                       class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-sm"
+                       aria-label="{{ __('Højst rejst kapital i kr.') }}">
+            </div>
+            <p class="text-xs text-ink-700/50 mb-4">{{ __('Kendte beløb lagt sammen. Beløbet mangler for mange ældre forhøjelser, så tallet er en nedre grænse.') }}</p>
+
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Seneste kapitalforhøjelse mellem') }}</label>
+            <div class="mb-1" x-on:input.capture="vagt($event)" x-on:change.capture="vagt($event)"
+                 x-on:keyup.capture="maal($event)" x-on:focusout.capture="maal($event)">
+                <div class="flex gap-2">
+                    <input wire:model.change="senesteForhoejelseFra" type="date" data-felt="senesteForhoejelseFra"
+                           class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                           :class="halve.includes('senesteForhoejelseFra') && '!border-red-500'"
+                           :aria-invalid="halve.includes('senesteForhoejelseFra')"
+                           aria-describedby="halv-dato-kapital-{{ $this->getId() }}"
+                           aria-label="{{ __('Seneste kapitalforhøjelse fra') }}">
+                    <input wire:model.change="senesteForhoejelseTil" type="date" data-felt="senesteForhoejelseTil"
+                           class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                           :class="halve.includes('senesteForhoejelseTil') && '!border-red-500'"
+                           :aria-invalid="halve.includes('senesteForhoejelseTil')"
+                           aria-describedby="halv-dato-kapital-{{ $this->getId() }}"
+                           aria-label="{{ __('Seneste kapitalforhøjelse til') }}">
+                </div>
+                <div id="halv-dato-kapital-{{ $this->getId() }}" role="status" aria-live="polite" class="mt-1 text-xs text-red-700">
+                    <template x-for="felt in halve.filter(f => f.startsWith('seneste'))" :key="felt">
+                        <p data-halv-dato-hint x-text="hint(felt)"></p>
+                    </template>
+                </div>
+            </div>
+            <p class="text-xs text-ink-700/50 mb-5">{{ __('Fondsforhøjelser tæller ikke. Bruges et kapitalfilter, tæller kun selskaber, hvor kapitalhistorikken er hentet.') }}</p>
 
             <button wire:click="nulstil" x-on:click="tomHalve()" type="button"
                     class="w-full text-sm border border-sand-200 rounded-lg px-3 py-2 hover:bg-white transition text-ink-700">
@@ -260,6 +312,20 @@
                                 {{ __('Investortype kendes for de :med af :af selskaber i udvalget, hvor ejerne er registreret. CVR viser kun ejere med mindst 5 %.', [
                                     'med' => number_format($ejerdata['med'], 0, ',', '.'),
                                     'af' => number_format($ejerdata['af'], 0, ',', '.'),
+                                ]) }}
+                            </p>
+                        @endif
+                        @if($udenKapitalhistorik !== null)
+                            <p class="text-xs text-ink-700/60 mt-1" data-kapitaldaekning>
+                                {{ __('Kun selskaber, hvor kapitalhistorikken er hentet. :antal selskaber i udvalget er udeladt, fordi den ikke er hentet.', [
+                                    'antal' => number_format($udenKapitalhistorik, 0, ',', '.'),
+                                ]) }}
+                            </p>
+                        @endif
+                        @if($udenKendtBeloeb !== null)
+                            <p class="text-xs text-ink-700/60 mt-1" data-kendt-beloeb>
+                                {{ __('Højst rejst kapital tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner. :antal selskaber er udeladt, fordi et beløb mangler eller er i en anden valuta.', [
+                                    'antal' => number_format($udenKendtBeloeb, 0, ',', '.'),
                                 ]) }}
                             </p>
                         @endif
