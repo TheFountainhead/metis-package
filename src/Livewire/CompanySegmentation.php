@@ -746,9 +746,19 @@ class CompanySegmentation extends Component
         };
     }
 
-    /** Andel af den filtrerede population, som denne gruppe udgør. */
+    /**
+     * Andel af den filtrerede population, som denne gruppe udgør.
+     *
+     * 🪤 Ingen andel paa koncernniveau: en koncern med selskaber i flere grupper
+     * taeller i hver af dem, saa andelene summede til over 100 % (114,5 % for
+     * kapitalforhoejelser paa alle aktive, maalt 25/10-2026) og lignede en regnefejl.
+     */
     public function andel(int $count): ?float
     {
+        if ($this->vistNiveau === 'koncern') {
+            return null;
+        }
+
         return $this->total > 0 ? round($count / $this->total * 100, 1) : null;
     }
 

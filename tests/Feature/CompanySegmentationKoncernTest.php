@@ -131,3 +131,39 @@ it('kalder kapitaldaekningen selskaber paa selskabsniveau', function () {
         ->assertSee('12 selskaber i udvalget er udeladt')
         ->assertSee('3 selskaber er udeladt');
 });
+
+/**
+ * 🪤 Paa koncernniveau overlapper grupperne (en koncern taeller i hver gruppe,
+ * den har selskaber i), saa andelene summede til over 100 % og lignede en
+ * regnefejl (114,5 % maalt 25/10-2026). Ingen andel dér; paa selskabsniveau
+ * summer de til 100 % og vises.
+ */
+function fakeAndelSvar(string $niveau): void
+{
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => '751', 'label' => null, 'count' => 40]],
+        'meta' => ['total' => 90, 'niveau' => $niveau, 'uden_segmentering' => 50],
+    ])]);
+}
+
+it('viser andelen paa selskabsniveau', function () {
+    fakeAndelSvar('selskab');
+
+    Livewire::test(CompanySegmentation::class)
+        ->assertSeeHtml('>Andel</th>')
+        ->assertSee('44,4 %')
+        ->assertSee('55,6 %');
+});
+
+it('🪤 viser ingen andel paa koncernniveau, hvor grupperne overlapper', function () {
+    fakeAndelSvar('koncern');
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('niveau', 'koncern')
+        ->assertSet('vistNiveau', 'koncern')
+        ->assertSee('40')
+        ->assertDontSeeHtml('>Andel</th>')
+        ->assertDontSee('44,4 %')
+        ->assertDontSee('55,6 %')
+        ->assertSeeHtml('data-koncern-note');
+});
