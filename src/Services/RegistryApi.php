@@ -360,7 +360,7 @@ class RegistryApi
      * @param  array<string, mixed>  $filtre
      * @return array{data?: array<int,mixed>, meta?: array<string,mixed>, error?: mixed}
      */
-    public function segmentCompanies(string $groupBy, array $filtre = [], int $limit = 100): array
+    public function segmentCompanies(string $groupBy, array $filtre = [], int $limit = 100, string $niveau = 'selskab'): array
     {
         // 🚨 Segmenteringen er en LICENSYDELSE (ERST-tilbuddet 10/9-2026:
         // licens til navngivne brugere), ikke en del af det gratis opslag.
@@ -372,9 +372,12 @@ class RegistryApi
             return $blocked;
         }
 
+        // `niveau` (selskab|koncern) er ikke et filter: samme selskaber, talt
+        // enkeltvis eller pr. koncerntop.
         return $this->postEnvelope('/v1/company-segmentation', [
             'group_by' => $groupBy,
             'limit' => $limit,
+            'niveau' => $niveau,
         ] + $filtre) ?? ['error' => 'no_response'];
     }
 
@@ -391,7 +394,7 @@ class RegistryApi
      *
      * @param  array<string, mixed>  $filtre
      */
-    public function segmentationExportLink(string $groupBy, array $filtre = [], int $limit = 100): ?string
+    public function segmentationExportLink(string $groupBy, array $filtre = [], int $limit = 100, string $niveau = 'selskab'): ?string
     {
         // 🚨 Samme licens-gate som `segmentCompanies()`. Et signeret link er
         // hele udtraekket, saa det maa aldrig dannes for en ikke-pilot.
@@ -404,6 +407,7 @@ class RegistryApi
         $svar = $this->postEnvelope('/v1/company-segmentation/export-link', [
             'group_by' => $groupBy,
             'limit' => $limit,
+            'niveau' => $niveau,
         ] + $filtre);
 
         return $svar['url'] ?? null;
