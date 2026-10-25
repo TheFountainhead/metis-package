@@ -33,9 +33,11 @@ class MetodeOgVejledning extends Component
     public const VERTIKAL_BRANCHER = [
         'software' => '62, 58.2, 63.1, 63.9',
         'telekom' => '61',
-        'life-science' => '21, 32.5, 46.46, 72.11',
+        // 🪤 Mapperen har ogsaa 72.11, men koden findes ikke i DB25 (maalt i prod
+        // 25/10-2026: kun 72.10.00 og 72.20.00), saa den er udeladt her.
+        'life-science' => '21, 32.5, 46.46',
         'sundhed' => '86',
-        'forskning-udvikling' => '72 (undtagen 72.11)',
+        'forskning-udvikling' => '72',
         'hardware' => '26, 27',
         'industri' => '13, 14, 17, 22, 23, 25, 28, 30',
         'kemi' => '20',

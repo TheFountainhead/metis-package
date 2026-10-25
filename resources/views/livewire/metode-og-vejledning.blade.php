@@ -160,8 +160,8 @@
             </ul>
             <h3 class="font-semibold mb-2">Vertikaler</h3>
             <p class="mb-3">
-                En vertikal er en gruppe af branchekoder. Den mest specifikke kode vinder. Fx er 72.11 (bioteknologisk forskning) life science,
-                selv om resten af 72 er forskning og udvikling. Selskaber uden branchekode har ingen vertikal.
+                En vertikal er en gruppe af branchekoder. Den mest specifikke kode vinder. Fx er 46.46 (engroshandel med medicinalvarer) life science,
+                selv om resten af 46 er engroshandel. Selskaber uden branchekode har ingen vertikal.
             </p>
             <div class="overflow-x-auto border border-sand-200 rounded-xl mb-3">
                 <table class="w-full text-sm">
@@ -185,6 +185,7 @@
             <ul class="list-disc pl-5 space-y-1">
                 <li>Fintech og forsvarsteknologi har typisk den samme kode, 62.10.00 Computerprogrammering. Vertikalerne kan derfor ikke skille dem ad. Til fintech er der et særskilt filter, se næste afsnit.</li>
                 <li>Finans (64 til 66) er finansiel virksomhed som banker og forsikring. Det er ikke det samme som fintech.</li>
+                <li>Life science omfatter farmaceutiske præparater (21), medicinske og dentale instrumenter (32.5) og engroshandel med medicinalvarer (46.46). Bioteknologisk forskning har ingen kode for sig selv i DB25 og tæller under Forskning og udvikling, ikke under life science.</li>
                 <li>Forskning og udvikling (72) dækker både bioteknologi, grøn teknologi og anden teknologi. Koden kan ikke deles op.</li>
                 <li>Sundhed (86) er fx lægepraksis, tandlæger og fysioterapeuter. Det er ikke life science.</li>
             </ul>
