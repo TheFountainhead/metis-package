@@ -220,6 +220,7 @@ class MetisServiceProvider extends ServiceProvider
         // komponenten. `segmentér()` og `hentCsv()` er gated paa pilot
         // (komponenten og RegistryApi::pilotFejl), saa navnet aabner ingen ny vej ind.
         Livewire::component('metis-company-segmentation', \TheFountainhead\Metis\Livewire\CompanySegmentation::class);
+        Livewire::component('metis-metode-og-vejledning', \TheFountainhead\Metis\Livewire\MetodeOgVejledning::class);
         // Samme hul paa laangiver-cockpittet (fundet i review af #199):
         // `sortBy()` og `load()` paa /engagementer gav samme
         // ComponentNotFoundException. Testen RoutedComponentsResolveTest

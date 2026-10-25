@@ -17,6 +17,7 @@ use TheFountainhead\Metis\Livewire\Engagement;
 use TheFountainhead\Metis\Livewire\Engagements;
 use TheFountainhead\Metis\Http\Controllers\GrantQuotaController;
 use TheFountainhead\Metis\Livewire\Lookup;
+use TheFountainhead\Metis\Livewire\MetodeOgVejledning;
 use TheFountainhead\Metis\Livewire\PilotLogin;
 use TheFountainhead\Metis\Livewire\PropertyExplore;
 use TheFountainhead\Metis\Livewire\Search;
@@ -53,6 +54,9 @@ Route::middleware([NoIndex::class, RestorePilotSession::class])->group(function 
     // branche eller selskabsform. TAELLINGER, ikke raekker — derfor ikke under
     // raekke-kvoten, men throttlet som de oevrige soegninger.
     Route::get('/segmentering', CompanySegmentation::class)->name('metis.company-segmentation')->middleware('throttle:20,1');
+    // Metode og vejledning: de skrevne regler bag segmenteringens tal (ERST-udbuddet:
+    // dokumentation af klassifikationsreglerne og selvstudiemateriale). Samme gate.
+    Route::get('/metode', MetodeOgVejledning::class)->name('metis.metode')->middleware('throttle:20,1');
 
     // Bestil en analyse: spørgsmål på tværs af registret besvares som en opgave,
     // vurderet på formål og prissat fra gang til gang (tinglysningslovens § 50 c).
