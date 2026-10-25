@@ -161,9 +161,27 @@ it('🪤 viser ingen andel paa koncernniveau, hvor grupperne overlapper', functi
     Livewire::test(CompanySegmentation::class)
         ->set('niveau', 'koncern')
         ->assertSet('vistNiveau', 'koncern')
-        ->assertSee('40')
         ->assertDontSeeHtml('>Andel</th>')
         ->assertDontSee('44,4 %')
         ->assertDontSee('55,6 %')
         ->assertSeeHtml('data-koncern-note');
+});
+
+it('🪤 viser andelen naar datalaget talte selskaber, selvom brugeren valgte koncerner', function () {
+    // Det VISTE niveau afgoer, ikke valget: tallene summer til 100 %.
+    fakeAndelSvar('selskab');
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('niveau', 'koncern')
+        ->assertSet('vistNiveau', 'selskab')
+        ->assertSeeHtml('>Andel</th>')
+        ->assertSee('44,4 %');
+});
+
+it('andel() giver null paa koncernniveau', function () {
+    fakeAndelSvar('koncern');
+
+    $side = Livewire::test(CompanySegmentation::class)->set('niveau', 'koncern');
+
+    expect($side->instance()->andel(40))->toBeNull();
 });
