@@ -432,6 +432,31 @@ class RegistryApi
         ] + $filtre) ?? ['error' => 'no_response'];
     }
 
+    /**
+     * Signeret download-link til LISTEN af selskaber bag én gruppe som CSV,
+     * eller hele udvalget naar `$groupKey` er null (hoejst 10.000 raekker,
+     * samme loft som listen; afkortning staar i filen).
+     *
+     * 🚨 Samme licens-gate og samme server-side link-hentning som
+     * `segmentationExportLink()`: CSV-ruten er auth-fri og beskyttet af
+     * signaturen alene.
+     *
+     * @param  array<string, mixed>  $filtre
+     */
+    public function segmentationCompaniesExportLink(string $groupBy, ?string $groupKey, array $filtre = []): ?string
+    {
+        if ($this->pilotFejl()) {
+            return null;
+        }
+
+        $svar = $this->postEnvelope('/v1/company-segmentation/companies/export-link', array_filter([
+            'group_by' => $groupBy,
+            'group_key' => $groupKey,
+        ], fn ($v) => $v !== null) + $filtre);
+
+        return $svar['url'] ?? null;
+    }
+
     public function fetchPropertyByAddress(string $address): array
     {
         $parsed = $this->parseAddress($address);
