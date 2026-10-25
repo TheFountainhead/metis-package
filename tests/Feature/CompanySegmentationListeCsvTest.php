@@ -141,3 +141,31 @@ it('🚨 en ikke-pilot faar intet udtraek med en PILOTS snapshot (hentUdvalgCsv)
 
     Http::assertNotSent(fn ($r) => erListeCsvLink($r));
 });
+
+it('🚨 taellings- og liste-CSV bruger BEGGE de filtre tallene paa skaermen er regnet med', function () {
+    // Et felt kan aendres uden at der regnes igen (fx et `.change`-felt der
+    // synces i samme request som klikket). Komponenten bruges derfor direkte,
+    // saa feltet kan aendres UDEN hooks, og ingen af filerne maa tage det med.
+    Http::fake([
+        '*/company-segmentation/companies/export-link' => Http::response(['url' => 'https://registry.test/liste.csv?signature=a']),
+        '*/company-segmentation/export-link' => Http::response(['url' => 'https://registry.test/taelling.csv?signature=b']),
+        '*/company-segmentation' => Http::response(['data' => [['key' => '751', 'label' => null, 'count' => 6924]], 'meta' => ['total' => 117382]]),
+    ]);
+
+    $c = new CompanySegmentation;
+    $c->segmentér();
+    $c->ivaerksaetter = true;
+    $c->groupBy = 'region';
+
+    $c->hentCsv();
+    $c->hentUdvalgCsv();
+
+    $links = collect(Http::recorded())->map(fn ($par) => $par[0])
+        ->filter(fn ($r) => str_contains($r->url(), 'export-link'));
+
+    expect($links)->toHaveCount(2);
+    foreach ($links as $r) {
+        expect($r['group_by'])->toBe('municipality_code')
+            ->and($r->data())->not->toHaveKey('ivaerksaetter');
+    }
+});

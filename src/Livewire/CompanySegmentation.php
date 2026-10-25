@@ -654,7 +654,10 @@ class CompanySegmentation extends Component
             return null;
         }
 
-        $url = app(RegistryApi::class)->segmentationExportLink($this->groupBy, $this->filtre(), self::GRUPPE_LOFT);
+        // 🔑 `vistGroupBy`/`vistFiltre`, ikke de aktuelle felter: filen skal
+        // beskrive tallene paa skaermen, og taellings- og liste-CSV'en skal
+        // altid beskrive SAMME population (review af #215).
+        $url = app(RegistryApi::class)->segmentationExportLink($this->vistGroupBy, $this->vistFiltre, self::GRUPPE_LOFT);
 
         if (! $this->erVoresUrl($url)) {
             $this->fejl = 'Udtrækket kunne ikke dannes. Prøv igen, eller skriv til support@frankston.io.';
