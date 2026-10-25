@@ -656,18 +656,77 @@ class CompanySegmentation extends Component
 
         $url = app(RegistryApi::class)->segmentationExportLink($this->groupBy, $this->filtre(), self::GRUPPE_LOFT);
 
-        // 🚨 REDIRECT ALDRIG BLINDT TIL EN URL FRA ET SVAR. Kompromitteres
-        // eller MITM'es registry-api'et, ville brugeren blive sendt hvor som
-        // helst hen. Vi redirecter kun til vores egen vaert.
-        $base = rtrim((string) config('metis.registry_api.url'), '/');
-
-        if ($url === null || $base === '' || ! str_starts_with($url, $base.'/')) {
+        if (! $this->erVoresUrl($url)) {
             $this->fejl = 'Udtrækket kunne ikke dannes. Prøv igen, eller skriv til support@frankston.io.';
 
             return null;
         }
 
         return $this->redirect($url);
+    }
+
+    /**
+     * Hele det viste udvalg som selskabsliste (CSV), ikke kun én gruppe.
+     * Hoejst 10.000 selskaber (flest aarsvaerk foerst); er udvalget stoerre,
+     * staar det i filen.
+     *
+     * 🔑 `vistGroupBy`/`vistFiltre`, ikke de aktuelle felter: filen skal
+     * beskrive den population tabellen viser, samme regel som listen.
+     */
+    public function hentUdvalgCsv()
+    {
+        if (! $this->harAdgang()) {
+            return null;
+        }
+
+        if ($this->total === null) {
+            $this->fejl = 'Hent et resultat frem først.';
+
+            return null;
+        }
+
+        $url = app(RegistryApi::class)->segmentationCompaniesExportLink($this->vistGroupBy, null, $this->vistFiltre);
+
+        if (! $this->erVoresUrl($url)) {
+            $this->fejl = 'Udtrækket kunne ikke dannes. Prøv igen, eller skriv til support@frankston.io.';
+
+            return null;
+        }
+
+        return $this->redirect($url);
+    }
+
+    /**
+     * Selskaberne bag den aabne gruppe som CSV ("hvilke er de 6.924 i
+     * Aarhus?"). Samme gruppe og filtre som listen paa skaermen.
+     */
+    public function hentSelskaberCsv()
+    {
+        if (! $this->harAdgang() || $this->valgtGruppe === null) {
+            return null;
+        }
+
+        $url = app(RegistryApi::class)->segmentationCompaniesExportLink($this->vistGroupBy, $this->valgtGruppe, $this->vistFiltre);
+
+        if (! $this->erVoresUrl($url)) {
+            $this->selskabFejl = 'Udtrækket kunne ikke dannes. Prøv igen, eller skriv til support@frankston.io.';
+
+            return null;
+        }
+
+        return $this->redirect($url);
+    }
+
+    /**
+     * 🚨 REDIRECT ALDRIG BLINDT TIL EN URL FRA ET SVAR. Kompromitteres eller
+     * MITM'es registry-api'et, ville brugeren blive sendt hvor som helst hen.
+     * Vi redirecter kun til vores egen vaert.
+     */
+    private function erVoresUrl(?string $url): bool
+    {
+        $base = rtrim((string) config('metis.registry_api.url'), '/');
+
+        return $url !== null && $base !== '' && str_starts_with($url, $base.'/');
     }
 
     public function visSelskaber(string $noegle): void

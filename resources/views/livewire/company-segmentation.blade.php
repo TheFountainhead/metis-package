@@ -261,11 +261,22 @@
                         @endif
                     </div>
 
+                    <div class="flex flex-wrap items-center gap-2">
                     <button wire:click="hentCsv" type="button" wire:loading.attr="disabled" wire:target="hentCsv"
                             class="inline-flex items-center gap-1.5 bg-warm-500 text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-warm-600 transition disabled:opacity-60">
                         <span wire:loading.remove wire:target="hentCsv">{{ __('Hent til Excel (CSV)') }}</span>
                         <span wire:loading wire:target="hentCsv">{{ __('Danner udtræk…') }}</span>
                     </button>
+                    {{-- Selskaberne bag hele udvalget, ikke tællingerne. Højst
+                         10.000 (flest årsværk først); filen siger det, hvis den
+                         er afkortet. --}}
+                    <button wire:click="hentUdvalgCsv" type="button" wire:loading.attr="disabled" wire:target="hentUdvalgCsv"
+                            title="{{ __('Højst 10.000 selskaber, flest årsværk først') }}"
+                            class="inline-flex items-center gap-1.5 border border-warm-500 text-warm-600 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-warm-50 transition disabled:opacity-60">
+                        <span wire:loading.remove wire:target="hentUdvalgCsv">{{ __('Hent selskabslisten (CSV)') }}</span>
+                        <span wire:loading wire:target="hentUdvalgCsv">{{ __('Danner udtræk…') }}</span>
+                    </button>
+                    </div>
                 </div>
 
                 {{-- 🔑 Listen er de 100 største grupper; totalen ovenfor er hele
@@ -368,9 +379,16 @@
                                     </span>
                                 @endif
                             </h2>
-                            <button type="button" wire:click="lukSelskaber" class="text-sm text-ink-700/70 hover:text-ink-800">
-                                {{ __('Luk') }}
-                            </button>
+                            <div class="flex items-baseline gap-4">
+                                <button type="button" wire:click="hentSelskaberCsv" wire:loading.attr="disabled" wire:target="hentSelskaberCsv"
+                                        class="text-sm font-semibold text-warm-600 hover:text-warm-700 disabled:opacity-60">
+                                    <span wire:loading.remove wire:target="hentSelskaberCsv">{{ __('Hent til Excel (CSV)') }}</span>
+                                    <span wire:loading wire:target="hentSelskaberCsv">{{ __('Danner udtræk…') }}</span>
+                                </button>
+                                <button type="button" wire:click="lukSelskaber" class="text-sm text-ink-700/70 hover:text-ink-800">
+                                    {{ __('Luk') }}
+                                </button>
+                            </div>
                         </div>
 
                         @if($selskabFejl)
