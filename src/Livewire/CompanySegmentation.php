@@ -295,6 +295,31 @@ class CompanySegmentation extends Component
     public ?int $udenKendtBeloeb = null;
 
     /**
+     * Hvad tallene taeller: selskaber eller koncerner (ERST Bilag 1, Krav 1.1).
+     * Ikke et filter: samme selskaber er med, men et selskab med moderselskab
+     * taeller under sin koncerntop. Reglen staar paa metodesiden og i
+     * registry-api's App\Services\Cvr\Koncern. Utypet som de andre #[Url]-felter.
+     *
+     * 🚨 SKAL staa SIDST blandt de offentlige properties (se `$fintech`).
+     */
+    #[Url(as: 'niveau', except: 'selskab')]
+    public $niveau = 'selskab';
+
+    /**
+     * Det niveau tallene paa skaermen FAKTISK er talt paa, som datalaget
+     * oplyser det (`meta.niveau`). 🪤 Et datalag uden koncernniveau ignorerer
+     * parameteren og taeller selskaber; uden dette stod der "koncerner" over
+     * selskabstal.
+     */
+    #[Locked]
+    public string $vistNiveau = 'selskab';
+
+    public const NIVEAUER = [
+        'selskab' => 'Tæl selskaber',
+        'koncern' => 'Tæl koncerner',
+    ];
+
+    /**
      * Linjen for selskaber uden grupperingsnoegle. Kun koder der ER koder
      * vises ved siden af navnet; region og vertikal har interne noegler.
      */
@@ -501,6 +526,10 @@ class CompanySegmentation extends Component
 
         $this->inklOphoerte = is_scalar($this->inklOphoerte)
             && filter_var($this->inklOphoerte, FILTER_VALIDATE_BOOLEAN);
+
+        if (! is_string($this->niveau) || ! array_key_exists($this->niveau, self::NIVEAUER)) {
+            $this->niveau = 'selskab';
+        }
     }
 
     /** Livewire-hook: kaldes automatisk naar $groupBy aendres. */
@@ -553,6 +582,11 @@ class CompanySegmentation extends Component
      * `wire:model.change`-felter (vaernet i CompanySegmentationFilterfeltTest).
      */
     public function updatedInklOphoerte(): void
+    {
+        $this->segmentér();
+    }
+
+    public function updatedNiveau(): void
     {
         $this->segmentér();
     }
@@ -610,6 +644,7 @@ class CompanySegmentation extends Component
             $this->groupBy,
             $this->filtre(),
             self::GRUPPE_LOFT,
+            $this->niveau,
         );
 
         $this->harSoegt = true;
@@ -658,6 +693,7 @@ class CompanySegmentation extends Component
             : null;
         $this->vistGroupBy = $this->groupBy;
         $this->vistFiltre = $this->filtre();
+        $this->vistNiveau = ($svar['meta']['niveau'] ?? null) === 'koncern' ? 'koncern' : 'selskab';
     }
 
     /** @return array<string, mixed> */
@@ -738,7 +774,7 @@ class CompanySegmentation extends Component
         // 🔑 `vistGroupBy`/`vistFiltre`, ikke de aktuelle felter: filen skal
         // beskrive tallene paa skaermen, og taellings- og liste-CSV'en skal
         // altid beskrive SAMME population (review af #215).
-        $url = app(RegistryApi::class)->segmentationExportLink($this->vistGroupBy, $this->vistFiltre, self::GRUPPE_LOFT);
+        $url = app(RegistryApi::class)->segmentationExportLink($this->vistGroupBy, $this->vistFiltre, self::GRUPPE_LOFT, $this->vistNiveau);
 
         if (! $this->erVoresUrl($url)) {
             $this->fejl = 'Udtrækket kunne ikke dannes. Prøv igen, eller skriv til support@frankston.io.';

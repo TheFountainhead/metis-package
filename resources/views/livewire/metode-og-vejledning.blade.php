@@ -56,6 +56,7 @@
                 <li><a href="#stoerrelse" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Årsværk og stiftelsesdato</a></li>
                 <li><a href="#kapital" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Kapitalhistorik</a></li>
                 <li><a href="#udviklingsstadie" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Kapital (udviklingsstadie)</a></li>
+                <li><a href="#koncern" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Selskaber og koncerner</a></li>
             </ol>
         </nav>
 
@@ -396,6 +397,44 @@
                 <li><strong>Kun selskaber med hentet kapitalhistorik.</strong> Kapitalhistorikken hentes for iværksætterpopulationen, ikke for alle selskaber. Bruger du et kapitalfilter, tæller kun selskaber, hvor den er hentet, så et ukendt selskab ikke ser ud som et selskab uden forhøjelser. Siden viser, hvor mange selskaber i udvalget der er udeladt af den grund.</li>
                 <li><strong>Fordel på kapitalforhøjelser</strong> giver grupperne <em>Ingen efter stiftelse</em>, <em>1</em>, <em>2 til 3</em>, <em>4 til 6</em> og <em>7 eller flere</em>. Selskaber uden hentet kapitalhistorik står på linjen <em>Kapitalhistorik ikke hentet</em>.</li>
             </ul>
+        </section>
+
+        {{-- 11. Koncernniveau. 🔑 Skal sige PRAECIS det samme som registry-api's
+             App\Services\Cvr\Koncern. Aendres reglen der, aendres den her. --}}
+        <section id="koncern" class="scroll-mt-20">
+            <h2 class="text-lg font-semibold text-ink-800 mb-3">11. Selskaber og koncerner</h2>
+            <p class="mb-3">
+                Med <em>Tæl koncerner</em> tæller hvert tal antal koncerner i stedet for antal selskaber.
+                Afgrænsningerne gælder stadig de enkelte selskaber. Et selskab, der er med i udvalget, tæller under sin koncern.
+                Har flere selskaber i udvalget samme koncern, tæller koncernen én gang.
+                Et selskab uden moderselskab er sin egen koncern.
+            </p>
+            <h3 class="font-semibold mb-2">Hvornår et selskab har et moderselskab</h3>
+            <p class="mb-2">Et dansk selskab er moderselskab, når det i dag er registreret som ejer i CVR og</p>
+            <ul class="list-disc pl-5 space-y-2 mb-3">
+                <li>ejer mindst 66,67 % af selskabet, eller</li>
+                <li>ejer 50 % og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har 50 % eller mere.</li>
+            </ul>
+            <p class="mb-3">
+                CVR oplyser ejerandele i intervaller. "50 %" betyder mellem 50 % og 66,66 % og kan være præcis halvdelen.
+                Derfor tæller en ejer med 50 % kun, når ingen anden ejer har lige så meget. Ejer to parter hver 50 %, har selskabet intet moderselskab.
+                Opfylder flere danske selskaber reglen (typisk fordi et gammelt ejerskab ikke er afsluttet i CVR), bruges det selskab, hvis ejerskab senest er begyndt.
+                Kan det ikke afgøres, får selskabet intet moderselskab.
+            </p>
+            <h3 class="font-semibold mb-2">Koncernens top</h3>
+            <ul class="list-disc pl-5 space-y-2 mb-3">
+                <li>Vi følger moderselskaberne opad, højst 10 led. Det øverste danske selskab er koncernens top.</li>
+                <li>Er det øverste moderselskab udenlandsk eller en person, stopper kæden ved det øverste danske selskab.</li>
+                <li>Ejer selskaberne hinanden i ring (A ejer B, og B ejer A), regnes de alle til samme koncern.</li>
+            </ul>
+            <p class="mb-3">
+                <strong>Ikke med:</strong> kontrol gennem flere mindre ejerandele, fx to datterselskaber der hver ejer 40 % af et tredje selskab.
+                Ejerandelene er intervaller, og en sum af dem kan ikke vise, om der er kontrol. Aftaler om stemmeret og bestemmende indflydelse
+                uden ejerskab fremgår heller ikke af CVR.
+            </p>
+            <p>
+                En koncern med selskaber i flere grupper (fx to kommuner) tæller med i hver gruppe. Grupperne kan derfor tilsammen give mere end totalen.
+            </p>
         </section>
 
         <p class="text-xs text-ink-700/50 border-t border-sand-200 pt-4">

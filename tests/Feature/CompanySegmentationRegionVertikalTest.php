@@ -242,12 +242,12 @@ it('har inklOphoerte og derefter kun de nyere properties i bunden', function () 
         fn (ReflectionProperty $p) => ! $p->isStatic() && $p->getDeclaringClass()->getName() === CompanySegmentation::class,
     ));
 
-    // Kapitalfelterne (#udviklingsstadie) kom til EFTER inklOphoerte, i bunden.
+    // Kapitalfelterne (#udviklingsstadie) og niveau (koncern) kom til EFTER inklOphoerte, i bunden.
     $navne = array_map(fn (ReflectionProperty $p) => $p->getName(), $props);
 
     expect(array_slice($navne, array_search('inklOphoerte', $navne, true)))->toBe([
         'inklOphoerte', 'kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax',
-        'senesteForhoejelseFra', 'senesteForhoejelseTil', 'udenKapitalhistorik', 'udenKendtBeloeb',
+        'senesteForhoejelseFra', 'senesteForhoejelseTil', 'udenKapitalhistorik', 'udenKendtBeloeb', 'niveau', 'vistNiveau',
     ]);
 });
 

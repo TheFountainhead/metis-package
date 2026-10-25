@@ -103,6 +103,20 @@
                 @endforeach
             </select>
 
+            {{-- Koncernniveau (ERST Krav 1.1). Ikke et filter: samme selskaber,
+                 men et selskab med moderselskab taeller under sin koncerntop. --}}
+            <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3">{{ __('Tæl') }}</h2>
+            <div class="mb-5" role="radiogroup" aria-label="{{ __('Tæl selskaber eller koncerner') }}" data-niveau>
+                @foreach($this::NIVEAUER as $vaerdi => $navn)
+                    <label class="flex items-center gap-2 mb-1.5 cursor-pointer">
+                        <input type="radio" wire:model.live="niveau" value="{{ $vaerdi }}"
+                               class="border-sand-300 text-warm-500 focus:ring-warm-500/30">
+                        <span class="text-sm text-ink-800">{{ __($navn) }}</span>
+                    </label>
+                @endforeach
+                <span class="block text-xs text-ink-700/50">{{ __('Koncerner: selskaber med samme moderselskab i toppen tæller én gang.') }}</span>
+            </div>
+
             <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3">{{ __('Afgræns') }}</h2>
 
             <label class="flex items-start gap-2 mb-3 cursor-pointer">
@@ -304,9 +318,19 @@
                         <p class="text-3xl font-bold text-ink-800" wire:loading.class="opacity-40">
                             {{ number_format($total ?? 0, 0, ',', '.') }}
                         </p>
-                        <p class="text-sm text-ink-700/60">
-                            {{ __('selskaber i alt med de valgte afgrænsninger') }}
+                        <p class="text-sm text-ink-700/60" data-total-etiket>
+                            @if($vistNiveau === 'koncern')
+                                {{ __('koncerner i alt med de valgte afgrænsninger') }}
+                            @else
+                                {{ __('selskaber i alt med de valgte afgrænsninger') }}
+                            @endif
                         </p>
+                        @if($vistNiveau === 'koncern')
+                            {{-- En koncern med selskaber i to grupper taeller i begge. --}}
+                            <p class="text-xs text-ink-700/60 mt-1" data-koncern-note>
+                                {{ __('En koncern med selskaber i flere grupper tæller med i hver af dem, så grupperne kan give mere end totalen.') }}
+                            </p>
+                        @endif
                         @if($ejerdata)
                             <p class="text-xs text-ink-700/60 mt-1" data-ejerdaekning>
                                 {{ __('Investortype kendes for de :med af :af selskaber i udvalget, hvor ejerne er registreret. CVR viser kun ejere med mindst 5 %.', [
