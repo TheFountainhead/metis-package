@@ -68,7 +68,10 @@
                                                 'debt_conversion' => __('Konvertering af gæld'),
                                                 'in_kind' => __('Apportindskud'),
                                                 'bonus_issue' => __('Fondsforhøjelse'),
+                                                'restructuring' => __('Fusion eller spaltning'),
                                                 'payout' => __('Udbetaling til ejere'),
+                                                'loss_coverage' => __('Dækning af underskud'),
+                                                'reserve' => __('Henlæggelse til reserve'),
                                                 default => '',
                                             } }}
                                         </div>

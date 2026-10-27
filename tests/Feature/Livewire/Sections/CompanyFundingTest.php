@@ -122,3 +122,16 @@ it('does not mark owners when the API sends no country (registry-api before krav
         ->assertDontSee('Udenlandsk ejer:')
         ->assertSeeHtml('lookup/person/Stifter%20Stiftersen');
 });
+
+it('viser en etiket for fusion, daekning af underskud og henlaeggelse til reserve', function (string $type, string $etiket) {
+    $data = fakeFundingHistory();
+    $data['data']['rounds'][2]['payment_type'] = $type;
+    Http::fake(['*company/41527080/funding-history*' => Http::response($data)]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertSee($etiket);
+})->with([
+    ['restructuring', 'Fusion eller spaltning'],
+    ['loss_coverage', 'Dækning af underskud'],
+    ['reserve', 'Henlæggelse til reserve'],
+]);
