@@ -1520,11 +1520,47 @@ class RegistryApi
         // ALDRIG hertil — den afvises foer kaldet. Rammer vi alligevel dette,
         // er det fordi upstream afviser noget vi selv godkendte. Beskeden er
         // maalt mod prod 20/8, ikke gaettet.
-        if (! $this->erForventetAdresseAfvisning($e)) {
+        if (! $this->erForventetAdresseAfvisning($e) && ! $this->erPersonIkkeFundet($e)) {
             report($e);
         }
 
         return ['error' => 'upstream_error', 'status' => $e->getCode()];
+    }
+
+    /**
+     * Er dette registry-apis "ingen CVR-deltager med det navn"?
+     *
+     * Et navneopslag uden match er et SVAR: `searchPersonByName()` giver [] og
+     * brugeren ser selskaberne eller "ingen resultater". Rapporteret gav det
+     * Flare 109120 #3 (23 forekomster) uden at nogen havde noget at rette.
+     *
+     * Maalt mod Flare 26/10 — den aegte krop:
+     *   {"error":{"code":"not_found","message":"Person not found",…}}
+     *
+     * 🔑 SMALT: 404 OG `error.code` OG den praecise besked. En generisk route-
+     * 404 eller et "Company not found" rapporteres stadig.
+     *
+     * 🚨 registry-api svarer OGSAA denne 404, naar dens eget CVR-opslag
+     * fejler (`CvrService::searchDeltager()` returnerer null). En exception
+     * dér logges som error og naar registry-apis Flare; et ikke-ok svar fra
+     * CVR logges i dag kun som warning (kun laravel.log). Den skal loeftes,
+     * foer denne tie-stilning er sikker — se PR-beskrivelsen.
+     *
+     * 🪤 `error` kan vaere en streng i andre svar; data_get() paa en streng
+     * giver null, saa den falder igennem til report() i stedet for at kaste
+     * inde i catch-blokken (se erForventetAdresseAfvisning).
+     */
+    protected function erPersonIkkeFundet(RequestException $e): bool
+    {
+        if ($e->response?->status() !== 404) {
+            return false;
+        }
+
+        $json = $e->response->json();
+
+        return is_array($json)
+            && data_get($json, 'error.code') === 'not_found'
+            && data_get($json, 'error.message') === 'Person not found';
     }
 
     /**
