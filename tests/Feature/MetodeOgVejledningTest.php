@@ -156,7 +156,9 @@ it('følger faktatjekket 28/10-2026 (registry-api main efter #399)', function ()
     $this->get('/metode')->assertOk()
         // F1: kun venturefond filtreres paa under 50 % (ByggInvestortyperCommand)
         ->assertDontSee('Under begge typer tæller kun selskaber')
-        ->assertSee('En kapitalfond tæller også i selskaber, hvor den har flertallet af stemmerne.')
+        ->assertSee('En kapitalfond tæller i alle selskaber, den ejer, også hvor den har 50 % eller mere af stemmerne.')
+        ->assertSee('Fonde, der er afregistreret hos ESMA, tæller med.')
+        ->assertSee('§ 3, stk. 1, nr. 1', false)
         ->assertSee('(februar 2021, s. 17)', false)
         ->assertDontSee('s. 16', false)
         // F2: listen har tre punkter
@@ -185,7 +187,7 @@ it('🪤 kapitalfond-forklaringen i dropdownen lover ikke en 50 %-grænse', func
     // F1: koden filtrerer kun venture paa under 50 %.
     expect(CompanySegmentation::INVESTORTYPE_FORKLARING['kapitalfond'])
         ->not->toContain('under 50 %')
-        ->toContain('flertallet');
+        ->toContain('50 % eller mere af stemmerne');
 });
 
 it('dropdownens angel-forklaringer siger at 50 %-grænsen er vores og at holdingselskabet ikke tæller', function () {

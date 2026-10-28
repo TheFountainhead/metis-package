@@ -147,3 +147,14 @@ it('viser registreringens egen formulering ved musen over indbetalingsformen', f
     Livewire::test(CompanyFunding::class, ['query' => '41527080'])
         ->assertSeeHtml('title="ved indskud af aktier i datterselskab"');
 });
+
+it('escaper registreringens fritekst i title-attributten', function () {
+    $data = fakeFundingHistory();
+    $data['data']['rounds'][1]['payment_type'] = 'other';
+    $data['data']['rounds'][1]['payment_text'] = '"><script>alert(1)</script>';
+    Http::fake(['*company/41527080/funding-history*' => Http::response($data)]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertDontSeeHtml('<script>alert(1)</script>')
+        ->assertSeeHtml('title="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"');
+});

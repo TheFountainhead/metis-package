@@ -94,7 +94,7 @@
                 <li>
                     <strong>Hent til Excel.</strong> Knappen <em>Hent til Excel (CSV)</em> henter fordelingen som en fil, der kan åbnes direkte i Excel.
                     Filen har kode, betegnelse og antal for hver gruppe. Nederst står totalen, hvor mange der er uden gruppe,
-                    om ophørte selskaber er med, og den valgte investortype, fintech-afgrænsning eller de valgte kapitalfiltre, hvis du har valgt nogen.
+                    om ophørte selskaber er med, og den valgte investortype, fintech-afgrænsning eller de valgte kapitalfiltre, hvis du har valgt nogen. Øvrige afgrænsninger står ikke i filen.
                 </li>
                 <li>
                     <strong>Hent selskabslisten.</strong> Knappen <em>Hent selskabslisten (CSV)</em> henter selskaberne bag hele det viste udvalg.
@@ -302,7 +302,7 @@
                 Et selskab kan have flere investortyper.
             </p>
             <ul class="list-disc pl-5 space-y-1 mb-4">
-                <li>CVR's ejerregister viser kun ejere med mindst 5 % af kapitalen eller stemmerne. Mindre ejere indgår ikke. Interessenter i et interessentskab (I/S) står i CVR som ejere uanset deres andel og tæller derfor med.</li>
+                <li>CVR's ejerregister viser kun ejere med mindst 5 % af kapitalen eller stemmerne. Mindre ejere indgår ikke. Interessenter i et interessentskab (I/S) står i CVR som interessenter, og vi tæller dem som ejere.</li>
                 <li>Kun selskaber, hvor vi kender ejerne, kan have en investortype. Når du vælger en investortype, viser siden, hvor mange af selskaberne i udvalget ejerne kendes for.</li>
                 <li>Ejerandelen mangler for nogle ejerskaber i CVR. Hvor en regel kræver en andel under 50 %, tæller en ukendt andel ikke.</li>
             </ul>
@@ -354,22 +354,25 @@
             </p>
             <ol class="list-decimal pl-5 space-y-2 mb-3">
                 <li><strong>Offentlig investor:</strong> branchekode 84 (offentlig forvaltning), eller navnet indeholder Vækstfonden, Eksport- og Investeringsfond, Styrelsen eller Innovationsfonden. Alle ejerandele tæller.</li>
-                <li><strong>Venturefond fra EuVECA-registret:</strong> en fond registreret hos ESMA som europæisk venturekapitalfond (EuVECA) er altid en venturefond. Forordningen kræver selv, at 70 % investeres i unoterede små og mellemstore virksomheder.</li>
-                <li><strong>Erhvervsdrivende fond:</strong> en ejer uden selskabsform (A/S, ApS, K/S eller P/S) med branchekode 64.32 eller ordet fond i navnet (også fonden, fonde, fonds og som slutning på et sammensat ord, fx iværksætterfond). Et aktie- eller anpartsselskab, som en fond kontrollerer, tæller også som fond, fx Novo Holdings A/S. Et A/S, ApS, K/S eller P/S er aldrig selv en fond, heller ikke med fond i navnet. Alle ejerandele tæller.</li>
+                <li><strong>Venturefond fra EuVECA-registret:</strong> en fond registreret hos ESMA som europæisk venturekapitalfond (EuVECA) er altid en venturefond. Forordningen kræver selv, at mindst 70 % af fondens kapital investeres i kvalificerede porteføljevirksomheder, som i hovedsagen er unoterede små og mellemstore virksomheder.</li>
+                <li><strong>Erhvervsdrivende fond:</strong> en ejer uden selskabsform (A/S, ApS, K/S eller P/S) med branchekode 64.32 eller ordet fond i navnet (også fonden, fonde, fonds og som slutning på et sammensat ord, fx iværksætterfond). Et aktie- eller anpartsselskab, som en fond har mindst 50 % af stemmerne i, tæller også som fond, fx Novo Holdings A/S. Et A/S, ApS, K/S eller P/S er aldrig selv en fond, heller ikke med fond i navnet. Typen omfatter alle fonde og andre ejere uden selskabsform med fond i navnet, også almennyttige fonde og foreninger. CVR's oplysning om, hvorvidt en fond er erhvervsdrivende, bruges ikke. Alle ejerandele tæller.</li>
                 <li>
-                    <strong>Venturefond og kapitalfond:</strong> en kollektiv fond, dvs. registreret hos ESMA som alternativ investeringsfond (AIF), eller et K/S eller P/S, der ejer andele i mindst 2 selskaber. Den er en <strong>venturefond</strong>, når alle tre krav er opfyldt:
+                    <strong>Venturefond og kapitalfond:</strong> en kollektiv fond, dvs. registreret hos ESMA som alternativ investeringsfond (AIF), eller et K/S eller P/S, der ejer andele i mindst 2 selskaber. K/S- og P/S-reglen er vores tilnærmelse: CVR viser ikke, om kapitalen er rejst fra flere investorer.
+                    ESMA's register har ikke CVR-nummer. En fond fra registret knyttes til CVR, når navnet passer på præcis ét selskab, og det gælder omkring hver sjette danske fond i registret (målt oktober 2026). Fonde, der er afregistreret hos ESMA, tæller med.
+                    Den er en <strong>venturefond</strong>, når alle tre krav er opfyldt:
                     <ol class="list-[lower-alpha] pl-5 mt-1 space-y-1">
-                        <li>Højst halvdelen af porteføljen ligger i energi, byggeri, anlæg, fast ejendom eller andre fonde (branchekode 35, 41, 42, 68, 64.3 og 64.99), og fonden har ikke selv en af branchekoderne 35, 41, 42 eller 68.</li>
+                        <li>Højst halvdelen af porteføljeselskaberne (talt i antal) ligger i energi, byggeri, anlæg, fast ejendom eller andre fonde (branchekode 35, 41, 42, 68, 64.3 og 64.99), og fonden har ikke selv en af branchekoderne 35, 41, 42 eller 68.</li>
                         <li>Porteføljeselskaberne er unge: medianalderen, da fonden blev ejer, er højst 10 år.</li>
                         <li>Fonden har minoritetsposter: median-stemmeandelen er under 50 %. CVR's andel "50" dækker intervallet fra 50 % til under 2/3, så den tæller som kontrol.</li>
                     </ol>
-                    Ellers er den en <strong>kapitalfond</strong> (private equity, infrastruktur, energi eller ejendom). Under venturefond tæller kun selskaber, som fonden har under 50 % af stemmerne i. Har den flertallet af stemmerne, er den moderselskab og ikke investor.
-                    En kapitalfond tæller også i selskaber, hvor den har flertallet af stemmerne.
-                    Kilder: EuVECA-forordningen (345/2013, art. 3), lov om forvaltere af alternative investeringsfonde (§ 2, nr. 1, og § 3, nr. 1) og Invest Europes definitioner (2025).
+                    Ellers er den en <strong>kapitalfond</strong> (private equity, infrastruktur, energi eller ejendom). Kan medianalderen eller stemmeandelen ikke beregnes, regnes fonden som kapitalfond. Mangler startdatoen for et ejerskab, regnes alderen til i dag, så den bliver for høj, aldrig for lav.
+                    Under venturefond tæller kun selskaber, hvor fonden har under 50 % af stemmerne. Det gælder også fonde fra EuVECA-registret.
+                    En kapitalfond tæller i alle selskaber, den ejer, også hvor den har 50 % eller mere af stemmerne.
+                    Kilder: EuVECA-forordningen (345/2013, art. 3), lov om forvaltere af alternative investeringsfonde (§ 3, stk. 1, nr. 1, og § 2, nr. 1).
                 </li>
             </ol>
             <p class="mb-3">
-                Holdingselskaber, personlige investeringsselskaber og almindelige moderselskaber kan ikke vælges som investortype. De investerer ejerens egne penge og ikke kapital rejst fra flere investorer.
+                Holdingselskaber, personlige investeringsselskaber og almindelige moderselskaber kan ikke vælges som investortype. De kan ikke skilles fra almindelige koncernforhold i CVR.
             </p>
 
             <h3 class="font-semibold mb-2">Udenlandsk ejer</h3>
@@ -399,8 +402,8 @@
                 <li><strong>Implied valuation</strong> (den værdi runden sætter på selskabet) = samlet kapital efter ændringen × kurs / 100. Den antager, at hele kapitalen er prissat til rundens kurs. Reelle vilkår som præferenceaktier og warrants kan afvige.</li>
                 <li><strong>Flere trancher.</strong> Har en forhøjelse flere trancher, er beløbet summen af de trancher, der ikke er fondsforhøjelse, fusion eller spaltning. Kurs, indbetalingsform og implied valuation følger den største af dem.</li>
                 <li><strong>Rejst i alt</strong> er summen af kapitalforhøjelser med kendt beløb. Fondsforhøjelser, fusioner og spaltninger tæller ikke, fordi der ikke kommer nye penge ind. Ved en fusion eller spaltning flyttes kapital mellem selskaber. Stiftelseskapitalen er heller ikke med.</li>
-                <li><strong>Kapitalnedsættelse:</strong> beløbet afhænger af formålet. Ved udbetaling til ejerne er det udbetalingen. Ved dækning af underskud eller henlæggelse til reserve forlader der ikke penge selskabet.</li>
-                <li><strong>Indbetalingsform</strong> er kontant, konvertering af gæld, apportindskud (værdier), fondsforhøjelse eller fusion/spaltning, som det står i registreringsteksten. Står der en anden form, vises "Anden indbetalingsform", og den præcise tekst ses ved at holde musen over.</li>
+                <li><strong>Kapitalnedsættelse:</strong> beløbet er nominelt beløb × kurs / 100 med minus. Kun ved udbetaling til ejerne forlader pengene selskabet. Ved dækning af underskud eller henlæggelse til reserve flyttes beløbet inden for egenkapitalen. Kommer der penge ind samme dag som en større nedsættelse, står rækken som nedsættelse, men viser indbetalingen og dens form.</li>
+                <li><strong>Indbetalingsform</strong> er kontant, konvertering af gæld, apportindskud (værdier), fondsforhøjelse eller fusion/spaltning, som det står i registreringsteksten. Står der en anden form, vises "Anden indbetalingsform", og teksten fra registreringen (op til 255 tegn) ses ved at holde musen over.</li>
                 <li>
                     <strong>Ejerændringer samme dato</strong> er ændringer i ejerandele, som er registreret med samme dato som kapitalændringen.
                     Koblingen mellem en ejer og en runde er udledt af datoen. CVR siger ikke direkte, hvem der deltog i en runde.
@@ -415,7 +418,7 @@
             <p>
                 <strong>Omsætning.</strong> Virksomheder i regnskabsklasse B og mellemstore virksomheder i klasse C må nøjes med at vise bruttofortjenesten (årsregnskabsloven § 32).
                 Gør de det, offentliggøres den nettoomsætning, de indberetter, ikke (§ 138, stk. 6).
-                De fleste små og nye selskaber er i klasse B. For dem er bruttofortjenesten typisk det tal, der findes i det offentlige regnskab.
+                Små anparts- og aktieselskaber aflægger som minimum regnskab efter klasse B. For dem er bruttofortjenesten typisk det tal, der findes i det offentlige regnskab.
             </p>
         </section>
 
@@ -484,7 +487,7 @@
             Danmarks Statistik (nøglen fra DB07 til DB25, titlerne i DB25 og kommunerne før 2007),
             EBA's register over betalings- og e-pengeinstitutter, ESMA's MiCA-register, ESMA's register over alternative investeringsfonde og europæiske venturekapitalfonde (AIF og EuVECA),
             det globale LEI-register (GLEIF), Erhvervsstyrelsens <em>Nye virksomheder i danske kommuner og erhvervshusområder</em> (februar 2021)
-            og EIFO's <em>How business angels shape the Danish startup ecosystem</em> (juli 2026).
+            EIFO's <em>How business angels shape the Danish startup ecosystem</em> (juli 2026), EuVECA-forordningen (345/2013), lov om forvaltere af alternative investeringsfonde, årsregnskabsloven og lov nr. 699 af 20. juni 2025.
             Spørgsmål til metoden kan sendes til support@frankston.io.
         </p>
     </div>
