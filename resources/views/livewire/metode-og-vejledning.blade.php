@@ -68,7 +68,7 @@
             <ol class="list-decimal pl-5 space-y-3">
                 <li>
                     <strong>Log ind.</strong> Segmenteringen er for brugere, vi har en aftale med.
-                    Vælg <em>Log ind</em> og brug din arbejdsmail og dit kodeord. Du forbliver logget ind i 30 dage på samme enhed, indtil du logger ind på en anden enhed. Så bliver den første enhed logget ud.
+                    Vælg <em>Log ind</em> og brug din arbejdsmail og dit kodeord. Du forbliver logget ind i 30 dage på samme enhed. Logger du ind på en anden enhed eller logger ud, skal du logge ind igen på de øvrige enheder, når sessionen dér udløber.
                     Står din mail på vores brugerliste, kan du i stedet vælge <em>Bekræft arbejdsmail</em>. Så sender vi en kode til din mail.
                     Har du ikke adgang, så skriv til support@frankston.io.
                 </li>
@@ -135,18 +135,18 @@
             <h2 class="text-lg font-semibold text-ink-800 mb-3">3. Iværksættervirksomheder</h2>
             <p class="mb-3">
                 Filteret <em>Kun iværksættervirksomheder</em> bygger på Erhvervsstyrelsens definition i
-                <em>Nye virksomheder i danske kommuner og erhvervshusområder</em> (februar 2021, s. 16):
+                <em>Nye virksomheder i danske kommuner og erhvervshusområder</em> (februar 2021, s. 17):
                 en ny virksomhed, der udbetaler løn til andre personer end ejerne, svarende til mindst et halvt års løn i samme branche.
                 Løn er ikke offentlig, men antal årsværk er. Mindst ét årsværk er derfor vores tilnærmelse af lønkravet.
                 Et selskab tæller med, når alle tre regler er opfyldt:
             </p>
             <ol class="list-decimal pl-5 space-y-2 mb-3">
                 <li><strong>Mindst ét årsværk.</strong> Selskabet har på et tidspunkt haft mindst ét årsværk i CVR's beskæftigelsestal. Et selskab uden beskæftigelsestal i CVR tæller ikke med.</li>
-                <li><strong>Selskabsform.</strong> Enkeltmandsvirksomhed, interessentskab (I/S), anpartsselskab (ApS) eller aktieselskab (A/S). Definitionen nævner også iværksætterselskaber (IVS), men den selskabsform er afskaffet ved lov og findes ikke blandt aktive selskaber.</li>
+                <li><strong>Selskabsform.</strong> Enkeltmandsvirksomhed, interessentskab (I/S), anpartsselskab (ApS) eller aktieselskab (A/S). Definitionen nævner også iværksætterselskaber (IVS), men den selskabsform er afskaffet ved lov og indgår ikke som selvstændig selskabsform i opgørelsen.</li>
                 <li><strong>Branche.</strong> Selskabet er ikke i finansiering og forsikring (branchekode 64, 65 og 66), fast ejendom (68) eller offentlig forvaltning og forsvar (84). Undtagelserne er Erhvervsstyrelsens. Branchekoderne er vores oversættelse af dem. Selskaber uden branchekode tæller med.</li>
             </ol>
             <p class="mb-2">
-                Erhvervsstyrelsens øvrige afgrænsninger er ikke med: selskaber stiftet ved spaltning, selskaber ejet gennem selskaber med flere end 5 ansatte
+                Erhvervsstyrelsens øvrige afgrænsninger er ikke med: selskaber stiftet ved spaltning, selskaber ejet gennem andre selskaber med flere end 5 ansatte
                 og virksomheder stiftet af flere end 6 personer.
             </p>
             <p class="mb-2">
@@ -171,7 +171,7 @@
                 <li>
                     <strong>Region</strong> er udledt af kommunekoden. Danmark har fem regioner, og hver kommune hører til én af dem efter Danmarks Administrative Geografiske Inddeling (DAGI).
                     Fra 1. januar 2027 lægges Region Hovedstaden og Region Sjælland sammen til Region Østdanmark (lov nr. 699 af 20. juni 2025).
-                    Indtil da følger fordelingen på region de fem nuværende regioner.
+                    Fordelingen på region bruger de fem regioner, der gælder til og med 31. december 2026.
                 </li>
                 <li><strong>Grønland.</strong> Grønlandske kommuner (kommunekode 955 til 960) har ingen dansk region. Selskaber dér står på linjen <em>Uden dansk region</em>, når du fordeler på region.</li>
                 <li><strong>Selskaber uden kommune.</strong> Nogle selskaber har ingen kommune, fx fordi adressen ligger i udlandet og ikke har en dansk kommunekode, fordi en delt kommune fra før 2007 ikke kan afgøres, eller fordi selskabets data fra CVR ikke er hentet. De tæller med i totalen og står på linjen <em>Uden kommune i CVR</em> eller <em>Uden dansk region</em>. Afgrænser du til en kommune eller en region, er de ikke med.</li>
@@ -185,7 +185,7 @@
                 <li>
                     <strong>Branche</strong> er selskabets hovedbranche i CVR efter Dansk Branchekode 2025 (DB25). Har selskabet ingen hovedbranche, bruges den første bibranche.
                     En kode fra før 2025 omregnes til DB25: en kode efter Dansk Branchekode 2007 (DB07) med Danmarks Statistiks nøgle, hvor den DB25-kode med størst vægt vælges,
-                    og en ældre kode først til DB07 efter den kode, flest selskaber fik ved CVR's omkodning 1. januar 2008, hvis mere end halvdelen fik den.
+                    og en ældre kode først til DB07 efter den kode, flest selskaber fik ved CVR's omkodning 1. januar 2008, hvis mere end halvdelen og mindst 3 selskaber fik den.
                     Kan koden ikke omregnes, har selskabet ingen branchekode.
                 </li>
                 <li>I filteret skriver du 2 cifre (fx <em>62</em>) eller 4 cifre med punktum (fx <em>62.10</em>). <em>62</em> giver alle koder, der begynder med 62, og <em>62.10</em> giver kun dem, der begynder med 62.10 (computerprogrammering).</li>
@@ -310,7 +310,7 @@
             <h3 class="font-semibold mb-2">Personer: fire definitioner af business angel</h3>
             <p class="mb-2">
                 Der findes ikke én officiel definition, så du kan vælge mellem fire. En person kan eje direkte eller gennem sit eget holdingselskab.
-                Et <strong>personligt holdingselskab</strong> er et selskab med branchekode 64.2, 64.3 eller 64.99, hvor personen ejer mindst 50 %
+                Et <strong>personligt holdingselskab</strong> er et selskab med branchekode 64.2, 64.3 eller 64.99, hvor personen har mindst 50 % af stemmerne
                 og sidder i direktionen eller er registreret som selskabets repræsentant. Personens egne holdingselskaber tæller ikke som investeringer.
             </p>
             <p class="mb-3">
@@ -361,10 +361,10 @@
                     <ol class="list-[lower-alpha] pl-5 mt-1 space-y-1">
                         <li>Højst halvdelen af porteføljen ligger i energi, byggeri, anlæg, fast ejendom eller andre fonde (branchekode 35, 41, 42, 68, 64.3 og 64.99), og fonden har ikke selv en af branchekoderne 35, 41, 42 eller 68.</li>
                         <li>Porteføljeselskaberne er unge: medianalderen, da fonden blev ejer, er højst 10 år.</li>
-                        <li>Fonden har minoritetsposter: medianandelen er under 50 %. CVR's andel "50" dækker intervallet fra 50 % til under 2/3, så den tæller som kontrol.</li>
+                        <li>Fonden har minoritetsposter: median-stemmeandelen er under 50 %. CVR's andel "50" dækker intervallet fra 50 % til under 2/3, så den tæller som kontrol.</li>
                     </ol>
-                    Ellers er den en <strong>kapitalfond</strong> (private equity, infrastruktur, energi eller ejendom). Under venturefond tæller kun selskaber, som fonden har under 50 % af stemmerne i. Har den flertallet, er den moderselskab og ikke investor.
-                    En kapitalfond tæller også i selskaber, den ejer flertallet af. Det er typisk for kapitalfonde.
+                    Ellers er den en <strong>kapitalfond</strong> (private equity, infrastruktur, energi eller ejendom). Under venturefond tæller kun selskaber, som fonden har under 50 % af stemmerne i. Har den flertallet af stemmerne, er den moderselskab og ikke investor.
+                    En kapitalfond tæller også i selskaber, hvor den har flertallet af stemmerne.
                     Kilder: EuVECA-forordningen (345/2013, art. 3), lov om forvaltere af alternative investeringsfonde (§ 2, nr. 1, og § 3, nr. 1) og Invest Europes definitioner (2025).
                 </li>
             </ol>
@@ -397,7 +397,7 @@
                 <li><strong>Kurs</strong> er prisen for 100 kr. nominel kapital.</li>
                 <li><strong>Beløb</strong> = nominelt beløb × kurs / 100. Beløbet er indbetalt kapital, ikke omsætning.</li>
                 <li><strong>Implied valuation</strong> (den værdi runden sætter på selskabet) = samlet kapital efter ændringen × kurs / 100. Den antager, at hele kapitalen er prissat til rundens kurs. Reelle vilkår som præferenceaktier og warrants kan afvige.</li>
-                <li><strong>Flere trancher.</strong> Har en forhøjelse flere trancher, er beløbet summen af de trancher, hvor der kom penge ind. Kurs, indbetalingsform og implied valuation følger den største af dem.</li>
+                <li><strong>Flere trancher.</strong> Har en forhøjelse flere trancher, er beløbet summen af de trancher, der ikke er fondsforhøjelse, fusion eller spaltning. Kurs, indbetalingsform og implied valuation følger den største af dem.</li>
                 <li><strong>Rejst i alt</strong> er summen af kapitalforhøjelser med kendt beløb. Fondsforhøjelser, fusioner og spaltninger tæller ikke, fordi der ikke kommer nye penge ind. Ved en fusion eller spaltning flyttes kapital mellem selskaber. Stiftelseskapitalen er heller ikke med.</li>
                 <li><strong>Kapitalnedsættelse:</strong> beløbet afhænger af formålet. Ved udbetaling til ejerne er det udbetalingen. Ved dækning af underskud eller henlæggelse til reserve forlader der ikke penge selskabet.</li>
                 <li><strong>Indbetalingsform</strong> er kontant, konvertering af gæld, apportindskud (værdier), fondsforhøjelse eller fusion/spaltning, som det står i registreringsteksten. Står der en anden form, vises "Anden indbetalingsform", og den præcise tekst ses ved at holde musen over.</li>
@@ -429,7 +429,7 @@
                 Du kan også fordele selskaberne på antal kapitalforhøjelser.
             </p>
             <ul class="list-disc pl-5 space-y-2 mb-3">
-                <li><strong>En kapitalforhøjelse</strong> er en registreret stigning i selskabskapitalen efter stiftelsen. Stiftelsen, kapitalnedsættelser og ændringer uden ny kapital tæller ikke. Kommer der penge ind samme dag som en større nedsættelse, så kapitalen samlet falder, tæller indbetalingen også som en forhøjelse.</li>
+                <li><strong>En kapitalforhøjelse</strong> er en registreret stigning i selskabskapitalen efter stiftelsen. Stiftelsen, kapitalnedsættelser og ændringer uden ny kapital tæller ikke. Kommer der en indbetaling (kontant, apport, gældskonvertering eller anden form) samme dag som en større nedsættelse, så kapitalen samlet falder, tæller indbetalingen også som en forhøjelse.</li>
                 <li><strong>Fondsforhøjelser, fusioner og spaltninger tæller ikke</strong>, fordi der ikke kommer nye penge ind. Mangler registreringsteksten, kan vi ikke se formen, og så tæller forhøjelsen med.</li>
                 <li><strong>Rejst kapital</strong> er summen af beløbene for kapitalforhøjelserne. Beløbet står i registreringsteksten, og den mangler for mange ældre forhøjelser. En forhøjelse uden beløb tæller som 0 kr. Rejst kapital er derfor en nedre grænse. Kun beløb i kroner lægges sammen. Selskaber med kapital i en anden valuta tæller med i antallet af forhøjelser, men ikke i rejst kapital.</li>
                 <li><strong>Mindst og højst rejst kapital virker forskelligt.</strong> <em>Mindst</em> bruger den nedre grænse, så selskaber med manglende beløb kan være med. <em>Højst</em> tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner, fordi et manglende beløb kan skjule, at selskabet har rejst mere. Siden viser, hvor mange der er udeladt af den grund.</li>

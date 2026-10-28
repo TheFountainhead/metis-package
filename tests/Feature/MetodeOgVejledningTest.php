@@ -156,7 +156,9 @@ it('følger faktatjekket 28/10-2026 (registry-api main efter #399)', function ()
     $this->get('/metode')->assertOk()
         // F1: kun venturefond filtreres paa under 50 % (ByggInvestortyperCommand)
         ->assertDontSee('Under begge typer tæller kun selskaber')
-        ->assertSee('En kapitalfond tæller også i selskaber, den ejer flertallet af.')
+        ->assertSee('En kapitalfond tæller også i selskaber, hvor den har flertallet af stemmerne.')
+        ->assertSee('(februar 2021, s. 17)', false)
+        ->assertDontSee('s. 16', false)
         // F2: listen har tre punkter
         ->assertSee('når alle tre krav er opfyldt')
         ->assertDontSee('alle fire krav')
@@ -189,5 +191,7 @@ it('🪤 kapitalfond-forklaringen i dropdownen lover ikke en 50 %-grænse', func
 it('dropdownens angel-forklaringer siger at 50 %-grænsen er vores og at holdingselskabet ikke tæller', function () {
     $f = CompanySegmentation::INVESTORTYPE_FORKLARING;
     expect($f['angel_eifo'])->toContain('vores tilføjelse, ikke EIFO')
-        ->and($f['angel_person'])->toContain('eget holdingselskab tæller ikke');
+        ->and($f['angel_person'])->toContain('gennem eget holdingselskab, også stifterne')
+        ->and($f['angel_person'])->toContain('holdingselskab tæller ikke selv med')
+        ->and($f['venture'])->toContain('under 50 % af stemmerne');
 });
