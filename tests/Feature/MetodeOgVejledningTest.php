@@ -185,3 +185,9 @@ it('🪤 kapitalfond-forklaringen i dropdownen lover ikke en 50 %-grænse', func
         ->not->toContain('under 50 %')
         ->toContain('flertallet');
 });
+
+it('dropdownens angel-forklaringer siger at 50 %-grænsen er vores og at holdingselskabet ikke tæller', function () {
+    $f = CompanySegmentation::INVESTORTYPE_FORKLARING;
+    expect($f['angel_eifo'])->toContain('vores tilføjelse, ikke EIFO')
+        ->and($f['angel_person'])->toContain('eget holdingselskab tæller ikke');
+});
