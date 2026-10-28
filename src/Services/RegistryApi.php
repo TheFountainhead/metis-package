@@ -1507,7 +1507,8 @@ class RegistryApi
         // crash, og #9104992 samlede 117 forekomster hvoraf de fleste var en
         // HAANDTERET tilstand vi selv viser brugeren en besked for.
         //
-        // 🔑 SMALT, ikke bredt. Kun registry-apis matrikel-422 tie-stilles.
+        // 🔑 SMALT, ikke bredt. Kun registry-apis matrikel-422 og "Person not
+        // found"-404 (erPersonIkkeFundet) tie-stilles.
         // Alle andre 4xx og ALLE 5xx rapporteres uaendret — mister vi dem,
         // mister vi signalet om at upstream begynder at afvise noget vi
         // TROEDE var gyldigt. Frederiks valg 20/8.
@@ -1541,10 +1542,9 @@ class RegistryApi
      * 404 eller et "Company not found" rapporteres stadig.
      *
      * 🚨 registry-api svarer OGSAA denne 404, naar dens eget CVR-opslag
-     * fejler (`CvrService::searchDeltager()` returnerer null). En exception
-     * dér logges som error og naar registry-apis Flare; et ikke-ok svar fra
-     * CVR logges i dag kun som warning (kun laravel.log). Den skal loeftes,
-     * foer denne tie-stilning er sikker — se PR-beskrivelsen.
+     * fejler (`CvrService::searchDeltager()` returnerer null). Begge
+     * fejlveje logges som error og naar registry-apis egen Flare fra
+     * registry-api#398, som skal vaere DEPLOYET foer denne version ruller ud.
      *
      * 🪤 `error` kan vaere en streng i andre svar; data_get() paa en streng
      * giver null, saa den falder igennem til report() i stedet for at kaste
