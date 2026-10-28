@@ -140,9 +140,48 @@ it('beskriver koncernreglen som den er bygget', function () {
 
     $this->get('/metode')->assertOk()
         ->assertSee('Selskaber og koncerner')
-        ->assertSee('ejer mindst 66,67 % af selskabet')
-        ->assertSee('ejer 50 % og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har en kendt andel på 50 % eller mere.')
+        // Stemmerne afgoer kontrol (registry-api Koncern, coalesce(voting_share, ownership_share)).
+        ->assertSee('har mindst 66,67 % af stemmerne i selskabet')
+        ->assertSee('har 50 % af stemmerne og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har en kendt andel på 50 % eller mere.')
+        ->assertSee('Er stemmeandelen ikke registreret i CVR, bruges ejerandelen.')
+        ->assertDontSee('ejer mindst 66,67 % af selskabet')
         ->assertSee('Er det øverste moderselskab udenlandsk eller en person, stopper kæden ved det øverste danske selskab.')
         ->assertSee('kontrol gennem flere mindre ejerandele')
         ->assertSee('højst 10 led');
+});
+
+it('følger faktatjekket 28/10-2026 (registry-api main efter #399)', function () {
+    config()->set('metis.gating.enabled', false);
+
+    $this->get('/metode')->assertOk()
+        // F1: kun venturefond filtreres paa under 50 % (ByggInvestortyperCommand)
+        ->assertDontSee('Under begge typer tæller kun selskaber')
+        ->assertSee('En kapitalfond tæller også i selskaber, den ejer flertallet af.')
+        // F2: listen har tre punkter
+        ->assertSee('når alle tre krav er opfyldt')
+        ->assertDontSee('alle fire krav')
+        // F3: EIFO kraever ikke under 50 %
+        ->assertSee('Kravet om under 50 % er vores tilføjelse. EIFO kræver det ikke.')
+        // F7 + F8: rapportens rigtige titel og lønkravet
+        ->assertSee('Nye virksomheder i danske kommuner og erhvervshusområder')
+        ->assertDontSee('<em>Nye virksomheder i Danmark</em>', false)
+        ->assertSee('svarende til mindst et halvt års løn i samme branche')
+        // Regioner: Region Østdanmark fra 1/1-2027
+        ->assertSee('Region Østdanmark (lov nr. 699 af 20. juni 2025)')
+        // F14: kun 2 eller 4 cifre
+        ->assertSee('I filteret skriver du 2 cifre')
+        ->assertDontSee('skrive starten af en kode')
+        // F16: ÅRL § 32
+        ->assertSee('årsregnskabsloven § 32')
+        // F18: kapitalhistorik for alle
+        ->assertDontSee('hentes for iværksætterpopulationen')
+        // F20: kilder
+        ->assertSee('Danmarks Statistik (nøglen fra DB07 til DB25');
+});
+
+it('🪤 kapitalfond-forklaringen i dropdownen lover ikke en 50 %-grænse', function () {
+    // F1: koden filtrerer kun venture paa under 50 %.
+    expect(CompanySegmentation::INVESTORTYPE_FORKLARING['kapitalfond'])
+        ->not->toContain('under 50 %')
+        ->toContain('flertallet');
 });
