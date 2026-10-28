@@ -369,6 +369,7 @@ class CompanySegmentation extends Component
         'angel_flere' => 'Business angel, ejer i mindst 3 selskaber',
         'angel_person' => 'Business angel, enhver person',
         'venture' => 'Venturefond',
+        'kapitalfond' => 'Kapitalfond (ikke venture)',
         'public' => 'Offentlig investor',
         'foundation' => 'Erhvervsdrivende fond',
         'udenlandsk' => 'Udenlandsk ejer',
@@ -381,7 +382,8 @@ class CompanySegmentation extends Component
         // Fra registry-api #382: kun ejerskaber hvor CVR's deltager-id er personens eget.
         'angel_flere' => 'Privatperson der ejer andele i mindst 3 selskaber, direkte eller gennem eget holdingselskab. Kun ejerskaber, hvor CVR identificerer personen entydigt, tæller med, så personer med samme navn ikke lægges sammen. Ejerskaber uden den identifikation tæller ikke, så tallet kan være for lavt.',
         'angel_person' => 'Enhver privatperson med ejerandel, også stifterne.',
-        'venture' => 'Venturefond der ejer under 50 % af selskabet.',
+        'venture' => 'Kollektiv fond (EuVECA- eller AIF-registreret hos ESMA, eller et K/S med mindst 2 porteføljeselskaber), der investerer i unge driftsselskaber (medianalder højst 10 år ved indtræden) med minoritetsposter. Fonden ejer under 50 % af selskabet. Fondsejede investeringsselskaber og personlige investeringsselskaber tæller ikke.',
+        'kapitalfond' => 'Kollektiv fond, der ikke opfylder venture-kravene: private equity, infrastruktur, energi eller ejendom.',
     ];
 
     /**

@@ -93,10 +93,10 @@ it('viser ingen ejerdaekning uden investortype', function () {
 });
 
 it('har de samme investortype-noegler som registry-api kender', function () {
-    // Spejl af registry-api App\Enums\InvestortypeFilter, 23/10-2026.
+    // Spejl af registry-api App\Enums\InvestortypeFilter, 28/10-2026 ('kapitalfond' fra venture-definitionen).
     expect(array_keys(CompanySegmentation::INVESTORTYPER))->toEqualCanonicalizing([
         'angel_eifo', 'angel_ekstern', 'angel_flere', 'angel_person',
-        'venture', 'public', 'foundation', 'udenlandsk',
+        'venture', 'kapitalfond', 'public', 'foundation', 'udenlandsk',
     ]);
 });
 
