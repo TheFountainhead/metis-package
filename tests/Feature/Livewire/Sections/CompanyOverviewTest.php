@@ -18,7 +18,7 @@ function fakeCompanyInfo(array $overrides = []): array
     return array_merge([
         'cvr' => '28963610',
         'name' => 'Mimo Invest ApS',
-        'employees' => 4,
+        'employees' => ['latest' => ['count' => 4, 'fte' => 3, 'year' => 2026, 'month' => 8, 'interval' => null], 'history' => []],
         'financials' => [
             ['year' => '2024', 'equity' => 121_363_585, 'assets' => 585_110_069, 'profit_loss' => -12_785_619],
             ['year' => '2023', 'equity' => 134_149_204, 'assets' => 612_845_330, 'profit_loss' => 8_100_000],
