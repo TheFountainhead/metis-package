@@ -326,11 +326,21 @@
             </p>
             <ol class="list-decimal pl-5 space-y-2 mb-3">
                 <li><strong>Offentlig investor:</strong> branchekode 84 (offentlig forvaltning), eller navnet indeholder Vækstfonden, Eksport- og Investeringsfond, Styrelsen eller Innovationsfonden. Alle ejerandele tæller.</li>
-                <li><strong>Erhvervsdrivende fond:</strong> branchekode 64.32, eller navnet indeholder ordet fond (også fonden, fonde, fonds og som slutning på et sammensat ord, fx iværksætterfond). Navnereglen gælder ikke kommanditselskaber. Alle ejerandele tæller.</li>
-                <li><strong>Venturefond:</strong> et kommanditselskab (K/S), der ejer andele i mindst 2 selskaber, eller et selskab med branchekode 64.30, 64.99 eller 66.30, der ejer andele i mindst 2 selskaber. Fonden skal eje under 50 % af det selskab, der tælles. Ejer den flertallet, er den moderselskab og ikke investor.</li>
+                <li><strong>Venturefond fra EuVECA-registret:</strong> en fond registreret hos ESMA som europæisk venturekapitalfond (EuVECA) er altid en venturefond. Forordningen kræver selv, at 70 % investeres i unoterede små og mellemstore virksomheder.</li>
+                <li><strong>Erhvervsdrivende fond:</strong> en ejer uden selskabsform (A/S, ApS, K/S eller P/S) med branchekode 64.32 eller ordet fond i navnet (også fonden, fonde, fonds og som slutning på et sammensat ord, fx iværksætterfond). Et aktie- eller anpartsselskab, som en fond kontrollerer, tæller også som fond, fx Novo Holdings A/S. Et A/S, ApS, K/S eller P/S er aldrig selv en fond, heller ikke med fond i navnet. Alle ejerandele tæller.</li>
+                <li>
+                    <strong>Venturefond og kapitalfond:</strong> en kollektiv fond, dvs. registreret hos ESMA som alternativ investeringsfond (AIF), eller et K/S eller P/S, der ejer andele i mindst 2 selskaber. Den er en <strong>venturefond</strong>, når alle fire krav er opfyldt:
+                    <ol class="list-[lower-alpha] pl-5 mt-1 space-y-1">
+                        <li>Højst halvdelen af porteføljen ligger i energi, byggeri, anlæg, fast ejendom eller andre fonde (branchekode 35, 41, 42, 68, 64.3 og 64.99), og fonden har ikke selv en af branchekoderne 35, 41, 42 eller 68.</li>
+                        <li>Porteføljeselskaberne er unge: medianalderen, da fonden blev ejer, er højst 10 år.</li>
+                        <li>Fonden har minoritetsposter: medianandelen er under 50 %. CVR's andel "50" dækker intervallet 50-66,66 %, så den tæller som kontrol.</li>
+                    </ol>
+                    Ellers er den en <strong>kapitalfond</strong> (private equity, infrastruktur, energi eller ejendom). Under begge typer tæller kun selskaber, som fonden ejer under 50 % af. Ejer den flertallet, er den moderselskab og ikke investor.
+                    Kilder: EuVECA-forordningen (345/2013, art. 3), lov om forvaltere af alternative investeringsfonde (§ 2, nr. 1, og § 3, nr. 1) og Invest Europes definitioner (2025).
+                </li>
             </ol>
             <p class="mb-3">
-                Andre selskabsejere, fx holdingselskaber og almindelige moderselskaber, kan ikke vælges som investortype, fordi reglerne for dem er for usikre.
+                Holdingselskaber, personlige investeringsselskaber og almindelige moderselskaber kan ikke vælges som investortype. De investerer ejerens egne penge og ikke kapital rejst fra flere investorer.
             </p>
 
             <h3 class="font-semibold mb-2">Udenlandsk ejer</h3>
@@ -358,9 +368,9 @@
                 <li><strong>Kurs</strong> er prisen for 100 kr. nominel kapital.</li>
                 <li><strong>Beløb</strong> = nominelt beløb × kurs / 100. Beløbet er indbetalt kapital, ikke omsætning.</li>
                 <li><strong>Implied valuation</strong> (den værdi runden sætter på selskabet) = samlet kapital efter ændringen × kurs / 100. Den antager, at hele kapitalen er prissat til rundens kurs. Reelle vilkår som præferenceaktier og warrants kan afvige.</li>
-                <li><strong>Rejst i alt</strong> er summen af kapitalforhøjelser med kendt beløb. Fondsforhøjelser tæller ikke, fordi der ikke kommer nye penge ind. Stiftelseskapitalen er heller ikke med.</li>
-                <li><strong>Kapitalnedsættelse:</strong> beløbet er udbetalingen til ejerne.</li>
-                <li><strong>Indbetalingsform</strong> er kontant, konvertering af gæld, apportindskud (værdier) eller fondsforhøjelse, som det står i registreringsteksten.</li>
+                <li><strong>Rejst i alt</strong> er summen af kapitalforhøjelser med kendt beløb. Fondsforhøjelser, fusioner og spaltninger tæller ikke, fordi der ikke kommer nye penge ind. Ved en fusion eller spaltning flyttes kapital mellem selskaber. Stiftelseskapitalen er heller ikke med.</li>
+                <li><strong>Kapitalnedsættelse:</strong> beløbet afhænger af formålet. Ved udbetaling til ejerne er det udbetalingen. Ved dækning af underskud eller henlæggelse til reserve forlader der ikke penge selskabet.</li>
+                <li><strong>Indbetalingsform</strong> er kontant, konvertering af gæld, apportindskud (værdier), fondsforhøjelse eller fusion/spaltning, som det står i registreringsteksten. Står der en anden form, vises "Anden indbetalingsform", og den præcise tekst ses ved at holde musen over.</li>
                 <li>
                     <strong>Ejerændringer samme dato</strong> er ændringer i ejerandele, som er registreret med samme dato som kapitalændringen.
                     Koblingen mellem en ejer og en runde er udledt af datoen. CVR siger ikke direkte, hvem der deltog i en runde.
@@ -389,7 +399,7 @@
             </p>
             <ul class="list-disc pl-5 space-y-2 mb-3">
                 <li><strong>En kapitalforhøjelse</strong> er en registreret stigning i selskabskapitalen efter stiftelsen. Stiftelsen, kapitalnedsættelser og ændringer uden ny kapital tæller ikke.</li>
-                <li><strong>Fondsforhøjelser tæller ikke</strong>, fordi der ikke kommer nye penge ind. Mangler registreringsteksten, kan vi ikke se, om det var en fondsforhøjelse, og så tæller forhøjelsen med.</li>
+                <li><strong>Fondsforhøjelser, fusioner og spaltninger tæller ikke</strong>, fordi der ikke kommer nye penge ind. Mangler registreringsteksten, kan vi ikke se formen, og så tæller forhøjelsen med.</li>
                 <li><strong>Rejst kapital</strong> er summen af beløbene for kapitalforhøjelserne. Beløbet står i registreringsteksten, og den mangler for mange ældre forhøjelser. En forhøjelse uden beløb tæller som 0 kr. Rejst kapital er derfor en nedre grænse. Kun beløb i kroner lægges sammen. Selskaber med kapital i en anden valuta tæller med i antallet af forhøjelser, men ikke i rejst kapital.</li>
                 <li><strong>Mindst og højst rejst kapital virker forskelligt.</strong> <em>Mindst</em> bruger den nedre grænse, så selskaber med manglende beløb kan være med. <em>Højst</em> tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner, fordi et manglende beløb kan skjule, at selskabet har rejst mere. Siden viser, hvor mange der er udeladt af den grund.</li>
                 <li><strong>Intern kapital er med.</strong> Gældskonvertering, apportindskud og kapital fra et moderselskab tæller som rejst kapital på samme måde som kontante indskud. Vi skiller dem ikke ad endnu. Også store, etablerede selskaber kan have store forhøjelser.</li>

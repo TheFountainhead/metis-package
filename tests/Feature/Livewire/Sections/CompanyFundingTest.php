@@ -123,15 +123,27 @@ it('does not mark owners when the API sends no country (registry-api before krav
         ->assertSeeHtml('lookup/person/Stifter%20Stiftersen');
 });
 
-it('viser en etiket for fusion, daekning af underskud og henlaeggelse til reserve', function (string $type, string $etiket) {
+it('viser en etiket for fusion, daekning af underskud og henlaeggelse til reserve', function (string $type, string $etiket, int $runde) {
+    // Runde 1 er en forhoejelse, runde 2 en nedsaettelse: typen paa den slags runde, registry-api giver den til.
     $data = fakeFundingHistory();
-    $data['data']['rounds'][2]['payment_type'] = $type;
+    $data['data']['rounds'][$runde]['payment_type'] = $type;
     Http::fake(['*company/41527080/funding-history*' => Http::response($data)]);
 
     Livewire::test(CompanyFunding::class, ['query' => '41527080'])
         ->assertSee($etiket);
 })->with([
-    ['restructuring', 'Fusion eller spaltning'],
-    ['loss_coverage', 'Dækning af underskud'],
-    ['reserve', 'Henlæggelse til reserve'],
+    ['restructuring', 'Fusion eller spaltning', 1],
+    ['loss_coverage', 'Dækning af underskud', 2],
+    ['reserve', 'Henlæggelse til reserve', 2],
+    ['other', 'Anden indbetalingsform', 1],
 ]);
+
+it('viser registreringens egen formulering ved musen over indbetalingsformen', function () {
+    $data = fakeFundingHistory();
+    $data['data']['rounds'][1]['payment_type'] = 'other';
+    $data['data']['rounds'][1]['payment_text'] = 'ved indskud af aktier i datterselskab';
+    Http::fake(['*company/41527080/funding-history*' => Http::response($data)]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertSeeHtml('title="ved indskud af aktier i datterselskab"');
+});
