@@ -112,7 +112,11 @@ it('beskriver kapitalfiltrene, selskabslisten og udenlandske ejere', function ()
     $this->get('/metode')->assertOk()
         // Kapital (udviklingsstadie)
         ->assertSee('id="udviklingsstadie"', false)
-        ->assertSee('Fondsforhøjelser tæller ikke')
+        ->assertSee('Fondsforhøjelser, fusioner og spaltninger tæller ikke')
+        // Investortyper efter de officielle definitioner (registry-api #399)
+        ->assertSee('EuVECA-forordningen', false)
+        ->assertSee('kapitalfond', false)
+        ->assertDontSee('64.30', false)
         ->assertSee('Rejst kapital er derfor en nedre grænse')
         ->assertSee('Gældskonvertering, apportindskud og kapital fra et moderselskab')
         ->assertSee('Kun selskaber med hentet kapitalhistorik')
@@ -136,9 +140,75 @@ it('beskriver koncernreglen som den er bygget', function () {
 
     $this->get('/metode')->assertOk()
         ->assertSee('Selskaber og koncerner')
-        ->assertSee('ejer mindst 66,67 % af selskabet')
-        ->assertSee('ejer 50 % og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har en kendt andel på 50 % eller mere.')
+        // Stemmerne afgoer kontrol (registry-api Koncern, coalesce(voting_share, ownership_share)).
+        ->assertSee('har mindst 66,67 % af stemmerne i selskabet')
+        ->assertSee('har 50 % af stemmerne og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har en kendt andel på 50 % eller mere.')
+        ->assertSee('Er stemmeandelen ikke registreret i CVR, bruges ejerandelen.')
+        ->assertDontSee('ejer mindst 66,67 % af selskabet')
         ->assertSee('Er det øverste moderselskab udenlandsk eller en person, stopper kæden ved det øverste danske selskab.')
         ->assertSee('kontrol gennem flere mindre ejerandele')
         ->assertSee('højst 10 led');
+});
+
+it('følger faktatjekket 28/10-2026 (registry-api main efter #399)', function () {
+    config()->set('metis.gating.enabled', false);
+
+    $this->get('/metode')->assertOk()
+        // F1: kun venturefond filtreres paa under 50 % (ByggInvestortyperCommand)
+        ->assertDontSee('Under begge typer tæller kun selskaber')
+        ->assertSee('En kapitalfond tæller i alle selskaber, den ejer, også hvor den har 50 % eller mere af stemmerne.')
+        ->assertSee('Fonde, der er afregistreret hos ESMA, tæller med.')
+        ->assertSee('§ 3, stk. 1, nr. 1', false)
+        ->assertSee('(februar 2021, s. 17)', false)
+        ->assertDontSee('s. 16', false)
+        // F2: listen har tre punkter
+        ->assertSee('når alle tre krav er opfyldt')
+        ->assertDontSee('alle fire krav')
+        // F3: EIFO kraever ikke under 50 %
+        ->assertSee('Kravet om under 50 % er vores tilføjelse. EIFO kræver det ikke.')
+        // F7 + F8: rapportens rigtige titel og lønkravet
+        ->assertSee('Nye virksomheder i danske kommuner og erhvervshusområder')
+        ->assertDontSee('<em>Nye virksomheder i Danmark</em>', false)
+        ->assertSee('svarende til mindst et halvt års løn i samme branche')
+        // Regioner: Region Østdanmark fra 1/1-2027
+        ->assertSee('Region Østdanmark (lov nr. 699 af 20. juni 2025)')
+        // F14: kun 2 eller 4 cifre
+        ->assertSee('I filteret skriver du 2 cifre')
+        ->assertDontSee('skrive starten af en kode')
+        // F16: ÅRL § 32
+        ->assertSee('årsregnskabsloven § 32')
+        // F18: kapitalhistorik for alle
+        ->assertDontSee('hentes for iværksætterpopulationen')
+        // F20: kilder
+        ->assertSee('Danmarks Statistik (nøglen fra DB07 til DB25');
+});
+
+it('følger sprogrettelserne i PDF-udgaven 29/10-2026', function () {
+    config()->set('metis.gating.enabled', false);
+
+    $this->get('/metode')->assertOk()
+        // ESMA 29/10: 344 af 1.699 fonde knyttet til CVR
+        ->assertSee('omkring hver femte danske fond')
+        ->assertDontSee('hver sjette')
+        // Indtastningsfejl i CVR rettes ikke (besluttet 29/10)
+        ->assertSee('Enkelte registreringer indeholder åbenlyse indtastningsfejl')
+        ->assertSee('Den mest specifikke kode går forud.')
+        ->assertDontSee('vinder.')
+        ->assertDontSee('Undtagelserne er:')
+        ->assertDontSee('Vær opmærksom på');
+});
+
+it('🪤 kapitalfond-forklaringen i dropdownen lover ikke en 50 %-grænse', function () {
+    // F1: koden filtrerer kun venture paa under 50 %.
+    expect(CompanySegmentation::INVESTORTYPE_FORKLARING['kapitalfond'])
+        ->not->toContain('under 50 %')
+        ->toContain('50 % eller mere af stemmerne');
+});
+
+it('dropdownens angel-forklaringer siger at 50 %-grænsen er vores og at holdingselskabet ikke tæller', function () {
+    $f = CompanySegmentation::INVESTORTYPE_FORKLARING;
+    expect($f['angel_eifo'])->toContain('vores tilføjelse, ikke EIFO')
+        ->and($f['angel_person'])->toContain('gennem eget holdingselskab, også stifterne')
+        ->and($f['angel_person'])->toContain('holdingselskab tæller ikke selv med')
+        ->and($f['venture'])->toContain('under 50 % af stemmerne');
 });

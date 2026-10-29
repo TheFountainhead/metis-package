@@ -298,7 +298,7 @@
                     </template>
                 </div>
             </div>
-            <p class="text-xs text-ink-700/50 mb-5">{{ __('Fondsforhøjelser tæller ikke. Bruges et kapitalfilter, tæller kun selskaber, hvor kapitalhistorikken er hentet.') }}</p>
+            <p class="text-xs text-ink-700/50 mb-5">{{ __('Fondsforhøjelser, fusioner og spaltninger tæller ikke. Bruges et kapitalfilter, tæller kun selskaber, hvor kapitalhistorikken er hentet.') }}</p>
 
             <button wire:click="nulstil" x-on:click="tomHalve()" type="button"
                     class="w-full text-sm border border-sand-200 rounded-lg px-3 py-2 hover:bg-white transition text-ink-700">

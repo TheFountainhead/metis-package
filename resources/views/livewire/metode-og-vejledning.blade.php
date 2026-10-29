@@ -10,7 +10,7 @@
 
     <h1 class="text-2xl font-bold text-ink-800 mb-1">{{ __('Metode og vejledning') }}</h1>
     <p class="text-ink-700/60 text-sm mb-6">
-        {{ __('Hvordan tallene i selskabssegmenteringen er dannet: hvilke data vi bruger, og efter hvilke regler selskaberne bliver talt og klassificeret. Først en kort vejledning i at bruge siden.') }}
+        {{ __('Hvordan tallene i selskabssegmenteringen er dannet: hvilke data vi bruger, og efter hvilke regler selskaberne bliver talt og klassificeret. Først en kort vejledning i, hvordan siden bruges.') }}
     </p>
 
     @if(! $this->harAdgang())
@@ -38,8 +38,10 @@
         🔑 Hver regel her er laest i registry-api's kode (se klassens docblock).
         Skriv ikke en regel ind, der ikke kan peges paa i koden, og lov ikke
         funktioner, der ikke findes. Opdateringsfrekvens er udeladt MED VILJE:
-        ingen af de kommandoer, der danner status, fintech og investortyper,
-        er planlagt i registry-api's scheduler (maalt 25/10-2026).
+        stamdata (inkl. status og kommune), kapitalhistorik og koncerner bygges
+        hver nat i registry-api's scheduler, men investortyper, fintech og
+        ESMA-fondene er ikke planlagt (routes/console.php, maalt 28/10-2026).
+        Siden kan derfor ikke love én frekvens for alle tal.
     --}}
     <div class="text-sm text-ink-800 leading-relaxed space-y-10" data-metode>
 
@@ -66,7 +68,7 @@
             <ol class="list-decimal pl-5 space-y-3">
                 <li>
                     <strong>Log ind.</strong> Segmenteringen er for brugere, vi har en aftale med.
-                    Vælg <em>Log ind</em> og brug din arbejdsmail og dit kodeord. Du forbliver logget ind i 30 dage på samme enhed.
+                    Vælg <em>Log ind</em> og brug din arbejdsmail og dit kodeord. Du forbliver logget ind i 30 dage på samme enhed. Logger du ind på en anden enhed eller logger ud, skal du logge ind igen på de andre enheder, når deres session udløber.
                     Står din mail på vores brugerliste, kan du i stedet vælge <em>Bekræft arbejdsmail</em>. Så sender vi en kode til din mail.
                     Har du ikke adgang, så skriv til support@frankston.io.
                 </li>
@@ -92,7 +94,7 @@
                 <li>
                     <strong>Hent til Excel.</strong> Knappen <em>Hent til Excel (CSV)</em> henter fordelingen som en fil, der kan åbnes direkte i Excel.
                     Filen har kode, betegnelse og antal for hver gruppe. Nederst står totalen, hvor mange der er uden gruppe,
-                    om ophørte selskaber er med, og den valgte investortype, fintech-afgrænsning eller de valgte kapitalfiltre, hvis du har valgt nogen.
+                    om ophørte selskaber er med, og den valgte investortype, fintech-afgrænsning eller de valgte kapitalfiltre, hvis du har valgt nogen. Øvrige afgrænsninger står ikke i filen.
                 </li>
                 <li>
                     <strong>Hent selskabslisten.</strong> Knappen <em>Hent selskabslisten (CSV)</em> henter selskaberne bag hele det viste udvalg.
@@ -132,15 +134,21 @@
         <section id="ivaerksaetter" class="scroll-mt-20">
             <h2 class="text-lg font-semibold text-ink-800 mb-3">3. Iværksættervirksomheder</h2>
             <p class="mb-3">
-                Filteret <em>Kun iværksættervirksomheder</em> følger Erhvervsstyrelsens definition i <em>Nye virksomheder i Danmark</em> (februar 2021):
-                en ny virksomhed, der udbetaler løn til andre end ejerne. Løn er ikke offentlig, men antal årsværk er.
-                Et selskab tæller derfor med, når alle tre regler er opfyldt:
+                Filteret <em>Kun iværksættervirksomheder</em> bygger på Erhvervsstyrelsens definition i
+                <em>Nye virksomheder i danske kommuner og erhvervshusområder</em> (februar 2021, s. 17):
+                en ny virksomhed, der udbetaler løn til andre personer end ejerne, svarende til mindst et halvt års løn i samme branche.
+                Løn er ikke offentlig, men antal årsværk er. Mindst ét årsværk er derfor vores tilnærmelse af lønkravet.
+                Et selskab tæller med, når alle tre regler er opfyldt:
             </p>
             <ol class="list-decimal pl-5 space-y-2 mb-3">
                 <li><strong>Mindst ét årsværk.</strong> Selskabet har på et tidspunkt haft mindst ét årsværk i CVR's beskæftigelsestal. Et selskab uden beskæftigelsestal i CVR tæller ikke med.</li>
-                <li><strong>Selskabsform.</strong> Enkeltmandsvirksomhed, interessentskab (I/S), anpartsselskab (ApS) eller aktieselskab (A/S). Definitionen nævner også iværksætterselskaber (IVS), men den selskabsform er afskaffet ved lov og findes ikke længere i registret.</li>
-                <li><strong>Branche.</strong> Selskabet er ikke i finansiering og forsikring (branchekode 64, 65 og 66), fast ejendom (68) eller offentlig forvaltning og forsvar (84). Det er Erhvervsstyrelsens egne undtagelser. Selskaber uden branchekode tæller med.</li>
+                <li><strong>Selskabsform.</strong> Enkeltmandsvirksomhed, interessentskab (I/S), anpartsselskab (ApS) eller aktieselskab (A/S). Definitionen nævner også iværksætterselskaber (IVS), men den selskabsform er afskaffet ved lov og indgår ikke som selvstændig selskabsform i opgørelsen.</li>
+                <li><strong>Branche.</strong> Selskabet er ikke i finansiering og forsikring (branchekode 64, 65 og 66), fast ejendom (68) eller offentlig forvaltning og forsvar (84). Undtagelserne er Erhvervsstyrelsens. Branchekoderne er vores oversættelse af dem. Selskaber uden branchekode tæller med.</li>
             </ol>
+            <p class="mb-2">
+                Erhvervsstyrelsens øvrige afgrænsninger er ikke med: selskaber stiftet ved spaltning, selskaber ejet gennem andre selskaber med flere end 5 ansatte
+                og virksomheder stiftet af flere end 6 personer.
+            </p>
             <p class="mb-2">
                 Beskæftigelsestallene er CVR's månedlige tal for årsværk. Har et selskab ikke månedlige tal, bruger vi de kvartalsvise.
             </p>
@@ -154,10 +162,19 @@
         <section id="geografi" class="scroll-mt-20">
             <h2 class="text-lg font-semibold text-ink-800 mb-3">4. Kommune og region</h2>
             <ul class="list-disc pl-5 space-y-2">
-                <li><strong>Kommune</strong> er kommunekoden på selskabets adresse i CVR.</li>
-                <li><strong>Region</strong> er udledt af kommunekoden. Hver kommune hører til én af de fem regioner efter Danmarks Administrative Geografiske Inddeling (DAGI).</li>
+                <li>
+                    <strong>Kommune</strong> er kommunekoden på selskabets seneste adresse i CVR. For et ophørt selskab er det den sidste adresse, selskabet havde.
+                    En kommunekode fra før kommunalreformen 1. januar 2007 omregnes til den nuværende kommune efter Danmarks Statistiks tabel.
+                    Blev den gamle kommune delt, afgøres kommunen af, hvilken kommune aktive selskaber på samme vej og postnummer ligger i.
+                    Kan det ikke afgøres entydigt, har selskabet ingen kommune.
+                </li>
+                <li>
+                    <strong>Region</strong> er udledt af kommunekoden. Danmark har fem regioner, og hver kommune hører til én af dem efter Danmarks Administrative Geografiske Inddeling (DAGI).
+                    Fra 1. januar 2027 lægges Region Hovedstaden og Region Sjælland sammen til Region Østdanmark (lov nr. 699 af 20. juni 2025).
+                    Fordelingen på region bruger de fem regioner, der gælder til og med 31. december 2026.
+                </li>
                 <li><strong>Grønland.</strong> Grønlandske kommuner (kommunekode 955 til 960) har ingen dansk region. Selskaber dér står på linjen <em>Uden dansk region</em>, når du fordeler på region.</li>
-                <li><strong>Selskaber uden kommune.</strong> Nogle selskaber har ingen kommune i CVR, typisk fordi de ikke har en aktuel adresse. De tæller med i totalen og står på linjen <em>Uden kommune i CVR</em> eller <em>Uden dansk region</em>. Afgrænser du til en kommune eller en region, er de ikke med.</li>
+                <li><strong>Selskaber uden kommune.</strong> Nogle selskaber har ingen kommune, fx fordi adressen ligger i udlandet og ikke har en dansk kommunekode, fordi en delt kommune fra før 2007 ikke kan afgøres, eller fordi selskabets data fra CVR ikke er hentet. De tæller med i totalen og står på linjen <em>Uden kommune i CVR</em> eller <em>Uden dansk region</em>. Afgrænser du til en kommune eller en region, er de ikke med.</li>
             </ul>
         </section>
 
@@ -165,12 +182,21 @@
         <section id="branche" class="scroll-mt-20">
             <h2 class="text-lg font-semibold text-ink-800 mb-3">5. Branche og vertikaler</h2>
             <ul class="list-disc pl-5 space-y-2 mb-4">
-                <li><strong>Branche</strong> er selskabets hovedbranche i CVR efter Dansk Branchekode 2025 (DB25). I filteret kan du skrive starten af en kode: <em>62</em> giver alle koder, der begynder med 62, og <em>62.10</em> giver kun dem, der begynder med 62.10 (computerprogrammering).</li>
-                <li><strong>Uden holdingselskaber</strong> udelader selskaber med branchekode 64.21 (holdingselskaber). Selskaber uden branchekode bliver.</li>
+                <li>
+                    <strong>Branche</strong> er selskabets hovedbranche i CVR efter Dansk Branchekode 2025 (DB25). Har selskabet ingen hovedbranche, bruges den første bibranche.
+                    En kode fra før 2025 omregnes til DB25:
+                    <ul>
+                        <li>En kode efter Dansk Branchekode 2007 (DB07) omregnes med Danmarks Statistiks nøgle. Peger nøglen på flere DB25-koder, bruges den med størst vægt.</li>
+                        <li>En ældre kode omregnes først til DB07. Den får den DB07-kode, som flest selskaber med samme gamle kode fik ved CVR's omkodning 1. januar 2008, hvis mere end halvdelen og mindst 3 selskaber fik den.</li>
+                    </ul>
+                    Kan koden ikke omregnes, har selskabet ingen branchekode.
+                </li>
+                <li>I filteret skriver du 2 cifre (fx <em>62</em>) eller 4 cifre med punktum (fx <em>62.10</em>). <em>62</em> giver alle koder, der begynder med 62, og <em>62.10</em> giver kun dem, der begynder med 62.10 (computerprogrammering).</li>
+                <li><strong>Uden holdingselskaber</strong> udelader selskaber med branchekode 64.21 (holdingselskaber). Selskaber uden branchekode tæller stadig med.</li>
             </ul>
             <h3 class="font-semibold mb-2">Vertikaler</h3>
             <p class="mb-3">
-                En vertikal er en gruppe af branchekoder. Den mest specifikke kode vinder. Fx er 46.46 (engroshandel med medicinalvarer) life science,
+                En vertikal er en gruppe af branchekoder. Den mest specifikke kode går forud. Fx er 46.46 (engroshandel med medicinalvarer) life science,
                 selv om resten af 46 er engroshandel. Selskaber uden branchekode har ingen vertikal.
             </p>
             <div class="overflow-x-auto border border-sand-200 rounded-xl mb-3">
@@ -257,11 +283,9 @@
                 </table>
             </div>
             <p class="mb-2">
-                Store og små bogstaver er ligegyldige. De fleste ord tæller også som del af et længere ord, fx <em>mobilbetalingsløsning</em>. Undtagelserne er:
-                <em>payment</em>, <em>payments</em> og <em>lending</em> tæller kun som hele ord.
-                <em>fintech</em> tæller kun i begyndelsen af et ord, fx <em>fintechløsning</em>.
-                <em>betalinger</em> tæller kun i slutningen af et ord, fx <em>kortbetalinger</em>.
-                <em>blockchainbaserede betalinger</em> tæller også med bindestreg (<em>blockchain-baserede</em>), men ikke i ental (<em>blockchainbaseret betaling</em>).
+                Store og små bogstaver er ligegyldige. De fleste ord tæller også som del af et længere ord, fx <em>mobilbetalingsløsning</em>. Der er nogle undtagelser: <em>payment</em>, <em>payments</em> og <em>lending</em> tæller kun som hele ord. Ordet <em>fintech</em> tæller kun i begyndelsen af et ord, fx <em>fintechløsning</em>.
+                Ordet <em>betalinger</em> tæller kun i slutningen af et ord, fx <em>kortbetalinger</em>.
+                Udtrykket <em>blockchainbaserede betalinger</em> tæller også med bindestreg (<em>blockchain-baserede</em>), men ikke i ental (<em>blockchainbaseret betaling</em>).
             </p>
             <p class="mb-1">Nogle ord tæller bevidst ikke alene:</p>
             <ul class="list-disc pl-5 space-y-1">
@@ -279,15 +303,15 @@
                 Et selskab kan have flere investortyper.
             </p>
             <ul class="list-disc pl-5 space-y-1 mb-4">
-                <li>CVR's ejerregister viser kun ejere med mindst 5 %. Mindre ejere indgår ikke. Interessenter i et interessentskab (I/S) står i CVR som ejere uanset deres andel og tæller derfor med.</li>
-                <li>Kun selskaber, hvor vi kender ejerne, kan have en investortype. Når du vælger en investortype, viser siden, hvor mange af selskaberne i udvalget ejerne kendes for.</li>
+                <li>CVR's ejerregister viser kun ejere med mindst 5 % af kapitalen eller stemmerne. Mindre ejere indgår ikke. Interessenter i et interessentskab (I/S) står i CVR som interessenter, og vi tæller dem som ejere.</li>
+                <li>Kun selskaber, hvor vi kender ejerne, kan have en investortype. Når du vælger en investortype, viser siden, for hvor mange af selskaberne i udvalget ejerne er kendt.</li>
                 <li>Ejerandelen mangler for nogle ejerskaber i CVR. Hvor en regel kræver en andel under 50 %, tæller en ukendt andel ikke.</li>
             </ul>
 
             <h3 class="font-semibold mb-2">Personer: fire definitioner af business angel</h3>
             <p class="mb-2">
                 Der findes ikke én officiel definition, så du kan vælge mellem fire. En person kan eje direkte eller gennem sit eget holdingselskab.
-                Et <strong>personligt holdingselskab</strong> er et selskab med branchekode 64.2, 64.3 eller 64.99, hvor personen ejer mindst 50 %
+                Et <strong>personligt holdingselskab</strong> er et selskab med branchekode 64.2, 64.3 eller 64.99, hvor personen har mindst 50 % af stemmerne
                 og sidder i direktionen eller er registreret som selskabets repræsentant. Personens egne holdingselskaber tæller ikke som investeringer.
             </p>
             <p class="mb-3">
@@ -301,13 +325,16 @@
                     <ul class="list-disc pl-5 mt-1 space-y-1">
                         <li>ikke er stifter af selskabet,</li>
                         <li>ikke sidder i selskabets direktion og ikke er registreret som dets repræsentant,</li>
-                        <li>ejer under 50 %,</li>
+                        <li>ejer under 50 % af kapitalen,</li>
                         <li>og enten ejer gennem sit personlige holdingselskab eller sidder i selskabets bestyrelse.</li>
                     </ul>
                     <span class="block mt-1">
+                        Kravet om under 50 % er vores tilføjelse. EIFO kræver det ikke. Andelen vurderes for hvert ejerskab for sig og lægges ikke sammen.
+                        Ejerskab gennem et personligt holdingselskab er vores tilnærmelse af EIFO's krav om, at personen er aktiv ved at lede sit investeringsselskab.
+                    </span>
+                    <span class="block mt-1">
                         EIFO kræver også mindst én kapitalrunde på 1 mio. kr. Det led er ikke en del af investortype-filteret.
-                        Du kan kombinere filteret med <em>Rejst kapital i alt</em> under kapitalfiltrene (afsnit 10). Vær opmærksom på, at det filter lægger alle
-                        kendte forhøjelser sammen og ikke ser på den enkelte runde, at beløbet er en nedre grænse, og at kun selskaber med hentet kapitalhistorik tæller med.
+                        Du kan kombinere filteret med <em>Rejst kapital i alt</em> under kapitalfiltrene (afsnit 10). Det filter lægger alle kendte forhøjelser sammen og ser ikke på den enkelte runde. Beløbet er en nedre grænse, og kun selskaber med hentet kapitalhistorik tæller med.
                     </span>
                 </li>
                 <li><strong>Alle ikke-stiftere.</strong> En person, der ejer direkte eller gennem sit personlige holdingselskab, og som ikke er stifter af selskabet.</li>
@@ -316,21 +343,36 @@
                     Kun ejerskaber, hvor CVR identificerer personen entydigt, tæller med. Så bliver personer med samme navn ikke lagt sammen.
                     Ejerskaber uden den identifikation tæller ikke. Tallet er derfor en nedre grænse og kan være for lavt.
                 </li>
-                <li><strong>Enhver person.</strong> Alle personer med en ejerandel, også stifterne.</li>
+                <li><strong>Enhver person.</strong> Alle personer med en ejerandel, også stifterne, men ikke i personens eget holdingselskab.</li>
             </ol>
 
             <h3 class="font-semibold mb-2">Selskaber som ejere</h3>
             <p class="mb-2">
-                Et ejerselskab får én type ud fra sin branchekode, sit navn, sin selskabsform og antallet af selskaber, det i dag er registreret ejer af.
+                Et ejerselskab får én type ud fra sin branchekode, sit navn, sin selskabsform, antallet af selskaber, det i dag er registreret ejer af,
+                registrering hos ESMA, porteføljens sammensætning og alder, og hvem der kontrollerer det.
                 Reglerne prøves i denne rækkefølge:
             </p>
             <ol class="list-decimal pl-5 space-y-2 mb-3">
                 <li><strong>Offentlig investor:</strong> branchekode 84 (offentlig forvaltning), eller navnet indeholder Vækstfonden, Eksport- og Investeringsfond, Styrelsen eller Innovationsfonden. Alle ejerandele tæller.</li>
-                <li><strong>Erhvervsdrivende fond:</strong> branchekode 64.32, eller navnet indeholder ordet fond (også fonden, fonde, fonds og som slutning på et sammensat ord, fx iværksætterfond). Navnereglen gælder ikke kommanditselskaber. Alle ejerandele tæller.</li>
-                <li><strong>Venturefond:</strong> et kommanditselskab (K/S), der ejer andele i mindst 2 selskaber, eller et selskab med branchekode 64.30, 64.99 eller 66.30, der ejer andele i mindst 2 selskaber. Fonden skal eje under 50 % af det selskab, der tælles. Ejer den flertallet, er den moderselskab og ikke investor.</li>
+                <li><strong>Venturefond fra EuVECA-registret:</strong> en fond registreret hos ESMA som europæisk venturekapitalfond (EuVECA) er altid en venturefond. Forordningen kræver selv, at mindst 70 % af fondens kapital investeres i kvalificerede porteføljevirksomheder, som i hovedsagen er unoterede små og mellemstore virksomheder.</li>
+                <li><strong>Erhvervsdrivende fond:</strong> en ejer uden selskabsform (A/S, ApS, K/S eller P/S) med branchekode 64.32 eller ordet fond i navnet (også fonden, fonde, fonds og som slutning på et sammensat ord, fx iværksætterfond). Et aktie- eller anpartsselskab, som en fond har mindst 50 % af stemmerne i, tæller også som fond, fx Novo Holdings A/S. Et A/S, ApS, K/S eller P/S er aldrig selv en fond, heller ikke med fond i navnet. Typen omfatter alle fonde og andre ejere uden selskabsform med fond i navnet, også almennyttige fonde og foreninger. CVR's oplysning om, hvorvidt en fond er erhvervsdrivende, bruges ikke. Alle ejerandele tæller.</li>
+                <li>
+                    <strong>Venturefond og kapitalfond:</strong> en kollektiv fond, dvs. registreret hos ESMA som alternativ investeringsfond (AIF), eller et K/S eller P/S, der ejer andele i mindst 2 selskaber. K/S- og P/S-reglen er vores tilnærmelse: CVR viser ikke, om kapitalen er rejst fra flere investorer.
+                    ESMA's register har ikke CVR-nummer. En fond fra registret knyttes til CVR, når navnet passer på præcis ét selskab, og det gælder omkring hver femte danske fond i registret (målt oktober 2026). Fonde, der er afregistreret hos ESMA, tæller med.
+                    Fonden er en <strong>venturefond</strong>, når alle tre krav er opfyldt:
+                    <ol class="list-[lower-alpha] pl-5 mt-1 space-y-1">
+                        <li>Højst halvdelen af porteføljeselskaberne (talt i antal) ligger i energi, byggeri, anlæg, fast ejendom eller andre fonde (branchekode 35, 41, 42, 68, 64.3 og 64.99), og fonden har ikke selv en af branchekoderne 35, 41, 42 eller 68.</li>
+                        <li>Porteføljeselskaberne er unge: medianalderen, da fonden blev ejer, er højst 10 år.</li>
+                        <li>Fonden har minoritetsposter: median-stemmeandelen er under 50 %. CVR's andel "50" dækker intervallet fra 50 % til under 2/3, så den tæller som kontrol.</li>
+                    </ol>
+                    Ellers er den en <strong>kapitalfond</strong> (private equity, infrastruktur, energi eller ejendom). Kan medianalderen eller stemmeandelen ikke beregnes, regnes fonden som kapitalfond. Mangler startdatoen for et ejerskab, regnes alderen til i dag, så den bliver for høj, aldrig for lav.
+                    Under venturefond tæller kun selskaber, hvor fonden har under 50 % af stemmerne. Det gælder også fonde fra EuVECA-registret.
+                    En kapitalfond tæller i alle selskaber, den ejer, også hvor den har 50 % eller mere af stemmerne.
+                    Kilder: EuVECA-forordningen (345/2013, art. 3), lov om forvaltere af alternative investeringsfonde (§ 3, stk. 1, nr. 1, og § 2, nr. 1).
+                </li>
             </ol>
             <p class="mb-3">
-                Andre selskabsejere, fx holdingselskaber og almindelige moderselskaber, kan ikke vælges som investortype, fordi reglerne for dem er for usikre.
+                Holdingselskaber, personlige investeringsselskaber og almindelige moderselskaber kan ikke vælges som investortype. De kan ikke skilles fra almindelige koncernforhold i CVR.
             </p>
 
             <h3 class="font-semibold mb-2">Udenlandsk ejer</h3>
@@ -356,11 +398,12 @@
             </p>
             <ul class="list-disc pl-5 space-y-2 mb-3">
                 <li><strong>Kurs</strong> er prisen for 100 kr. nominel kapital.</li>
-                <li><strong>Beløb</strong> = nominelt beløb × kurs / 100. Beløbet er indbetalt kapital, ikke omsætning.</li>
+                <li><strong>Beløb</strong> = nominelt beløb × kurs / 100. Beløbet er indbetalt kapital, ikke omsætning. Nominelt beløb og kurs bruges, som selskabet har registreret dem i CVR. Enkelte registreringer indeholder åbenlyse indtastningsfejl, fx en kurs, der giver flere hundrede milliarder kroner. Dem retter vi ikke.</li>
                 <li><strong>Implied valuation</strong> (den værdi runden sætter på selskabet) = samlet kapital efter ændringen × kurs / 100. Den antager, at hele kapitalen er prissat til rundens kurs. Reelle vilkår som præferenceaktier og warrants kan afvige.</li>
-                <li><strong>Rejst i alt</strong> er summen af kapitalforhøjelser med kendt beløb. Fondsforhøjelser tæller ikke, fordi der ikke kommer nye penge ind. Stiftelseskapitalen er heller ikke med.</li>
-                <li><strong>Kapitalnedsættelse:</strong> beløbet er udbetalingen til ejerne.</li>
-                <li><strong>Indbetalingsform</strong> er kontant, konvertering af gæld, apportindskud (værdier) eller fondsforhøjelse, som det står i registreringsteksten.</li>
+                <li><strong>Flere trancher.</strong> Har en forhøjelse flere trancher, er beløbet summen af de trancher, der ikke er fondsforhøjelse, fusion eller spaltning. Kurs, indbetalingsform og implied valuation følger den største af dem.</li>
+                <li><strong>Rejst i alt</strong> er summen af kapitalforhøjelser med kendt beløb. Fondsforhøjelser, fusioner og spaltninger tæller ikke, fordi der ikke kommer nye penge ind. Ved en fusion eller spaltning flyttes kapital mellem selskaber. Stiftelseskapitalen er heller ikke med.</li>
+                <li><strong>Kapitalnedsættelse:</strong> beløbet er nominelt beløb × kurs / 100 med minus. Kun ved udbetaling til ejerne forlader pengene selskabet. Ved dækning af underskud eller henlæggelse til reserve flyttes beløbet inden for egenkapitalen. Kommer der penge ind samme dag som en større nedsættelse, står rækken som nedsættelse, men viser indbetalingen og dens form.</li>
+                <li><strong>Indbetalingsform</strong> er kontant, konvertering af gæld, apportindskud (værdier), fondsforhøjelse eller fusion/spaltning, som det står i registreringsteksten. Står der en anden form, vises "Anden indbetalingsform", og teksten fra registreringen (op til 255 tegn) ses ved at holde musen over.</li>
                 <li>
                     <strong>Ejerændringer samme dato</strong> er ændringer i ejerandele, som er registreret med samme dato som kapitalændringen.
                     Koblingen mellem en ejer og en runde er udledt af datoen. CVR siger ikke direkte, hvem der deltog i en runde.
@@ -373,8 +416,9 @@
                 </li>
             </ul>
             <p>
-                <strong>Omsætning.</strong> For virksomheder i regnskabsklasse B offentliggøres nettoomsætningen ikke (årsregnskabsloven § 138, stk. 6).
-                De fleste små og nye selskaber er i klasse B. For dem er bruttofortjenesten typisk det tal, der findes i det offentlige regnskab.
+                <strong>Omsætning.</strong> Virksomheder i regnskabsklasse B og mellemstore virksomheder i klasse C må nøjes med at vise bruttofortjenesten (årsregnskabsloven § 32).
+                Gør de det, offentliggøres den nettoomsætning, de indberetter, ikke (§ 138, stk. 6).
+                Små anparts- og aktieselskaber aflægger som minimum regnskab efter klasse B. For dem er bruttofortjenesten typisk det tal, der findes i det offentlige regnskab.
             </p>
         </section>
 
@@ -388,13 +432,13 @@
                 Du kan også fordele selskaberne på antal kapitalforhøjelser.
             </p>
             <ul class="list-disc pl-5 space-y-2 mb-3">
-                <li><strong>En kapitalforhøjelse</strong> er en registreret stigning i selskabskapitalen efter stiftelsen. Stiftelsen, kapitalnedsættelser og ændringer uden ny kapital tæller ikke.</li>
-                <li><strong>Fondsforhøjelser tæller ikke</strong>, fordi der ikke kommer nye penge ind. Mangler registreringsteksten, kan vi ikke se, om det var en fondsforhøjelse, og så tæller forhøjelsen med.</li>
+                <li><strong>En kapitalforhøjelse</strong> er en registreret stigning i selskabskapitalen efter stiftelsen. Stiftelsen, kapitalnedsættelser og ændringer uden ny kapital tæller ikke. Kommer der en indbetaling (kontant, apport, gældskonvertering eller anden form) samme dag som en større nedsættelse, så kapitalen samlet falder, tæller indbetalingen også som en forhøjelse.</li>
+                <li><strong>Fondsforhøjelser, fusioner og spaltninger tæller ikke</strong>, fordi der ikke kommer nye penge ind. Mangler registreringsteksten, kan vi ikke se formen, og så tæller forhøjelsen med.</li>
                 <li><strong>Rejst kapital</strong> er summen af beløbene for kapitalforhøjelserne. Beløbet står i registreringsteksten, og den mangler for mange ældre forhøjelser. En forhøjelse uden beløb tæller som 0 kr. Rejst kapital er derfor en nedre grænse. Kun beløb i kroner lægges sammen. Selskaber med kapital i en anden valuta tæller med i antallet af forhøjelser, men ikke i rejst kapital.</li>
                 <li><strong>Mindst og højst rejst kapital virker forskelligt.</strong> <em>Mindst</em> bruger den nedre grænse, så selskaber med manglende beløb kan være med. <em>Højst</em> tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner, fordi et manglende beløb kan skjule, at selskabet har rejst mere. Siden viser, hvor mange der er udeladt af den grund.</li>
-                <li><strong>Intern kapital er med.</strong> Gældskonvertering, apportindskud og kapital fra et moderselskab tæller som rejst kapital på samme måde som kontante indskud. Vi skiller dem ikke ad endnu. Også store, etablerede selskaber kan have store forhøjelser.</li>
+                <li><strong>Intern kapital er med.</strong> Gældskonvertering, apportindskud og kapital fra et moderselskab tæller som rejst kapital på samme måde som kontante indskud. Vi skiller dem ikke ad endnu. Derfor kan store, etablerede selskaber have store forhøjelser, fx når et moderselskab skyder kapital ind.</li>
                 <li><strong>Seneste kapitalforhøjelse</strong> er datoen for den seneste forhøjelse, der tæller. Begge datoer er med. Selskaber uden forhøjelser har ingen dato og er ikke med, når du bruger datofilteret.</li>
-                <li><strong>Kun selskaber med hentet kapitalhistorik.</strong> Kapitalhistorikken hentes for iværksætterpopulationen, ikke for alle selskaber. Bruger du et kapitalfilter, tæller kun selskaber, hvor den er hentet, så et ukendt selskab ikke ser ud som et selskab uden forhøjelser. Siden viser, hvor mange selskaber i udvalget der er udeladt af den grund.</li>
+                <li><strong>Kun selskaber med hentet kapitalhistorik.</strong> Kapitalhistorikken bygges for alle selskaber, vi har hentet data for fra CVR. Bruger du et kapitalfilter, tæller kun selskaber, hvor den er bygget, så et ukendt selskab ikke ser ud som et selskab uden forhøjelser. Siden viser, hvor mange selskaber i udvalget der er udeladt af den grund.</li>
                 <li><strong>Fordel på kapitalforhøjelser</strong> giver grupperne <em>Ingen efter stiftelse</em>, <em>1</em>, <em>2 til 3</em>, <em>4 til 6</em> og <em>7 eller flere</em>. Selskaber uden hentet kapitalhistorik står på linjen <em>Kapitalhistorik ikke hentet</em>.</li>
             </ul>
         </section>
@@ -412,11 +456,12 @@
             <h3 class="font-semibold mb-2">Hvornår et selskab har et moderselskab</h3>
             <p class="mb-2">Et dansk selskab er moderselskab, når det i dag er registreret som ejer i CVR og</p>
             <ul class="list-disc pl-5 space-y-2 mb-3">
-                <li>ejer mindst 66,67 % af selskabet, eller</li>
-                <li>ejer 50 % og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har en kendt andel på 50 % eller mere.</li>
+                <li>har mindst 66,67 % af stemmerne i selskabet, eller</li>
+                <li>har 50 % af stemmerne og ingen anden ejer, hverken et selskab, en person eller en udenlandsk ejer, har en kendt andel på 50 % eller mere.</li>
             </ul>
             <p class="mb-3">
-                CVR oplyser ejerandele i intervaller. "50 %" betyder mellem 50 % og 66,66 % og kan være præcis halvdelen.
+                Er stemmeandelen ikke registreret i CVR, bruges ejerandelen.
+                CVR oplyser andele i intervaller. "50 %" betyder fra 50 % til under 2/3 og kan være præcis halvdelen.
                 Derfor tæller en ejer med 50 % kun, når ingen anden ejer har lige så meget. Ejer to parter hver 50 %, har selskabet intet moderselskab. En ejer, hvis andel ikke står i CVR, regnes ikke med her.
                 Opfylder flere danske selskaber reglen (typisk fordi et gammelt ejerskab ikke er afsluttet i CVR), bruges det selskab, hvis ejerskab senest er begyndt.
                 Kan det ikke afgøres, får selskabet intet moderselskab.
@@ -439,7 +484,9 @@
 
         <p class="text-xs text-ink-700/50 border-t border-sand-200 pt-4">
             Kilder: Det Centrale Virksomhedsregister (CVR), Danmarks Administrative Geografiske Inddeling (DAGI),
-            EBA's register over betalings- og e-pengeinstitutter, ESMA's MiCA-register og det globale LEI-register (GLEIF).
+            Danmarks Statistik (nøglen fra DB07 til DB25, titlerne i DB25 og kommunerne før 2007),
+            EBA's register over betalings- og e-pengeinstitutter, ESMA's MiCA-register, ESMA's register over alternative investeringsfonde og europæiske venturekapitalfonde (AIF og EuVECA),
+            det globale LEI-register (GLEIF), Erhvervsstyrelsens <em>Nye virksomheder i danske kommuner og erhvervshusområder</em> (februar 2021), EIFO's <em>How business angels shape the Danish startup ecosystem</em> (juli 2026), EuVECA-forordningen (345/2013), lov om forvaltere af alternative investeringsfonde, årsregnskabsloven og lov nr. 699 af 20. juni 2025.
             Spørgsmål til metoden kan sendes til support@frankston.io.
         </p>
     </div>

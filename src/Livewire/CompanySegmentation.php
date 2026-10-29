@@ -369,6 +369,7 @@ class CompanySegmentation extends Component
         'angel_flere' => 'Business angel, ejer i mindst 3 selskaber',
         'angel_person' => 'Business angel, enhver person',
         'venture' => 'Venturefond',
+        'kapitalfond' => 'Kapitalfond (ikke venture)',
         'public' => 'Offentlig investor',
         'foundation' => 'Erhvervsdrivende fond',
         'udenlandsk' => 'Udenlandsk ejer',
@@ -376,12 +377,13 @@ class CompanySegmentation extends Component
 
     /** Uddybning vist under dropdownen for den valgte definition. */
     public const INVESTORTYPE_FORKLARING = [
-        'angel_eifo' => 'Privatperson der ejer under 50 %, direkte eller gennem eget holdingselskab, hverken har stiftet eller driver selskabet, og sidder i bestyrelsen eller leder sit holdingselskab (EIFO, juli 2026). EIFO kræver også mindst én runde på 1 mio. kr.; det led indgår ikke endnu. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
+        'angel_eifo' => 'Privatperson der ejer under 50 % af kapitalen, direkte eller gennem eget holdingselskab (grænsen er vores tilføjelse, ikke EIFO\'s), hverken har stiftet eller driver selskabet, og sidder i bestyrelsen eller leder sit holdingselskab (EIFO, juli 2026). EIFO kræver også mindst én runde på 1 mio. kr.; det led indgår ikke endnu. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
         'angel_ekstern' => 'Privatperson der ejer direkte eller gennem eget holdingselskab og ikke er registreret som stifter. Kun selskaber med registrerede stiftere (CVR fra ca. 1985).',
         // Fra registry-api #382: kun ejerskaber hvor CVR's deltager-id er personens eget.
         'angel_flere' => 'Privatperson der ejer andele i mindst 3 selskaber, direkte eller gennem eget holdingselskab. Kun ejerskaber, hvor CVR identificerer personen entydigt, tæller med, så personer med samme navn ikke lægges sammen. Ejerskaber uden den identifikation tæller ikke, så tallet kan være for lavt.',
-        'angel_person' => 'Enhver privatperson med ejerandel, også stifterne.',
-        'venture' => 'Venturefond der ejer under 50 % af selskabet.',
+        'angel_person' => 'Enhver privatperson med ejerandel, direkte eller gennem eget holdingselskab, også stifterne. Personens eget holdingselskab tæller ikke selv med.',
+        'venture' => 'Kollektiv fond (EuVECA- eller AIF-registreret hos ESMA, eller et K/S eller P/S med mindst 2 porteføljeselskaber), der investerer i unge driftsselskaber (medianalder højst 10 år ved indtræden) med minoritetsposter. En EuVECA-fond er altid venture. Fonden har under 50 % af stemmerne i selskabet. Fondsejede investeringsselskaber og personlige investeringsselskaber tæller ikke. Se Metode og vejledning.',
+        'kapitalfond' => 'Kollektiv fond, der ikke opfylder venture-kravene: private equity, infrastruktur, energi eller ejendom. Selskaber, hvor fonden har 50 % eller mere af stemmerne, tæller også med. Se Metode og vejledning.',
     ];
 
     /**

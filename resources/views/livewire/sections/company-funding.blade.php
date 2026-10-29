@@ -62,14 +62,17 @@
                                         @default<flux:badge color="zinc" size="sm">{{ __('Uændret') }}</flux:badge>
                                     @endswitch
                                     @if($round['payment_type'] ?? null)
-                                        <div class="text-[11px] text-zinc-400 mt-1">
+                                        <div class="text-[11px] text-zinc-400 mt-1" @if($round['payment_text'] ?? null) title="{{ $round['payment_text'] }}" @endif>
                                             {{ match ($round['payment_type']) {
                                                 'cash' => __('Kontant'),
                                                 'debt_conversion' => __('Konvertering af gæld'),
                                                 'in_kind' => __('Apportindskud'),
                                                 'bonus_issue' => __('Fondsforhøjelse'),
+                                                'restructuring' => __('Fusion eller spaltning'),
                                                 'payout' => __('Udbetaling til ejere'),
-                                                default => '',
+                                                'loss_coverage' => __('Dækning af underskud'),
+                                                'reserve' => __('Henlæggelse til reserve'),
+                                                default => __('Anden indbetalingsform'),
                                             } }}
                                         </div>
                                     @endif
