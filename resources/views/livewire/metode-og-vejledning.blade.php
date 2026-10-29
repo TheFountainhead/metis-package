@@ -10,7 +10,7 @@
 
     <h1 class="text-2xl font-bold text-ink-800 mb-1">{{ __('Metode og vejledning') }}</h1>
     <p class="text-ink-700/60 text-sm mb-6">
-        {{ __('Hvordan tallene i selskabssegmenteringen er dannet: hvilke data vi bruger, og efter hvilke regler selskaberne bliver talt og klassificeret. Først en kort vejledning i at bruge siden.') }}
+        {{ __('Hvordan tallene i selskabssegmenteringen er dannet: hvilke data vi bruger, og efter hvilke regler selskaberne bliver talt og klassificeret. Først en kort vejledning i, hvordan siden bruges.') }}
     </p>
 
     @if(! $this->harAdgang())
@@ -68,7 +68,7 @@
             <ol class="list-decimal pl-5 space-y-3">
                 <li>
                     <strong>Log ind.</strong> Segmenteringen er for brugere, vi har en aftale med.
-                    Vælg <em>Log ind</em> og brug din arbejdsmail og dit kodeord. Du forbliver logget ind i 30 dage på samme enhed. Logger du ind på en anden enhed eller logger ud, skal du logge ind igen på de øvrige enheder, når sessionen dér udløber.
+                    Vælg <em>Log ind</em> og brug din arbejdsmail og dit kodeord. Du forbliver logget ind i 30 dage på samme enhed. Logger du ind på en anden enhed eller logger ud, skal du logge ind igen på de andre enheder, når deres session udløber.
                     Står din mail på vores brugerliste, kan du i stedet vælge <em>Bekræft arbejdsmail</em>. Så sender vi en kode til din mail.
                     Har du ikke adgang, så skriv til support@frankston.io.
                 </li>
@@ -184,16 +184,19 @@
             <ul class="list-disc pl-5 space-y-2 mb-4">
                 <li>
                     <strong>Branche</strong> er selskabets hovedbranche i CVR efter Dansk Branchekode 2025 (DB25). Har selskabet ingen hovedbranche, bruges den første bibranche.
-                    En kode fra før 2025 omregnes til DB25: en kode efter Dansk Branchekode 2007 (DB07) med Danmarks Statistiks nøgle, hvor den DB25-kode med størst vægt vælges,
-                    og en ældre kode først til DB07 efter den kode, flest selskaber fik ved CVR's omkodning 1. januar 2008, hvis mere end halvdelen og mindst 3 selskaber fik den.
+                    En kode fra før 2025 omregnes til DB25:
+                    <ul>
+                        <li>En kode efter Dansk Branchekode 2007 (DB07) omregnes med Danmarks Statistiks nøgle. Peger nøglen på flere DB25-koder, bruges den med størst vægt.</li>
+                        <li>En ældre kode omregnes først til DB07. Den får den DB07-kode, som flest selskaber med samme gamle kode fik ved CVR's omkodning 1. januar 2008, hvis mere end halvdelen og mindst 3 selskaber fik den.</li>
+                    </ul>
                     Kan koden ikke omregnes, har selskabet ingen branchekode.
                 </li>
                 <li>I filteret skriver du 2 cifre (fx <em>62</em>) eller 4 cifre med punktum (fx <em>62.10</em>). <em>62</em> giver alle koder, der begynder med 62, og <em>62.10</em> giver kun dem, der begynder med 62.10 (computerprogrammering).</li>
-                <li><strong>Uden holdingselskaber</strong> udelader selskaber med branchekode 64.21 (holdingselskaber). Selskaber uden branchekode bliver.</li>
+                <li><strong>Uden holdingselskaber</strong> udelader selskaber med branchekode 64.21 (holdingselskaber). Selskaber uden branchekode tæller stadig med.</li>
             </ul>
             <h3 class="font-semibold mb-2">Vertikaler</h3>
             <p class="mb-3">
-                En vertikal er en gruppe af branchekoder. Den mest specifikke kode vinder. Fx er 46.46 (engroshandel med medicinalvarer) life science,
+                En vertikal er en gruppe af branchekoder. Den mest specifikke kode går forud. Fx er 46.46 (engroshandel med medicinalvarer) life science,
                 selv om resten af 46 er engroshandel. Selskaber uden branchekode har ingen vertikal.
             </p>
             <div class="overflow-x-auto border border-sand-200 rounded-xl mb-3">
@@ -280,11 +283,9 @@
                 </table>
             </div>
             <p class="mb-2">
-                Store og små bogstaver er ligegyldige. De fleste ord tæller også som del af et længere ord, fx <em>mobilbetalingsløsning</em>. Undtagelserne er:
-                <em>payment</em>, <em>payments</em> og <em>lending</em> tæller kun som hele ord.
-                <em>fintech</em> tæller kun i begyndelsen af et ord, fx <em>fintechløsning</em>.
-                <em>betalinger</em> tæller kun i slutningen af et ord, fx <em>kortbetalinger</em>.
-                <em>blockchainbaserede betalinger</em> tæller også med bindestreg (<em>blockchain-baserede</em>), men ikke i ental (<em>blockchainbaseret betaling</em>).
+                Store og små bogstaver er ligegyldige. De fleste ord tæller også som del af et længere ord, fx <em>mobilbetalingsløsning</em>. Der er nogle undtagelser: <em>payment</em>, <em>payments</em> og <em>lending</em> tæller kun som hele ord. Ordet <em>fintech</em> tæller kun i begyndelsen af et ord, fx <em>fintechløsning</em>.
+                Ordet <em>betalinger</em> tæller kun i slutningen af et ord, fx <em>kortbetalinger</em>.
+                Udtrykket <em>blockchainbaserede betalinger</em> tæller også med bindestreg (<em>blockchain-baserede</em>), men ikke i ental (<em>blockchainbaseret betaling</em>).
             </p>
             <p class="mb-1">Nogle ord tæller bevidst ikke alene:</p>
             <ul class="list-disc pl-5 space-y-1">
@@ -303,7 +304,7 @@
             </p>
             <ul class="list-disc pl-5 space-y-1 mb-4">
                 <li>CVR's ejerregister viser kun ejere med mindst 5 % af kapitalen eller stemmerne. Mindre ejere indgår ikke. Interessenter i et interessentskab (I/S) står i CVR som interessenter, og vi tæller dem som ejere.</li>
-                <li>Kun selskaber, hvor vi kender ejerne, kan have en investortype. Når du vælger en investortype, viser siden, hvor mange af selskaberne i udvalget ejerne kendes for.</li>
+                <li>Kun selskaber, hvor vi kender ejerne, kan have en investortype. Når du vælger en investortype, viser siden, for hvor mange af selskaberne i udvalget ejerne er kendt.</li>
                 <li>Ejerandelen mangler for nogle ejerskaber i CVR. Hvor en regel kræver en andel under 50 %, tæller en ukendt andel ikke.</li>
             </ul>
 
@@ -333,8 +334,7 @@
                     </span>
                     <span class="block mt-1">
                         EIFO kræver også mindst én kapitalrunde på 1 mio. kr. Det led er ikke en del af investortype-filteret.
-                        Du kan kombinere filteret med <em>Rejst kapital i alt</em> under kapitalfiltrene (afsnit 10). Vær opmærksom på, at det filter lægger alle
-                        kendte forhøjelser sammen og ikke ser på den enkelte runde, at beløbet er en nedre grænse, og at kun selskaber med hentet kapitalhistorik tæller med.
+                        Du kan kombinere filteret med <em>Rejst kapital i alt</em> under kapitalfiltrene (afsnit 10). Det filter lægger alle kendte forhøjelser sammen og ser ikke på den enkelte runde. Beløbet er en nedre grænse, og kun selskaber med hentet kapitalhistorik tæller med.
                     </span>
                 </li>
                 <li><strong>Alle ikke-stiftere.</strong> En person, der ejer direkte eller gennem sit personlige holdingselskab, og som ikke er stifter af selskabet.</li>
@@ -358,8 +358,8 @@
                 <li><strong>Erhvervsdrivende fond:</strong> en ejer uden selskabsform (A/S, ApS, K/S eller P/S) med branchekode 64.32 eller ordet fond i navnet (også fonden, fonde, fonds og som slutning på et sammensat ord, fx iværksætterfond). Et aktie- eller anpartsselskab, som en fond har mindst 50 % af stemmerne i, tæller også som fond, fx Novo Holdings A/S. Et A/S, ApS, K/S eller P/S er aldrig selv en fond, heller ikke med fond i navnet. Typen omfatter alle fonde og andre ejere uden selskabsform med fond i navnet, også almennyttige fonde og foreninger. CVR's oplysning om, hvorvidt en fond er erhvervsdrivende, bruges ikke. Alle ejerandele tæller.</li>
                 <li>
                     <strong>Venturefond og kapitalfond:</strong> en kollektiv fond, dvs. registreret hos ESMA som alternativ investeringsfond (AIF), eller et K/S eller P/S, der ejer andele i mindst 2 selskaber. K/S- og P/S-reglen er vores tilnærmelse: CVR viser ikke, om kapitalen er rejst fra flere investorer.
-                    ESMA's register har ikke CVR-nummer. En fond fra registret knyttes til CVR, når navnet passer på præcis ét selskab, og det gælder omkring hver sjette danske fond i registret (målt oktober 2026). Fonde, der er afregistreret hos ESMA, tæller med.
-                    Den er en <strong>venturefond</strong>, når alle tre krav er opfyldt:
+                    ESMA's register har ikke CVR-nummer. En fond fra registret knyttes til CVR, når navnet passer på præcis ét selskab, og det gælder omkring hver femte danske fond i registret (målt oktober 2026). Fonde, der er afregistreret hos ESMA, tæller med.
+                    Fonden er en <strong>venturefond</strong>, når alle tre krav er opfyldt:
                     <ol class="list-[lower-alpha] pl-5 mt-1 space-y-1">
                         <li>Højst halvdelen af porteføljeselskaberne (talt i antal) ligger i energi, byggeri, anlæg, fast ejendom eller andre fonde (branchekode 35, 41, 42, 68, 64.3 og 64.99), og fonden har ikke selv en af branchekoderne 35, 41, 42 eller 68.</li>
                         <li>Porteføljeselskaberne er unge: medianalderen, da fonden blev ejer, er højst 10 år.</li>
@@ -398,7 +398,7 @@
             </p>
             <ul class="list-disc pl-5 space-y-2 mb-3">
                 <li><strong>Kurs</strong> er prisen for 100 kr. nominel kapital.</li>
-                <li><strong>Beløb</strong> = nominelt beløb × kurs / 100. Beløbet er indbetalt kapital, ikke omsætning.</li>
+                <li><strong>Beløb</strong> = nominelt beløb × kurs / 100. Beløbet er indbetalt kapital, ikke omsætning. Nominelt beløb og kurs bruges, som selskabet har registreret dem i CVR. Enkelte registreringer indeholder åbenlyse indtastningsfejl, fx en kurs, der giver flere hundrede milliarder kroner. Dem retter vi ikke.</li>
                 <li><strong>Implied valuation</strong> (den værdi runden sætter på selskabet) = samlet kapital efter ændringen × kurs / 100. Den antager, at hele kapitalen er prissat til rundens kurs. Reelle vilkår som præferenceaktier og warrants kan afvige.</li>
                 <li><strong>Flere trancher.</strong> Har en forhøjelse flere trancher, er beløbet summen af de trancher, der ikke er fondsforhøjelse, fusion eller spaltning. Kurs, indbetalingsform og implied valuation følger den største af dem.</li>
                 <li><strong>Rejst i alt</strong> er summen af kapitalforhøjelser med kendt beløb. Fondsforhøjelser, fusioner og spaltninger tæller ikke, fordi der ikke kommer nye penge ind. Ved en fusion eller spaltning flyttes kapital mellem selskaber. Stiftelseskapitalen er heller ikke med.</li>
@@ -436,7 +436,7 @@
                 <li><strong>Fondsforhøjelser, fusioner og spaltninger tæller ikke</strong>, fordi der ikke kommer nye penge ind. Mangler registreringsteksten, kan vi ikke se formen, og så tæller forhøjelsen med.</li>
                 <li><strong>Rejst kapital</strong> er summen af beløbene for kapitalforhøjelserne. Beløbet står i registreringsteksten, og den mangler for mange ældre forhøjelser. En forhøjelse uden beløb tæller som 0 kr. Rejst kapital er derfor en nedre grænse. Kun beløb i kroner lægges sammen. Selskaber med kapital i en anden valuta tæller med i antallet af forhøjelser, men ikke i rejst kapital.</li>
                 <li><strong>Mindst og højst rejst kapital virker forskelligt.</strong> <em>Mindst</em> bruger den nedre grænse, så selskaber med manglende beløb kan være med. <em>Højst</em> tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner, fordi et manglende beløb kan skjule, at selskabet har rejst mere. Siden viser, hvor mange der er udeladt af den grund.</li>
-                <li><strong>Intern kapital er med.</strong> Gældskonvertering, apportindskud og kapital fra et moderselskab tæller som rejst kapital på samme måde som kontante indskud. Vi skiller dem ikke ad endnu. Også store, etablerede selskaber kan have store forhøjelser.</li>
+                <li><strong>Intern kapital er med.</strong> Gældskonvertering, apportindskud og kapital fra et moderselskab tæller som rejst kapital på samme måde som kontante indskud. Vi skiller dem ikke ad endnu. Derfor kan store, etablerede selskaber have store forhøjelser, fx når et moderselskab skyder kapital ind.</li>
                 <li><strong>Seneste kapitalforhøjelse</strong> er datoen for den seneste forhøjelse, der tæller. Begge datoer er med. Selskaber uden forhøjelser har ingen dato og er ikke med, når du bruger datofilteret.</li>
                 <li><strong>Kun selskaber med hentet kapitalhistorik.</strong> Kapitalhistorikken bygges for alle selskaber, vi har hentet data for fra CVR. Bruger du et kapitalfilter, tæller kun selskaber, hvor den er bygget, så et ukendt selskab ikke ser ud som et selskab uden forhøjelser. Siden viser, hvor mange selskaber i udvalget der er udeladt af den grund.</li>
                 <li><strong>Fordel på kapitalforhøjelser</strong> giver grupperne <em>Ingen efter stiftelse</em>, <em>1</em>, <em>2 til 3</em>, <em>4 til 6</em> og <em>7 eller flere</em>. Selskaber uden hentet kapitalhistorik står på linjen <em>Kapitalhistorik ikke hentet</em>.</li>
@@ -486,8 +486,7 @@
             Kilder: Det Centrale Virksomhedsregister (CVR), Danmarks Administrative Geografiske Inddeling (DAGI),
             Danmarks Statistik (nøglen fra DB07 til DB25, titlerne i DB25 og kommunerne før 2007),
             EBA's register over betalings- og e-pengeinstitutter, ESMA's MiCA-register, ESMA's register over alternative investeringsfonde og europæiske venturekapitalfonde (AIF og EuVECA),
-            det globale LEI-register (GLEIF), Erhvervsstyrelsens <em>Nye virksomheder i danske kommuner og erhvervshusområder</em> (februar 2021)
-            EIFO's <em>How business angels shape the Danish startup ecosystem</em> (juli 2026), EuVECA-forordningen (345/2013), lov om forvaltere af alternative investeringsfonde, årsregnskabsloven og lov nr. 699 af 20. juni 2025.
+            det globale LEI-register (GLEIF), Erhvervsstyrelsens <em>Nye virksomheder i danske kommuner og erhvervshusområder</em> (februar 2021), EIFO's <em>How business angels shape the Danish startup ecosystem</em> (juli 2026), EuVECA-forordningen (345/2013), lov om forvaltere af alternative investeringsfonde, årsregnskabsloven og lov nr. 699 af 20. juni 2025.
             Spørgsmål til metoden kan sendes til support@frankston.io.
         </p>
     </div>

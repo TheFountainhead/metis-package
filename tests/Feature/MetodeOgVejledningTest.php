@@ -183,6 +183,21 @@ it('følger faktatjekket 28/10-2026 (registry-api main efter #399)', function ()
         ->assertSee('Danmarks Statistik (nøglen fra DB07 til DB25');
 });
 
+it('følger sprogrettelserne i PDF-udgaven 29/10-2026', function () {
+    config()->set('metis.gating.enabled', false);
+
+    $this->get('/metode')->assertOk()
+        // ESMA 29/10: 344 af 1.699 fonde knyttet til CVR
+        ->assertSee('omkring hver femte danske fond')
+        ->assertDontSee('hver sjette')
+        // Indtastningsfejl i CVR rettes ikke (besluttet 29/10)
+        ->assertSee('Enkelte registreringer indeholder åbenlyse indtastningsfejl')
+        ->assertSee('Den mest specifikke kode går forud.')
+        ->assertDontSee('vinder.')
+        ->assertDontSee('Undtagelserne er:')
+        ->assertDontSee('Vær opmærksom på');
+});
+
 it('🪤 kapitalfond-forklaringen i dropdownen lover ikke en 50 %-grænse', function () {
     // F1: koden filtrerer kun venture paa under 50 %.
     expect(CompanySegmentation::INVESTORTYPE_FORKLARING['kapitalfond'])
