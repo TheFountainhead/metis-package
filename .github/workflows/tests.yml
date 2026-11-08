@@ -23,6 +23,8 @@ jobs:
   ci:
     # ubuntu-latest er skiftet til 26.04, som Playwright 1.55 ikke kan installere
     # Chromium paa ("Playwright does not support chromium on ubuntu26.04-x64").
+    # Fjern pinningen, naar Playwright i package.json er bumpet til en version
+    # der understoetter 26.04 (og pest-plugin-browser accepterer den).
     runs-on: ubuntu-24.04
 
     steps:

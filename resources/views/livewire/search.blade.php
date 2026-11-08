@@ -219,18 +219,14 @@
                          har daekning for her. Lookup-siden har sin egen tom-tilstand
                          med CPR-noten, og den er det aerlige sted at sige det.
 
-                         🪤 `rawurlencode` FOER route(): rute-segmentet er defineret
-                         med `->where('query', '.*')`, og Laravel efterlader derfor
-                         `?` og `#` RAA i URL'en. Browseren laeser dem som query- og
-                         fragment-skilletegn, saa `Lookup::mount()` faar et AFKORTET
-                         navn — intet 404, bare et tavst opslag paa en anden person.
-                         Maalt paa prod 18/8: 1 af 2.023.590 navne har `?` (og det er
-                         en tegnsaets-korruption), 0 har `#` — sjaeldent, men den
-                         vaerste fejlklasse: forkert svar uden fejl. Linket bygges af
-                         <x-metis-link>, dvs. MetisLink::url(), som pakker vaerdien i
-                         EncodedParameter: fra Laravel 12.69.2 encoder route() selv
-                         '%', '?' og '#', og uden den blev '/' (1.822 navne) og '%'
-                         (125) dobbelt-encoded (%252F). --}}
+                         🪤 Linket bygges af <x-metis-link> (MetisLink::url()), ikke
+                         med route() her. Den encoder query'en, saa '/', '?' og '#'
+                         ikke kan afkorte navnet eller blive sti-segmenter: et
+                         afkortet navn giver intet 404, bare et tavst opslag paa en
+                         anden person. Maalt paa prod 18/8: 1 af 2.023.590 navne har
+                         `?` (en tegnsaets-korruption), 0 har `#`, 1.822 har '/' og
+                         125 har '%'. Se MetisLink::url() for hvorfor baade
+                         rawurlencode() og EncodedParameter skal blive. --}}
                     {{-- 🚨 NAVN + KNAP I ET EGET HVIDT KORT, ikke loese elementer
                          paa den beige flade.
 

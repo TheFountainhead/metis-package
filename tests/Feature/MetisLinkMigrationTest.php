@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Http\Request;
 use Illuminate\Routing\EncodedParameter;
 use Illuminate\Support\Facades\Route;
 use TheFountainhead\Metis\View\Components\MetisLink;
@@ -35,10 +36,11 @@ it('bygger urlFor() med samme regler som komponenten', function () {
 it('urlFor() giver PRAECIS den oprindelige query tilbage gennem routeren', function (string $query) {
     // 🔑 Strengsammenligning alene fanger ikke en Laravel-aendring i
     // RouteUrlGenerator: det der taeller er, at routeren afkoder linket til
-    // den samme vaerdi, som Lookup::mount() faar.
+    // den samme vaerdi, som Lookup::mount() faar. Kun standalone-ruten
+    // (routes/web.php) er dækket; embedded-ruten loades ikke i TestCase.
     $url = MetisLink::urlFor('person', $query);
 
-    $route = app('router')->getRoutes()->match(Illuminate\Http\Request::create($url));
+    $route = app('router')->getRoutes()->match(Request::create($url));
 
     expect($route->getName())->toBe('metis.lookup')
         ->and($route->parameter('query'))->toBe($query);
