@@ -172,7 +172,7 @@
             // 🪤 Route::has() foerst: pakken registrerer ruterne betinget
             // (embedded vs standalone), saa et bart route()-kald ville kaste
             // RouteNotFoundException og tage hele alert-siden ned. Samme guard
-            // som debt-search.blade.php og MetisLink::url().
+            // som i MetisLink::url() (debt-search bruger den via urlFor()).
             //
             // 🚨 rawurlencode() FOERST: route() lader '/' staa, saa en adresse
             // som '../../../admin' (ekstern JSON) gav en sti browseren
