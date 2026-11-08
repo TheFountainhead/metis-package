@@ -12,7 +12,7 @@ beforeEach(function () {
 
 it('formats JEUDAN-scale debt as mia, not a 7-digit mio number', function () {
     Http::fake([
-        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'JEUDAN A/S', 'employees' => 100]]]),
+        '*cvr/company/*' => Http::response(['data' => ['company' => ['name' => 'JEUDAN A/S', 'employees' => ['latest' => ['count' => 100, 'fte' => 90, 'year' => 2026, 'month' => 8, 'interval' => null], 'history' => []]]]]),
         '*property-portfolio*' => Http::response(['data' => ['portfolio' => [
             'owner_type' => 'company', 'owner_cvr' => '14246045', 'property_count' => 972,
             'total_valuation' => 18_000_000_000, // 18 mia

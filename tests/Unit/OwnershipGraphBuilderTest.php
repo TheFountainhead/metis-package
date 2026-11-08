@@ -55,6 +55,35 @@ it('never collapses two same-named persons owning the same company', function ()
     expect($g['nodes'])->toHaveCount(3)->and($g['edges'])->toHaveCount(2);
 });
 
+it('labels a foreign owner node with Danish country name and entity type (ERST krav 1.5)', function () {
+    $g = buildGraph(['structure' => ['ancestors' => [
+        ['person_name' => 'Standout Capital II AB', 'cvr' => null, 'is_company' => true, 'ownership_share' => 55.0, 'owner_kind' => 'legal', 'parent_of_cvr' => '38653806', 'foreign' => true, 'country' => 'SE', 'unit_type' => 'ANDEN_DELTAGER'],
+        ['person_name' => 'Dansk Holding ApS', 'cvr' => '11111111', 'is_company' => true, 'ownership_share' => 45.0, 'owner_kind' => 'legal', 'parent_of_cvr' => '38653806', 'foreign' => false],
+    ], 'subsidiaries' => []]]);
+
+    $nodes = collect($g['nodes'])->keyBy('label');
+
+    expect($nodes['Standout Capital II AB']['kind'])->toBe('foreign')
+        ->and($nodes['Standout Capital II AB']['foreign_label'])->toBe('Sverige · selskab/fond')
+        // Kun udenlandske noder faar feltet.
+        ->and($nodes['Dansk Holding ApS'])->not->toHaveKey('foreign_label');
+});
+
+it('gives a foreign node no label when registry-api sends neither country nor entity type', function () {
+    $g = buildGraph(['structure' => ['ancestors' => [
+        ['person_name' => 'Ukendt Fond', 'cvr' => null, 'is_company' => true, 'ownership_share' => 10.0, 'owner_kind' => 'legal', 'parent_of_cvr' => '38653806', 'foreign' => true],
+    ], 'subsidiaries' => []]]);
+
+    expect(collect($g['nodes'])->firstWhere('label', 'Ukendt Fond')['foreign_label'])->toBeNull();
+});
+
+it('renders the foreign label in the graph node template', function () {
+    $blade = file_get_contents(__DIR__.'/../../resources/views/livewire/sections/partials/graph-node.blade.php');
+
+    expect($blade)->toContain('x-text="node.foreign_label ?? \'\'"')
+        ->and($blade)->toContain("node.kind === 'foreign' && node.foreign_label");
+});
+
 it('synthesises a stub node for a pruned parent cvr', function () {
     $g = buildGraph(['structure' => ['ancestors' => [
         ['person_name' => 'Holding ApS', 'is_company' => true, 'cvr' => '11111111', 'ownership_share' => 100.0, 'parent_of_cvr' => '99999999'],

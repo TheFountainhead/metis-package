@@ -47,7 +47,9 @@ class CompanyOverview extends MetisSection
 
         $info = rescue(fn () => $api->fetchCompanyInfo($query)) ?? [];
         $this->companyName = $info['name'] ?? null;
-        $this->employees = isset($info['employees']) ? (int) $info['employees'] : null;
+        // API'et sender et objekt (latest/history); (int) paa et array gav altid 1.
+        $antal = data_get($info, 'employees.latest.count');
+        $this->employees = is_numeric($antal) ? (int) $antal : null;
         $this->financialHistory = $this->buildFinancialHistory($info['financial_history'] ?? $info['financials'] ?? []);
 
         $portfolioResp = rescue(fn () => $api->fetchCompanyPropertyPortfolio($query, limit: 500));

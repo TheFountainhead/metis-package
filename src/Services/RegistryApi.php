@@ -360,7 +360,7 @@ class RegistryApi
      * @param  array<string, mixed>  $filtre
      * @return array{data?: array<int,mixed>, meta?: array<string,mixed>, error?: mixed}
      */
-    public function segmentCompanies(string $groupBy, array $filtre = [], int $limit = 100): array
+    public function segmentCompanies(string $groupBy, array $filtre = [], int $limit = 100, string $niveau = 'selskab'): array
     {
         // 🚨 Segmenteringen er en LICENSYDELSE (ERST-tilbuddet 10/9-2026:
         // licens til navngivne brugere), ikke en del af det gratis opslag.
@@ -372,9 +372,12 @@ class RegistryApi
             return $blocked;
         }
 
+        // `niveau` (selskab|koncern) er ikke et filter: samme selskaber, talt
+        // enkeltvis eller pr. koncerntop.
         return $this->postEnvelope('/v1/company-segmentation', [
             'group_by' => $groupBy,
             'limit' => $limit,
+            'niveau' => $niveau,
         ] + $filtre) ?? ['error' => 'no_response'];
     }
 
@@ -391,7 +394,7 @@ class RegistryApi
      *
      * @param  array<string, mixed>  $filtre
      */
-    public function segmentationExportLink(string $groupBy, array $filtre = [], int $limit = 100): ?string
+    public function segmentationExportLink(string $groupBy, array $filtre = [], int $limit = 100, string $niveau = 'selskab'): ?string
     {
         // 🚨 Samme licens-gate som `segmentCompanies()`. Et signeret link er
         // hele udtraekket, saa det maa aldrig dannes for en ikke-pilot.
@@ -404,6 +407,7 @@ class RegistryApi
         $svar = $this->postEnvelope('/v1/company-segmentation/export-link', [
             'group_by' => $groupBy,
             'limit' => $limit,
+            'niveau' => $niveau,
         ] + $filtre);
 
         return $svar['url'] ?? null;
@@ -430,6 +434,31 @@ class RegistryApi
             'page' => $page,
             'per_page' => $perPage,
         ] + $filtre) ?? ['error' => 'no_response'];
+    }
+
+    /**
+     * Signeret download-link til LISTEN af selskaber bag én gruppe som CSV,
+     * eller hele udvalget naar `$groupKey` er null (hoejst 10.000 raekker,
+     * samme loft som listen; afkortning staar i filen).
+     *
+     * 🚨 Samme licens-gate og samme server-side link-hentning som
+     * `segmentationExportLink()`: CSV-ruten er auth-fri og beskyttet af
+     * signaturen alene.
+     *
+     * @param  array<string, mixed>  $filtre
+     */
+    public function segmentationCompaniesExportLink(string $groupBy, ?string $groupKey, array $filtre = []): ?string
+    {
+        if ($this->pilotFejl()) {
+            return null;
+        }
+
+        $svar = $this->postEnvelope('/v1/company-segmentation/companies/export-link', array_filter([
+            'group_by' => $groupBy,
+            'group_key' => $groupKey,
+        ], fn ($v) => $v !== null) + $filtre);
+
+        return $svar['url'] ?? null;
     }
 
     public function fetchPropertyByAddress(string $address): array
@@ -1478,7 +1507,8 @@ class RegistryApi
         // crash, og #9104992 samlede 117 forekomster hvoraf de fleste var en
         // HAANDTERET tilstand vi selv viser brugeren en besked for.
         //
-        // 🔑 SMALT, ikke bredt. Kun registry-apis matrikel-422 tie-stilles.
+        // 🔑 SMALT, ikke bredt. Kun registry-apis matrikel-422 og "Person not
+        // found"-404 (erPersonIkkeFundet) tie-stilles.
         // Alle andre 4xx og ALLE 5xx rapporteres uaendret — mister vi dem,
         // mister vi signalet om at upstream begynder at afvise noget vi
         // TROEDE var gyldigt. Frederiks valg 20/8.
@@ -1491,11 +1521,46 @@ class RegistryApi
         // ALDRIG hertil — den afvises foer kaldet. Rammer vi alligevel dette,
         // er det fordi upstream afviser noget vi selv godkendte. Beskeden er
         // maalt mod prod 20/8, ikke gaettet.
-        if (! $this->erForventetAdresseAfvisning($e)) {
+        if (! $this->erForventetAdresseAfvisning($e) && ! $this->erPersonIkkeFundet($e)) {
             report($e);
         }
 
         return ['error' => 'upstream_error', 'status' => $e->getCode()];
+    }
+
+    /**
+     * Er dette registry-apis "ingen CVR-deltager med det navn"?
+     *
+     * Et navneopslag uden match er et SVAR: `searchPersonByName()` giver [] og
+     * brugeren ser selskaberne eller "ingen resultater". Rapporteret gav det
+     * Flare 109120 #3 (23 forekomster) uden at nogen havde noget at rette.
+     *
+     * Maalt mod Flare 26/10 — den aegte krop:
+     *   {"error":{"code":"not_found","message":"Person not found",…}}
+     *
+     * 🔑 SMALT: 404 OG `error.code` OG den praecise besked. En generisk route-
+     * 404 eller et "Company not found" rapporteres stadig.
+     *
+     * 🚨 registry-api svarer OGSAA denne 404, naar dens eget CVR-opslag
+     * fejler (`CvrService::searchDeltager()` returnerer null). Begge
+     * fejlveje logges som error og naar registry-apis egen Flare fra
+     * registry-api#398, som skal vaere DEPLOYET foer denne version ruller ud.
+     *
+     * 🪤 `error` kan vaere en streng i andre svar; data_get() paa en streng
+     * giver null, saa den falder igennem til report() i stedet for at kaste
+     * inde i catch-blokken (se erForventetAdresseAfvisning).
+     */
+    protected function erPersonIkkeFundet(RequestException $e): bool
+    {
+        if ($e->response?->status() !== 404) {
+            return false;
+        }
+
+        $json = $e->response->json();
+
+        return is_array($json)
+            && data_get($json, 'error.code') === 'not_found'
+            && data_get($json, 'error.message') === 'Person not found';
     }
 
     /**

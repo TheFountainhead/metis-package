@@ -14,7 +14,7 @@
      graph's initial x-data diverge from the watched property. One source,
      no divergence. --}}
 @if(count($graph['nodes']) > 1)
-    <div class="org-section-label">{{ __('Ownership structure') }}</div>
+    <div class="org-section-label">{{ __('Ejerstruktur') }}</div>
 
     {{-- The graph lives in a wire:ignore subtree with a STABLE wire:key
          (a HASH of the query — see below), so Livewire never re-mounts it —
@@ -62,9 +62,9 @@
             </div>
         </div>
         <div class="mgraph-controls">
-            <button type="button" @click="zoomBy(1.2)" aria-label="{{ __('Zoom in') }}">+</button>
-            <button type="button" @click="fit()" aria-label="{{ __('Fit') }}" x-text="zoomPct + '%'"></button>
-            <button type="button" @click="zoomBy(0.8)" aria-label="{{ __('Zoom out') }}">−</button>
+            <button type="button" @click="zoomBy(1.2)" aria-label="{{ __('Zoom ind') }}">+</button>
+            <button type="button" @click="fit()" aria-label="{{ __('Tilpas til boksen') }}" x-text="zoomPct + '%'"></button>
+            <button type="button" @click="zoomBy(0.8)" aria-label="{{ __('Zoom ud') }}">−</button>
         </div>
         {{-- Singleton hover-card (fase 2a.2): ONE card element, positioned by
              `card.{x,y}` and populated from `card.node`, reused for whichever
@@ -99,9 +99,9 @@
                     </template>
                 </dl>
                 <div class="mgraph-card__links">
-                    <a x-show="card.node.card?.website" :href="card.node.card?.website ?? '#'" target="_blank" rel="noopener" class="mgraph-card__link">{{ __('Website') }} ↗</a>
-                    <a x-show="card.node.kind === 'property' && card.node.card?.lat" :href="skraafotoUrl(card.node)" target="_blank" rel="noopener" class="mgraph-card__link">{{ __('See oblique aerial photo') }} ↗</a>
-                    <a :href="nodeUrl(card.node)" class="mgraph-card__link" x-show="nodeUrl(card.node)">{{ __('Open listing') }} →</a>
+                    <a x-show="card.node.card?.website" :href="card.node.card?.website ?? '#'" target="_blank" rel="noopener" class="mgraph-card__link">{{ __('Hjemmeside') }} ↗</a>
+                    <a x-show="card.node.kind === 'property' && card.node.card?.lat" :href="skraafotoUrl(card.node)" target="_blank" rel="noopener" class="mgraph-card__link">{{ __('Se skråfoto') }} ↗</a>
+                    <a :href="nodeUrl(card.node)" class="mgraph-card__link" x-show="nodeUrl(card.node)">{{ __('Åbn opslag') }} →</a>
                 </div>
             </div>
         </template>
@@ -184,6 +184,12 @@
     }
     .mgraph-node__usage {
         font-family: var(--fm); font-size: 11px; color: var(--ink-3);
+    }
+    /* Land + enhedstype på en udenlandsk ejer. Noden er 210px bred, så et
+       langt landenavn afkortes; den fulde tekst ligger i title. */
+    .mgraph-node__foreign {
+        font-family: var(--fm); font-size: 11px; color: var(--ink-3);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
     }
     /* fase 2a.2 enrichment: value aggregate (properties rolled up onto an
        owner node) + signal icons (negative equity / newly founded / no

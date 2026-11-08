@@ -111,7 +111,7 @@
                          per-node share total across the whole chain is noise, and the
                          caveat holds for every CVR graph anyway. --}}
                     <p class="mgraph-note">
-                        {{ __('Ownership shares come from CVR and may total under 100% — the register lists only owners of 5% or more, often in bands.') }}
+                        {{ __('Ejerandelene kommer fra CVR og kan give under 100 %, fordi registret kun viser ejere med 5 % eller mere, ofte i intervaller.') }}
                     </p>
                 @endif
 

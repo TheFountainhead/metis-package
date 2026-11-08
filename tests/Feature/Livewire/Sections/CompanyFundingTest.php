@@ -93,3 +93,68 @@ it('renders Phase 2 amounts, valuations, payment types and chart island', functi
         ->assertSee(__('Seneste implied valuation'))
         ->assertSeeHtml('data-metis-funding-chart');
 });
+
+it('marks a foreign owner entering at a round with Danish country name and entity type (ERST krav 1.5)', function () {
+    $history = fakeFundingHistory();
+    $history['data']['rounds'][1]['owner_changes'] = [
+        ['date' => '2020-10-23', 'owner' => 'Caesar Ventures Fund I GmbH', 'cvr' => 'SE556677', 'share_pct' => 12.0, 'until' => null, 'is_company' => true, 'country' => 'DE', 'unit_type' => 'ANDEN_DELTAGER'],
+        ['date' => '2020-10-23', 'owner' => 'Venture Fond K/S', 'cvr' => '12345678', 'share_pct' => 18.0, 'until' => null, 'is_company' => true, 'country' => null, 'unit_type' => null],
+    ];
+    Http::fake(['*company/41527080/funding-history*' => Http::response($history)]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertSee('Udenlandsk ejer: Tyskland · selskab/fond')
+        // CVR's noegle for en udenlandsk deltager er ikke et dansk CVR: intet link.
+        ->assertDontSeeHtml('lookup/cvr/SE556677')
+        // Den danske ejer i samme runde er uaendret: link, ingen markering.
+        ->assertSeeHtml('lookup/cvr/12345678')
+        ->assertSee('Ejer-ændringerne er udledt');
+
+    // Praecis én markering: den danske ejer faar ingen.
+    $html = Livewire::test(CompanyFunding::class, ['query' => '41527080'])->html();
+    expect(substr_count($html, 'Udenlandsk ejer:'))->toBe(1);
+});
+
+it('does not mark owners when the API sends no country (registry-api before krav 1.5)', function () {
+    Http::fake(['*company/41527080/funding-history*' => Http::response(fakeFundingHistory())]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertDontSee('Udenlandsk ejer:')
+        ->assertSeeHtml('lookup/person/Stifter%20Stiftersen');
+});
+
+it('viser en etiket for fusion, daekning af underskud og henlaeggelse til reserve', function (string $type, string $etiket, int $runde) {
+    // Runde 1 er en forhoejelse, runde 2 en nedsaettelse: typen paa den slags runde, registry-api giver den til.
+    $data = fakeFundingHistory();
+    $data['data']['rounds'][$runde]['payment_type'] = $type;
+    Http::fake(['*company/41527080/funding-history*' => Http::response($data)]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertSee($etiket);
+})->with([
+    ['restructuring', 'Fusion eller spaltning', 1],
+    ['loss_coverage', 'Dækning af underskud', 2],
+    ['reserve', 'Henlæggelse til reserve', 2],
+    ['other', 'Anden indbetalingsform', 1],
+]);
+
+it('viser registreringens egen formulering ved musen over indbetalingsformen', function () {
+    $data = fakeFundingHistory();
+    $data['data']['rounds'][1]['payment_type'] = 'other';
+    $data['data']['rounds'][1]['payment_text'] = 'ved indskud af aktier i datterselskab';
+    Http::fake(['*company/41527080/funding-history*' => Http::response($data)]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertSeeHtml('title="ved indskud af aktier i datterselskab"');
+});
+
+it('escaper registreringens fritekst i title-attributten', function () {
+    $data = fakeFundingHistory();
+    $data['data']['rounds'][1]['payment_type'] = 'other';
+    $data['data']['rounds'][1]['payment_text'] = '"><script>alert(1)</script>';
+    Http::fake(['*company/41527080/funding-history*' => Http::response($data)]);
+
+    Livewire::test(CompanyFunding::class, ['query' => '41527080'])
+        ->assertDontSeeHtml('<script>alert(1)</script>')
+        ->assertSeeHtml('title="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"');
+});

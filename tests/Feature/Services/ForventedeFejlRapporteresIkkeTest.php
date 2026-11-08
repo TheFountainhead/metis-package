@@ -170,3 +170,90 @@ it('rapporterer STADIG et 422 der blot CITERER matrikel-teksten', function () {
 
     expect($antal)->toBe(1);
 });
+
+/*
+ * 🚨 "PERSON NOT FOUND" ER ET SVAR, IKKE EN FEJL (Flare 109120 #3).
+ *
+ * Et navn i søgefeltet går til `/v1/cvr/person-roles`. Findes der ingen
+ * CVR-deltager med navnet, svarer registry-api 404 med sin egen krop
+ * (CvrController::personRolesByName), og `searchPersonByName()` giver []
+ * — brugeren ser selskaberne eller "ingen resultater". Alligevel sendte
+ * `errorFrom()` hvert eneste af dem til Flare med fuld stak: 23 forekomster.
+ *
+ * Kroppen er den ægte fra Flare 26/10:
+ *   {"error":{"code":"not_found","message":"Person not found","details":[],
+ *    "request_id":"req_6adf3e1dad674"}}
+ *
+ * 🚨 registry-api svarer også denne 404, når dens eget CVR-opslag fejler.
+ * Den fejl skal rapporteres DÉR (registry-api), ikke gættes ud af en 404 her.
+ */
+function personIkkeFundetKrop(): array
+{
+    return ['error' => [
+        'code' => 'not_found',
+        'message' => 'Person not found',
+        'details' => [],
+        'request_id' => 'req_6adf3e1dad674',
+    ]];
+}
+
+it('rapporterer IKKE registry-apis "Person not found" fra et navneopslag', function () {
+    Http::fake(['*/v1/cvr/person-roles' => Http::response(personIkkeFundetKrop(), 404)]);
+
+    $svar = null;
+    $antal = rapporteredeFejl(function () use (&$svar) {
+        $svar = app(RegistryApi::class)->fetchPersonRoles('Fritz Schur');
+    });
+
+    expect($antal)->toBe(0);
+    // Returværdien er UÆNDRET — searchPersonByName() giver stadig [].
+    expect($svar)->toBe(['error' => 'upstream_error', 'status' => 404]);
+});
+
+it('viser stadig et tomt personresultat, ikke en undtagelse', function () {
+    Http::fake(['*/v1/cvr/person-roles' => Http::response(personIkkeFundetKrop(), 404)]);
+
+    $svar = null;
+    $antal = rapporteredeFejl(function () use (&$svar) {
+        $svar = app(RegistryApi::class)->searchPersonByName('Fritz Schur');
+    });
+
+    expect($svar)->toBe([])->and($antal)->toBe(0);
+});
+
+it('rapporterer STADIG et 404 med en anden not_found-besked', function () {
+    // SMALT: kun personens "findes ikke". Et "Company not found" på et CVR,
+    // vi selv har fundet, kan betyde at upstream har mistet noget.
+    Http::fake(['*' => Http::response(['error' => [
+        'code' => 'not_found',
+        'message' => 'Company not found',
+    ]], 404)]);
+
+    $antal = rapporteredeFejl(function () {
+        app(RegistryApi::class)->fetchPersonRoles('Fritz Schur');
+    });
+
+    expect($antal)->toBe(1);
+});
+
+it('rapporterer STADIG en "Person not found"-besked med en anden status', function () {
+    Http::fake(['*' => Http::response(personIkkeFundetKrop(), 500)]);
+
+    $antal = rapporteredeFejl(function () {
+        app(RegistryApi::class)->fetchPersonRoles('Fritz Schur');
+    });
+
+    expect($antal)->toBe(1);
+});
+
+it('overlever en 404 hvor error er en STRENG, ikke et objekt', function () {
+    Http::fake(['*' => Http::response(['error' => 'Person not found'], 404)]);
+
+    $svar = null;
+    $antal = rapporteredeFejl(function () use (&$svar) {
+        $svar = app(RegistryApi::class)->fetchPersonRoles('Fritz Schur');
+    });
+
+    expect($svar)->toBe(['error' => 'upstream_error', 'status' => 404])
+        ->and($antal)->toBe(1);
+});

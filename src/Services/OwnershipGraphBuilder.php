@@ -806,7 +806,13 @@ class OwnershipGraphBuilder
 
             if (! isset($seen[$id])) {
                 $seen[$id] = true;
-                $nodes[] = ['id' => $id, 'label' => $a['person_name'] ?? '', 'cvr' => $cvr, 'kind' => $kind, 'share' => $a['ownership_share'] ?? null, 'expand' => null];
+                $node = ['id' => $id, 'label' => $a['person_name'] ?? '', 'cvr' => $cvr, 'kind' => $kind, 'share' => $a['ownership_share'] ?? null, 'expand' => null];
+                // ERST krav 1.5: land + enhedstype for en udenlandsk ejer,
+                // vist i nodens meta-linje (den er tom: udenlandske har intet CVR).
+                if ($foreign) {
+                    $node['foreign_label'] = ForeignOwner::label($a['country'] ?? null, $a['unit_type'] ?? null);
+                }
+                $nodes[] = $node;
             }
 
             $ownedId = $this->ownedTargetId($a['parent_of_cvr'] ?? null, $query);
