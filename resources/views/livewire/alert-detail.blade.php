@@ -172,15 +172,16 @@
             // 🪤 Route::has() foerst: pakken registrerer ruterne betinget
             // (embedded vs standalone), saa et bart route()-kald ville kaste
             // RouteNotFoundException og tage hele alert-siden ned. Samme guard
-            // som debt-search.blade.php:273 og MetisLink.php:57.
+            // som debt-search.blade.php og MetisLink::url().
             //
             // 🚨 rawurlencode() FOERST: route() lader '/' staa, saa en adresse
             // som '../../../admin' (ekstern JSON) gav en sti browseren
-            // normaliserer VAEK fra /lookup/address/. MetisLink.php:87 goer
+            // normaliserer VAEK fra /lookup/address/. MetisLink::url() goer
             // allerede praecis dette.
             // 🔑 ÉN builder. `urlFor()` baerer selv rute-guarden, tom-query-
-            // guarden, CPR-guarden og rawurlencode — de fire ting dette
-            // kaldested foer haandrullede (og glemte det halve af).
+            // guarden, CPR-guarden og rawurlencode() + EncodedParameter (mod
+            // dobbelt-encoding fra Laravel 12.69.2) — det dette kaldested
+            // foer haandrullede (og glemte det halve af).
             $opslagsUrl = $opslagsadresse !== null
                 ? \TheFountainhead\Metis\View\Components\MetisLink::urlFor('address', $opslagsadresse)
                 : null;

@@ -87,10 +87,11 @@ it('lenker fra et persontraef til ejerskabsgrafen', function () {
 });
 
 it('🪤 encoder navnet, saa et "?" ikke afkorter opslaget tavst', function () {
-    // Rute-segmentet er `->where('query', '.*')`, saa Laravel efterlader `?`
-    // og `#` RAA. Browseren laeser dem som query-/fragment-skilletegn, og
-    // Lookup::mount() faar et AFKORTET navn — intet 404, bare et opslag paa
-    // en anden person. Fanget af review 18/8; verificeret mod prod.
+    // Foer Laravel 12.69.2 lod route() `?` og `#` staa RAA. Browseren laeser
+    // dem som query-/fragment-skilletegn, og Lookup::mount() faar et AFKORTET
+    // navn — intet 404, bare et opslag paa en anden person. Fanget af review
+    // 18/8; verificeret mod prod. Encodingen sker i MetisLink::url()
+    // (rawurlencode() + EncodedParameter).
     Http::fake([
         '*person-roles*' => Http::response(['data' => [
             'person_name' => 'Navn?med=query',

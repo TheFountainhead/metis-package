@@ -38,7 +38,11 @@ it('urlFor() giver PRAECIS den oprindelige query tilbage gennem routeren', funct
     // RouteUrlGenerator: det der taeller er, at routeren afkoder linket til
     // den samme vaerdi, som Lookup::mount() faar. Kun standalone-ruten
     // (routes/web.php) er dækket; embedded-ruten loades ikke i TestCase.
+    // 🔑 Metis-appen har en tvilling med SAMME datasæt mod sin egen lock
+    // (metis: tests/Feature/MetisLinkEncodingTest.php). Hold dem ens.
     $url = MetisLink::urlFor('person', $query);
+
+    expect($url)->not->toBeNull();
 
     $route = app('router')->getRoutes()->match(Request::create($url));
 
