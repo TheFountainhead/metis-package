@@ -7,9 +7,10 @@
      🚨 rawurlencode() sker i url(): rutesegmentet er `->where('query', '.*')`,
      saa Laravel efterlader `?` og `#` RAA. Browseren laeser dem som query-/
      fragment-skilletegn og Lookup::mount() faar et AFKORTET navn — intet 404,
-     bare et opslag paa en anden person. Ingen dobbelt-encoding: Laravels
-     RouteUrlGenerator mapper `%25` tilbage til `%`, saa de to encodings
-     ophaever hinanden praecist (verificeret paa 14 inputformer). --}}
+     bare et opslag paa en anden person.
+     🚨 Fra Laravel 12.69.2 encoder route() SELV '%', '?' og '#', saa den
+     rawurlencode()'ede vaerdi SKAL pakkes i EncodedParameter (det goer url()),
+     ellers dobbelt-encoding (%252F). Fjern ikke EncodedParameter. --}}
 @php($href = $url())
 @if($query && $href)
 <a href="{{ $href }}"

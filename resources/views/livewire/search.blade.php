@@ -226,10 +226,11 @@
                          navn — intet 404, bare et tavst opslag paa en anden person.
                          Maalt paa prod 18/8: 1 af 2.023.590 navne har `?` (og det er
                          en tegnsaets-korruption), 0 har `#` — sjaeldent, men den
-                         vaerste fejlklasse: forkert svar uden fejl. `/` (1.822 navne)
-                         og `%` (125) haandterer Laravel korrekt, og encoding aendrer
-                         dem ikke: verificeret at et normalt navn giver PRAECIS samme
-                         URL med og uden, saa ingen dobbelt-encoding. --}}
+                         vaerste fejlklasse: forkert svar uden fejl. Linket bygges af
+                         <x-metis-link>, dvs. MetisLink::url(), som pakker vaerdien i
+                         EncodedParameter: fra Laravel 12.69.2 encoder route() selv
+                         '%', '?' og '#', og uden den blev '/' (1.822 navne) og '%'
+                         (125) dobbelt-encoded (%252F). --}}
                     {{-- 🚨 NAVN + KNAP I ET EGET HVIDT KORT, ikke loese elementer
                          paa den beige flade.
 
