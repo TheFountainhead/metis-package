@@ -506,7 +506,7 @@ it('efterlader ingen haengende komma naar postnummeret mangler', function () {
  * Pakken registrerer ruterne BETINGET (embedded vs standalone), saa
  * `route('metis.lookup')` kaster RouteNotFoundException naar ruten ikke er
  * registreret — og en ViewException i en blade tager HELE alert-siden med
- * sig. `debt-search.blade.php:273` og `MetisLink.php:57` guarder allerede
+ * sig. `MetisLink::url()` (som debt-search nu bruger via urlFor()) guarder allerede
  * med Route::has(); jeg kopierede sammensaetningen derfra, men ikke guarden.
  * Samme "halvdelen af kaldestederne"-fejl som hele denne PR handler om.
  */

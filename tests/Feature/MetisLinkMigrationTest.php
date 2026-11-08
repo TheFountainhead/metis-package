@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Http\Request;
+use Illuminate\Routing\EncodedParameter;
 use Illuminate\Support\Facades\Route;
 use TheFountainhead\Metis\View\Components\MetisLink;
 
@@ -25,9 +27,34 @@ it('bygger urlFor() med samme regler som komponenten', function () {
     expect(MetisLink::urlFor('address', 'Søndergade 43A, 4653'))
         ->toBe(route('metis.lookup', [
             'type' => 'address',
-            'query' => rawurlencode('Søndergade 43A, 4653'),
-        ]));
+            'query' => new EncodedParameter(rawurlencode('Søndergade 43A, 4653')),
+        ]))
+        ->and(MetisLink::urlFor('address', 'Søndergade 43A, 4653'))
+        ->toEndWith('/lookup/address/S%C3%B8ndergade%2043A%2C%204653');
 });
+
+it('urlFor() giver PRAECIS den oprindelige query tilbage gennem routeren', function (string $query) {
+    // 🔑 Strengsammenligning alene fanger ikke en Laravel-aendring i
+    // RouteUrlGenerator: det der taeller er, at routeren afkoder linket til
+    // den samme vaerdi, som Lookup::mount() faar. Kun standalone-ruten
+    // (routes/web.php) er dækket; embedded-ruten loades ikke i TestCase.
+    // 🔑 Metis-appen har en tvilling med SAMME datasæt mod sin egen lock
+    // (metis: tests/Feature/MetisLinkEncodingTest.php). Hold dem ens.
+    $url = MetisLink::urlFor('person', $query);
+
+    expect($url)->not->toBeNull();
+
+    $route = app('router')->getRoutes()->match(Request::create($url));
+
+    expect($route->getName())->toBe('metis.lookup')
+        ->and($route->parameter('query'))->toBe($query);
+})->with([
+    'procent' => ['50% A/S'],
+    'spoergsmaalstegn og hash' => ['a?b#c'],
+    'skraastreg og komma' => ['Søndergade 43A/2, 4653'],
+    'allerede encoded tekst' => ['x%2Fy'],
+    'plus' => ['a+b'],
+]);
 
 it('urlFor() afviser en tom query i stedet for at kaste', function () {
     expect(MetisLink::urlFor('address', ''))->toBeNull()

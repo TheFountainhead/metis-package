@@ -2,6 +2,7 @@
 
 namespace TheFountainhead\Metis\View\Components;
 
+use Illuminate\Routing\EncodedParameter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\View\Component;
 use TheFountainhead\Metis\Services\SearchDetector;
@@ -129,9 +130,14 @@ class MetisLink extends Component
             return null;
         }
 
+        // 🚨 EncodedParameter, ellers DOBBELT-encoding. Fra Laravel 12.69.2
+        // encoder route() selv '%', '?' og '#' i parametre, saa en
+        // rawurlencode()'et vaerdi blev til %252F (16 tests roede 21/10-2026).
+        // rawurlencode() skal stadig til: Laravel lader '/' staa, og en
+        // adresse som "../../admin" maa ikke blive til et sti-segment.
         return route('metis.lookup', [
             'type' => $this->type,
-            'query' => rawurlencode($this->query),
+            'query' => new EncodedParameter(rawurlencode($this->query)),
         ]);
     }
 

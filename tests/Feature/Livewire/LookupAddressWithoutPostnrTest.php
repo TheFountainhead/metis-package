@@ -139,7 +139,7 @@ it('gater et opslag over kvote FOER den henter forslag', function () {
  * /lookup/address/../../../admin — browseren normaliserer '../' vaek FOER
  * afsendelse, saa linket navigerer et helt andet sted hen i appen.
  * $f['tekst'] er upstream autocomplete-data, altsaa ikke vores input.
- * `MetisLink.php:87` rawurlencode'r allerede; her blev det glemt.
+ * `MetisLink::url()` rawurlencode'r allerede; her blev det glemt.
  */
 it('encoder skraastreger i forslagslinks', function () {
     config(['metis.gating.enabled' => false]);

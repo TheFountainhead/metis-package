@@ -16,9 +16,11 @@ use TheFountainhead\Metis\View\Components\MetisLink;
  *    Praecedens: signing-room PR #8 / compound_signing_room_url_shadow —
  *    6 af 6 tenants ramt.
  *
- * 2) Raa $query: rutesegmentet er `->where('query', '.*')`, saa Laravel
- *    efterlader `?` og `#` raa. Browseren afkorter ved dem, og opslaget
- *    rammer en ANDEN person. Intet 404, ingen fejl.
+ * 2) Raa $query: rutesegmentet er `->where('query', '.*')`. Foer Laravel
+ *    12.69.2 lod route() `?` og `#` staa raa, saa browseren afkortede ved
+ *    dem og opslaget ramte en ANDEN person (intet 404, ingen fejl). '/'
+ *    lades stadig raa. MetisLink::url() bruger derfor rawurlencode() +
+ *    EncodedParameter (se kommentaren dér).
  *
  * 🪤 Suiten kunne ikke se (1): tests/TestCase.php:37 loader kun
  * routes/web.php. Denne fil afmelder ruten eksplicit for at naa tilstanden.

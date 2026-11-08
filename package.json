@@ -1,7 +1,8 @@
 {
+  "name": "metis-package-browser-tests",
   "private": true,
   "description": "Kun til Pest-browsertests (tests/Browser): Playwright styrer Chromium.",
   "devDependencies": {
-    "playwright": "1.55.0"
+    "playwright": "1.55.1"
   }
 }
