@@ -991,8 +991,7 @@ it('loadEnrichment attaches company card/signals to graph nodes (via the real pr
         ->and($c->get('enrichmentStatus'))->toBe('loaded');
 
     $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
-    // fakeRegistryCompanyInfo()'s financials fixture has no source=pdf, so it
-    // is an API row carrying HELE KRONER (see CompanyStructure::
+    // fakeRegistryCompanyInfo()'s financials fixture carries HELE KRONER (see
     // companyEnrichmentFromInfo()'s KONTRAKT docblock) — the card passes the
     // fixture's 1_000_000 kr. through unchanged.
     expect($node['card'] ?? null)->not->toBeNull()
@@ -1057,17 +1056,12 @@ it('excludes an "other" orphan-parent stub cvr from the enrichment pool call (F3
 });
 
 /**
- * F-A regression pin, v2 (prod-verificeret 2026-07-26): registry-api's
- * financials rows are SOURCE-dependent in unit — company-info.blade.php's
- * $toTdkk is the authoritative rule: rows with source=pdf carry t.DKK,
- * everything else (API) carries HELE KRONER. The frontend (ownership-graph
- * .js's fmtDKK()) assumes hele kroner throughout the enrichment/card chain,
- * so BOTH failure modes are pinned here: the original unconditional *1000
- * made API rows 1000× too high (Lars Horsbøl Holding's 92.438.600 kr.
- * equity rendered as "92.438,6 mio. kr." on prod), while no conversion made
- * pdf rows 1000× too low (2.527 t.DKK rendered as "3 tkr.").
- * companyEnrichmentFromInfo() converts at the SOURCE so every downstream
- * consumer (builder, Blade, JS) keeps assuming hele kroner unconditionally.
+ * F-A regression pin (prod-verificeret 2026-07-26): registry-api's financials
+ * rows carry HELE KRONER, and the frontend (ownership-graph.js's fmtDKK())
+ * assumes hele kroner throughout the enrichment/card chain. The original
+ * unconditional *1000 made them 1000× too high (Lars Horsbøl Holding's
+ * 92.438.600 kr. equity rendered as "92.438,6 mio. kr." on prod). The t.DKK
+ * PDF years that once needed *1000 are gone since registry-api #350.
  */
 it('passes API-sourced financials through as hele kroner (no *1000) — F-A 1000× regression pin', function () {
     fakeRegistryCompanyInfo('44507781', [
@@ -1086,25 +1080,6 @@ it('passes API-sourced financials through as hele kroner (no *1000) — F-A 1000
     $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
     expect($node['card']['equity'])->toBe(92_438_600)
         ->and($node['card']['result'])->toBe(87_545_200);
-});
-
-it('converts pdf-sourced financials from t.DKK to hele kroner (*1000) — F-A 1000× regression pin', function () {
-    fakeRegistryCompanyInfo('44507781', [
-        'financials' => [
-            ['year' => '2024', 'equity' => 2527, 'assets' => 9000, 'profit_loss' => 316, 'source' => 'pdf'],
-        ],
-    ]);
-    fakeRegistryStructure();
-    fakeRegistryPortfolio();
-
-    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])
-        ->call('loadProperties');
-
-    expect($c->get('enrichmentStatus'))->toBe('loaded');
-
-    $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
-    expect($node['card']['equity'])->toBe(2_527_000)
-        ->and($node['card']['result'])->toBe(316_000);
 });
 
 it('reads the LATEST financials row for equity/result/fiscal_year even when the financials list arrives unsorted', function () {
@@ -1146,8 +1121,8 @@ it('reads the LATEST financials row for equity/result/fiscal_year even when the 
 
     $node = collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781');
     // Must resolve to the 2024 row (the actual latest year), not the first
-    // or last array element. Fixture rows carry no source=pdf, so they are
-    // API rows in hele kroner — passed through unchanged.
+    // or last array element. Fixture rows are in hele kroner — passed
+    // through unchanged.
     expect($node['card']['equity'])->toBe(2_000_000)
         ->and($node['card']['fiscal_year'])->toBe('2024');
 });

@@ -33,7 +33,7 @@ class PersonStructure extends MetisSection
 {
     /**
      * Fase 4's resolution half, shared verbatim with 2a's CompanyStructure:
-     * the pooled company-info fetch, the source-dependent t.DKK/kroner rule,
+     * the pooled company-info fetch, the hele-kroner financials contract,
      * the properties/batch map and the streetview URLs. Only the GATING is
      * written here, against this component's own phase model.
      */

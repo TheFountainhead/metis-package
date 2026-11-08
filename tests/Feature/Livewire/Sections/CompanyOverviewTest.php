@@ -267,23 +267,6 @@ it('renders the key-figure table with years as columns, short periods and compar
         ->assertSee('Key figures over time');
 });
 
-it('normalises PDF years (already in t.DKK) to kroner like the XBRL years', function () {
-    Http::fake([
-        '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo([
-            'financial_history' => [
-                ['year' => '2025', 'months' => 12.0, 'equity' => 14_320_268],
-                ['year' => '2024', 'months' => 12.0, 'equity' => 12_500, 'source' => 'pdf'],
-            ],
-        ])]]),
-        '*property-portfolio*' => Http::response(['data' => ['portfolio' => fakePortfolio()]]),
-    ]);
-
-    $history = Livewire::test(CompanyOverview::class, ['query' => '44892723'])->get('financialHistory');
-
-    expect($history[0]['equity'])->toBe(12_500_000)
-        ->and($history[1]['equity'])->toBe(14_320_268);
-});
-
 it('marks a long first fiscal year as irregular too, not only short ones', function () {
     Http::fake([
         '*cvr/company/*' => Http::response(['data' => ['company' => fakeCompanyInfo([

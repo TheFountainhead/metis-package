@@ -110,11 +110,10 @@
                 if (is_array($financials) && ! array_is_list($financials) && ! empty($financials)) {
                     $financials = [$financials]; // Wrap single financial as array
                 }
-                // PDF-sourced entries are already in t.DKK, API entries are in DKK
-                $toTdkk = function($value, $fin) {
+                // registry-api delivers whole kroner; the table shows t.DKK
+                $toTdkk = function($value) {
                     if ($value === null) return null;
-                    // PDF source values are already small (t.DKK), API values are large (DKK)
-                    return ($fin['source'] ?? '') === 'pdf' ? (int) $value : (int) round($value / 1000);
+                    return (int) round($value / 1000);
                 };
             @endphp
             @if(count($financials) > 0)
@@ -143,15 +142,12 @@
                                     <tr class="border-b border-zinc-100 dark:border-zinc-800">
                                         <td class="py-2 pr-4">
                                             {{ $fin['year'] ?? ($fin['period_end'] ? \Carbon\Carbon::parse($fin['period_end'])->format('Y') : '—') }}
-                                            @if(($fin['source'] ?? '') === 'pdf')
-                                                <span class="text-[10px] text-zinc-400 ml-1">pdf</span>
-                                            @endif
                                         </td>
                                         @php
-                                            $eq = $toTdkk($fin['equity'] ?? null, $fin);
-                                            $as = $toTdkk($fin['assets'] ?? null, $fin);
+                                            $eq = $toTdkk($fin['equity'] ?? null);
+                                            $as = $toTdkk($fin['assets'] ?? null);
                                             $li = ($as !== null && $eq !== null) ? $as - $eq : null;
-                                            $pl = $toTdkk($fin['profit_loss'] ?? null, $fin);
+                                            $pl = $toTdkk($fin['profit_loss'] ?? null);
                                         @endphp
                                         <td class="py-2 pr-4 {{ ($eq ?? 0) < 0 ? 'text-red-600' : '' }}">
                                             {{ $eq !== null ? number_format($eq, 0, ',', '.') : '—' }}
@@ -167,8 +163,8 @@
                                         </td>
                                         @php
                                             // null OG manglende nøgle = ikke oplyst; kun et tal (også 0) er oplyst.
-                                            $dv = $toTdkk($fin['proposed_dividend'] ?? null, $fin);
-                                            $xd = $toTdkk($fin['extraordinary_dividend'] ?? null, $fin);
+                                            $dv = $toTdkk($fin['proposed_dividend'] ?? null);
+                                            $xd = $toTdkk($fin['extraordinary_dividend'] ?? null);
                                         @endphp
                                         <td class="py-2">
                                             @if($dv !== null)
