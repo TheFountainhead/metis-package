@@ -61,7 +61,14 @@ class FollowButton extends Component
             $api = app(RegistryApi::class);
 
             if ($this->isFollowed && $this->watchlistId) {
-                $api->deleteWatchlist($this->watchlistId);
+                // deleteWatchlist() kaster ikke ved afvisning, men returnerer ['error' => ...]:
+                // uden tjek ville knappen vise "Følg", mens watchen stadig findes.
+                $resp = $api->deleteWatchlist($this->watchlistId);
+                if (isset($resp['error'])) {
+                    $this->error = 'Kunne ikke fjerne fra watchlist.';
+
+                    return;
+                }
                 $this->isFollowed = false;
                 $this->watchlistId = null;
             } else {

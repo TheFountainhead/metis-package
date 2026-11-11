@@ -70,7 +70,16 @@
             <p class="text-sm text-ink-600">{{ __('Indtast din mail for at fortsætte.') }}</p>
         </div>
     @else
-    <livewire:metis-lookup-title :type="$type" :query="$query" lazy />
+    {{-- Følg-knap kun for selskaber og kun for en bekræftet pilot: at følge skriver en watch
+         på brugerens eget registry-token (RegistryApi::pilotFejl). Andre ville kun få en fejl. --}}
+    @if($type === 'cvr' && app(\TheFountainhead\Metis\Services\LookupAccess::class)->erPilot())
+        <div class="flex items-start justify-between gap-4">
+            <livewire:metis-lookup-title :type="$type" :query="$query" lazy />
+            <livewire:metis-follow-button watch-type="company" :watch-value="$query" :key="'follow-company-'.$query" />
+        </div>
+    @else
+        <livewire:metis-lookup-title :type="$type" :query="$query" lazy />
+    @endif
 
     {{-- Graf-sektionerne (company-/person-structure) renderes UDEN FOR
          max-w-7xl-kolonnen som full-bleed: ejerskabsgrafen er det eneste
