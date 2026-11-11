@@ -1856,7 +1856,8 @@ class RegistryApi
         }
 
         try {
-            return $this->client()->get('/v1/watchlists/companies')->throw()->json();
+            // json() er null ved tom eller ikke-JSON 2xx (fx under et deploy): det er en fejl, ikke [].
+            return $this->client()->get('/v1/watchlists/companies')->throw()->json() ?? ['error' => 'invalid_response', 'status' => 502];
         } catch (RequestException $e) {
             return $this->errorFrom($e);
         } catch (ConnectionException $e) {

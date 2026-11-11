@@ -14,7 +14,7 @@
         @endif
     </div>
 
-    @if(! $this->hasUserToken())
+    @if(! $this->erPilot())
         {{-- Uden pilot vises ALDRIG en tom liste: tomhed ville læses som "du følger ingen". --}}
         <div class="max-w-xl p-6 bg-white border rounded-xl">
             <h2 class="text-lg font-semibold mb-2">{{ __('Kun for pilotbrugere') }}</h2>
@@ -53,7 +53,7 @@
                 </thead>
                 <tbody>
                     @foreach($rows as $row)
-                        <tr class="border-b last:border-0" wire:key="watched-{{ $row['watchlist_id'] ?? $row['cvr'] }}">
+                        <tr class="border-b last:border-0" wire:key="watched-{{ $row['watchlist_id'] ?? ($row['cvr'] ?? $loop->index) }}">
                             <td class="px-4 py-2">
                                 <x-metis-link type="cvr" :query="$row['cvr'] ?? ''" class="font-medium hover:underline">
                                     {{ filled($row['name'] ?? null) ? \TheFountainhead\Metis\Services\LegalName::format((string) $row['name']) : __('Ukendt selskab') }}
@@ -70,8 +70,10 @@
                                     <span class="px-1.5 py-0.5 text-xs rounded bg-amber-100 text-amber-900">{{ $status }}</span>
                                 @endif
                             </td>
-                            <td class="px-4 py-2 text-right tabular-nums">{{ number_format((int) ($row['properties_direct'] ?? 0), 0, ',', '.') }}</td>
-                            <td class="px-4 py-2 text-right tabular-nums">{{ number_format((int) ($row['properties_group'] ?? 0), 0, ',', '.') }}</td>
+                            {{-- Et manglende tal er "ukendt" (—), ikke 0: 0 ville læses som "ingen ejendomme". --}}
+                            @foreach(['properties_direct', 'properties_group'] as $felt)
+                                <td class="px-4 py-2 text-right tabular-nums">{{ isset($row[$felt]) ? number_format((int) $row[$felt], 0, ',', '.') : '—' }}</td>
+                            @endforeach
                         </tr>
                     @endforeach
                 </tbody>

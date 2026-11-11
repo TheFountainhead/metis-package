@@ -3,7 +3,6 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Component;
-use TheFountainhead\Metis\Livewire\Concerns\HasPilotToken;
 use TheFountainhead\Metis\Services\LookupAccess;
 use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\RegistryApi;
@@ -18,8 +17,6 @@ use TheFountainhead\Metis\Services\RegistryApi;
  */
 class WatchedCompanies extends Component
 {
-    use HasPilotToken;
-
     /** @var list<array<string, mixed>>|null null = ikke hentet (endnu) */
     public ?array $rows = null;
 
@@ -27,17 +24,25 @@ class WatchedCompanies extends Component
 
     public function mount(): void
     {
-        if ($this->hasUserToken()) {
+        if ($this->erPilot()) {
             $this->load();
         }
+    }
+
+    /**
+     * Én regel for både visning og hentning: brugerens EGET token og en bekræftet pilot.
+     * Eget token også når gaten er slået fra (embedded): uden det ville client() falde tilbage
+     * til tenantens fælles nøgle og vise tenantens watches, ikke brugerens egne valg.
+     */
+    public function erPilot(): bool
+    {
+        return filled(session('metis_user_token')) && app(LookupAccess::class)->harPilotAdgang();
     }
 
     public function load(): void
     {
         // 🚨 Gaten skal sidde HER: `load` er offentlig over /livewire/update.
-        if (! app(LookupAccess::class)->harPilotAdgang()) {
-            $this->errorMessage = __('Siden kræver en bekræftet pilotbruger.');
-
+        if (! $this->erPilot()) {
             return;
         }
 
@@ -53,9 +58,11 @@ class WatchedCompanies extends Component
 
         // Et svar uden data-liste er IKKE "du følger ingen" — det er en fejl.
         if (isset($response['error']) || ! is_array($response['data'] ?? null)) {
-            $this->errorMessage = ($response['status'] ?? null) === 403
-                ? __('Siden kræver en bekræftet pilotbruger.')
-                : __('Kunne ikke hente de overvågede selskaber. Prøv igen.');
+            $this->errorMessage = match ($response['status'] ?? null) {
+                401, 403 => __('Din adgang er udløbet. Bekræft din arbejdsmail igen.'),
+                404 => __('Siden er ikke klar endnu. Prøv igen senere.'),
+                default => __('Kunne ikke hente de overvågede selskaber. Prøv igen.'),
+            };
 
             return;
         }
