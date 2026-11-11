@@ -33,7 +33,9 @@
         </div>
     @elseif($rows === [])
         <div class="max-w-xl p-6 text-sm border rounded-xl bg-white text-zinc-600">
-            {{ __('Du følger ingen selskaber endnu. Klik "Følg" på et selskabs side for at tilføje det her.') }}
+            {{-- Der findes (endnu) ingen Følg-knap på selskabssiden: FollowButton er bygget, men aldrig
+                 sat ind. Henvis ikke til en knap der ikke findes (11/11-2026). --}}
+            {{ __('Du følger ingen selskaber endnu. Kontakt os, hvis der skal tilføjes selskaber.') }}
         </div>
     @elseif($rows !== null)
         <p class="mb-3 text-sm text-zinc-600">
