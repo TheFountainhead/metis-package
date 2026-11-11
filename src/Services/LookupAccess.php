@@ -120,6 +120,16 @@ class LookupAccess
         return ! $this->gatingAktiv() || $this->erPilot();
     }
 
+    /**
+     * Må brugeren følge selskaber/se sine overvågede selskaber? Brugerens EGET token (ellers
+     * ville client() falde tilbage til tenantens fælles nøgle) og pilot-adgang. ÉN regel for
+     * Følg-knappen på selskabssiden og /overvaagede-selskaber, så henvisning og knap følges ad.
+     */
+    public function kanFoelge(): bool
+    {
+        return filled(session('metis_user_token')) && $this->harPilotAdgang();
+    }
+
     public function erPilot(): bool
     {
         return $this->harSession()

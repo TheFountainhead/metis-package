@@ -25,7 +25,8 @@ class FollowButton extends Component
     public string $watchValue;
     public string $displayLabel = '';
 
-    public bool $isFollowed = false;
+    /** null = ukendt (ikke hentet endnu, eller opslaget fejlede) — ALDRIG læst som "ikke fulgt". */
+    public ?bool $isFollowed = null;
     public ?int $watchlistId = null;
     public bool $loading = false;
     public ?string $error = null;
@@ -35,7 +36,11 @@ class FollowButton extends Component
         $this->watchType = $watchType;
         $this->watchValue = $watchValue;
         $this->displayLabel = $displayLabel;
+        // Ingen HTTP her: status hentes af loadStatus() via wire:init, så siden ikke venter.
+    }
 
+    public function loadStatus(): void
+    {
         if (! $this->watchValue) {
             return;
         }
@@ -44,24 +49,54 @@ class FollowButton extends Component
             $check = app(RegistryApi::class)->checkBatch([
                 ['type' => $this->watchType, 'value' => $this->watchValue],
             ]);
-            $first = data_get($check, 'data.0', []);
-            $this->isFollowed = (bool) ($first['is_followed'] ?? false);
-            $this->watchlistId = $first['watchlist_id'] ?? null;
         } catch (\Throwable $e) {
-            // Silent fail on mount — show "not followed" state and let toggle retry
+            $check = ['error' => 'exception'];
         }
+
+        // checkBatch kaster ikke ved fejl, men returnerer ['error' => ...]. Et fejlet opslag er
+        // UKENDT status — ellers tilbyder knappen "Følg" for et fulgt selskab og laver en dublet.
+        $first = data_get($check, 'data.0');
+        if (isset($check['error']) || ! is_array($first)) {
+            $this->isFollowed = null;
+            $this->watchlistId = null;
+
+            return;
+        }
+
+        $fulgt = (bool) ($first['is_followed'] ?? false);
+        $id = $first['watchlist_id'] ?? null;
+        // Fulgt uden id kan ikke afmeldes og må ikke oprettes igen: ukendt.
+        $this->isFollowed = $fulgt && $id === null ? null : $fulgt;
+        $this->watchlistId = $fulgt ? $id : null;
     }
 
     public function toggle(): void
     {
-        $this->loading = true;
         $this->error = null;
+
+        if ($this->isFollowed === null) {
+            $this->loadStatus();
+            if ($this->isFollowed === null) {
+                $this->error = __('Kunne ikke hente følge-status. Prøv igen.');
+
+                return;
+            }
+        }
+
+        $this->loading = true;
 
         try {
             $api = app(RegistryApi::class);
 
-            if ($this->isFollowed && $this->watchlistId) {
-                $api->deleteWatchlist($this->watchlistId);
+            if ($this->isFollowed) {
+                // deleteWatchlist() kaster ikke ved afvisning, men returnerer ['error' => ...].
+                // 404 = watchen er allerede væk (fx afmeldt i en anden fane): det ER afmeldt.
+                $resp = $api->deleteWatchlist((int) $this->watchlistId);
+                if (isset($resp['error']) && ($resp['status'] ?? null) !== 404) {
+                    $this->error = __('Kunne ikke fjerne fra watchlist.');
+
+                    return;
+                }
                 $this->isFollowed = false;
                 $this->watchlistId = null;
             } else {
@@ -73,7 +108,8 @@ class FollowButton extends Component
                 );
 
                 if (isset($resp['error'])) {
-                    $this->error = 'Kunne ikke tilføje til watchlist.';
+                    $this->error = __('Kunne ikke tilføje til watchlist.');
+
                     return;
                 }
 
@@ -81,7 +117,7 @@ class FollowButton extends Component
                 $this->isFollowed = true;
             }
         } catch (\Throwable $e) {
-            $this->error = 'Kunne ikke ændre følge-status. Prøv igen.';
+            $this->error = __('Kunne ikke ændre følge-status. Prøv igen.');
         } finally {
             $this->loading = false;
         }

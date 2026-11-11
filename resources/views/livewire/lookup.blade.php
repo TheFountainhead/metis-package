@@ -70,7 +70,20 @@
             <p class="text-sm text-ink-600">{{ __('Indtast din mail for at fortsætte.') }}</p>
         </div>
     @else
-    <livewire:metis-lookup-title :type="$type" :query="$query" lazy />
+    {{-- Følg-knap kun for selskaber med gyldigt CVR og kun når brugeren må følge
+         (LookupAccess::kanFoelge — samme regel som /overvaagede-selskaber). Knappen henter sin
+         status efter indlæsning (wire:init), så den ikke blokerer siden; den er IKKE lazy, fordi
+         #[Locked] + lazy brækker rehydreringen (compound 28/7-2026). --}}
+    @php
+        $foelgCvr = $type === 'cvr' ? preg_replace('/\D/', '', (string) $query) : '';
+        $visFoelg = strlen($foelgCvr) === 8 && app(\TheFountainhead\Metis\Services\LookupAccess::class)->kanFoelge();
+    @endphp
+    <div class="flex items-start justify-between gap-4">
+        <livewire:metis-lookup-title :type="$type" :query="$query" lazy :key="'title-'.$type.'-'.$query" />
+        @if($visFoelg)
+            <livewire:metis-follow-button watch-type="company" :watch-value="$foelgCvr" :key="'follow-company-'.$foelgCvr" />
+        @endif
+    </div>
 
     {{-- Graf-sektionerne (company-/person-structure) renderes UDEN FOR
          max-w-7xl-kolonnen som full-bleed: ejerskabsgrafen er det eneste

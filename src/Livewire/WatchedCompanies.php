@@ -36,7 +36,7 @@ class WatchedCompanies extends Component
      */
     public function erPilot(): bool
     {
-        return filled(session('metis_user_token')) && app(LookupAccess::class)->harPilotAdgang();
+        return app(LookupAccess::class)->kanFoelge();
     }
 
     public function load(): void

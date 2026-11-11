@@ -158,8 +158,11 @@ it('🚨 en ikke-pilot faar ingen follow-status fra den delte noegle (checkBatch
         $this->withSession($session);
     }
 
+    // Status hentes af loadStatus (wire:init). For en ikke-pilot afviser checkBatch uden HTTP,
+    // og status forbliver UKENDT (null) — aldrig "ikke fulgt" fra den delte nøgle.
     Livewire::test(FollowButton::class, ['watchType' => 'property', 'watchValue' => '123'])
-        ->assertSet('isFollowed', false)
+        ->call('loadStatus')
+        ->assertSet('isFollowed', null)
         ->assertSet('watchlistId', null);
 
     Http::assertNotSent(fn ($r) => erAlertLaesning($r));
@@ -194,6 +197,7 @@ it('modstykke: en bekraeftet pilot ser sine alerts, watchlists og alert-detaljen
     // 🪤 FOER side-requestene: en request gemmer sessionen og efterlader den
     // IKKE-startet, og uden startet session er man anonym (M4).
     Livewire::test(FollowButton::class, ['watchType' => 'property', 'watchValue' => '123'])
+        ->call('loadStatus')
         ->assertSet('isFollowed', true);
 
     $this->get('/alerts')->assertOk()->assertSee('HEMMELIG ALERT');

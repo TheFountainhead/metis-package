@@ -66,7 +66,10 @@ it('ingen overvågede selskaber er et gyldigt svar', function () {
     watchedPilot();
     Http::fake(['*/v1/watchlists/companies' => Http::response(['data' => []])]);
 
-    Livewire::test(WatchedCompanies::class)->assertSee('Du følger ingen selskaber endnu');
+    // Henvisningen til Følg-knappen er sand: knappen står på selskabssiden (FollowButtonTest).
+    Livewire::test(WatchedCompanies::class)
+        ->assertSee('Du følger ingen selskaber endnu')
+        ->assertSee('på et selskabs side');
 });
 
 it('fejl og svar uden data-liste vises som "kunne ikke hentes", ikke som en tom liste', function ($svar) {
