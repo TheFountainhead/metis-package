@@ -226,6 +226,7 @@ class MetisServiceProvider extends ServiceProvider
         // ComponentNotFoundException. Testen RoutedComponentsResolveTest
         // fanger naeste sidekomponent, der mangler et navn.
         Livewire::component('metis-engagements', \TheFountainhead\Metis\Livewire\Engagements::class);
+        Livewire::component('metis-watched-companies', \TheFountainhead\Metis\Livewire\WatchedCompanies::class);
         Livewire::component('metis-engagement', \TheFountainhead\Metis\Livewire\Engagement::class);
     }
 

@@ -15,6 +15,7 @@ use TheFountainhead\Metis\Livewire\CompanySegmentation;
 use TheFountainhead\Metis\Livewire\DebtSearch;
 use TheFountainhead\Metis\Livewire\Engagement;
 use TheFountainhead\Metis\Livewire\Engagements;
+use TheFountainhead\Metis\Livewire\WatchedCompanies;
 use TheFountainhead\Metis\Http\Controllers\GrantQuotaController;
 use TheFountainhead\Metis\Livewire\Lookup;
 use TheFountainhead\Metis\Livewire\MetodeOgVejledning;
@@ -49,6 +50,9 @@ Route::middleware([NoIndex::class, RestorePilotSession::class])->group(function 
     Route::get('/engagementer', Engagements::class)->name('metis.engagements')->middleware('throttle:20,1');
     Route::get('/engagementer/{key}', Engagement::class)->name('metis.engagement')->middleware('throttle:20,1')->where('key', '[A-Za-z0-9+\-]+');
     Route::permanentRedirect('/laangiver', '/engagementer')->name('metis.lender-exposure');
+    // Selskaber brugeren selv følger (fx låntagere uden tinglyst pant, som /engagementer ikke
+    // kan se). Kun egne valg — ingen søgning på tværs af registret (§ 50 c).
+    Route::get('/overvaagede-selskaber', WatchedCompanies::class)->name('metis.watched-companies')->middleware('throttle:20,1');
 
     // 🔑 Segmentering af selskabspopulationen: taellinger fordelt paa kommune,
     // branche eller selskabsform. TAELLINGER, ikke raekker — derfor ikke under
