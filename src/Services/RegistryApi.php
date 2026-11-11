@@ -1846,6 +1846,26 @@ class RegistryApi
     }
 
     /**
+     * Brugerens overvågede selskaber med navn, status og antal ejendomme direkte og i koncernen
+     * (registry-api GET /v1/watchlists/companies). Samme pilot-gate som listWatchlists().
+     */
+    public function listWatchedCompanies(): array
+    {
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
+        try {
+            // json() er null ved tom eller ikke-JSON 2xx (fx under et deploy): det er en fejl, ikke [].
+            return $this->client()->get('/v1/watchlists/companies')->throw()->json() ?? ['error' => 'invalid_response', 'status' => 502];
+        } catch (RequestException $e) {
+            return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
+        }
+    }
+
+    /**
      * F5 disambiguation: search CVR-deltagere by name, return candidates with
      * enhedsnummer + address + companies+roles for user to pick from.
      *

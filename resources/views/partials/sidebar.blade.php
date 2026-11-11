@@ -13,6 +13,7 @@
                 ['route' => 'metis.metode', 'label' => __('Metode og vejledning'), 'icon' => 'book'],
                 ['route' => 'metis.alerts', 'label' => __('Mine alerts'), 'icon' => 'bell', 'requires_token' => true],
                 ['route' => 'metis.engagements', 'label' => __('Mine engagementer'), 'icon' => 'bell', 'requires_token' => true],
+                ['route' => 'metis.watched-companies', 'label' => __('Overvågede selskaber'), 'icon' => 'bell', 'requires_token' => true],
             ],
         ],
     ];
