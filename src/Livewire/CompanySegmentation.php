@@ -537,10 +537,21 @@ class CompanySegmentation extends Component
         $this->segmentér();
     }
 
+    /**
+     * Egne populationer kraever et personligt login (pilotkonto med eget
+     * registry-token). Se `RegistryApi::personligtTokenFejl()`.
+     */
+    public function kanBrugePopulation(): bool
+    {
+        return app(LookupAccess::class)->kanFoelge();
+    }
+
     /** Brugerens populationer til vaelgeren. En fejl her maa ikke vaelte siden. */
     public function hentPopulationer(): void
     {
-        if (! $this->harAdgang()) {
+        if (! $this->kanBrugePopulation()) {
+            $this->populationer = [];
+
             return;
         }
 
@@ -574,7 +585,7 @@ class CompanySegmentation extends Component
     /** Opret en population ud fra de indsatte CVR-numre og vaelg den. */
     public function opretPopulation(): void
     {
-        if (! $this->harAdgang()) {
+        if (! $this->kanBrugePopulation()) {
             return;
         }
 
@@ -628,7 +639,7 @@ class CompanySegmentation extends Component
     /** Slet en af brugerens egne populationer (kun en der staar i listen). */
     public function sletPopulation(int $id): void
     {
-        if (! $this->harAdgang() || ! collect($this->populationer)->contains('id', $id)) {
+        if (! $this->kanBrugePopulation() || ! collect($this->populationer)->contains('id', $id)) {
             return;
         }
 
@@ -713,7 +724,7 @@ class CompanySegmentation extends Component
             $this->fintech = '';
         }
 
-        if (! ctype_digit($this->population)) {
+        if (! ctype_digit($this->population) || ! $this->kanBrugePopulation()) {
             $this->population = '';
         }
 

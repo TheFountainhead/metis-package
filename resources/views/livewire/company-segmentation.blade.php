@@ -97,6 +97,7 @@
             {{-- Egen population (ERST): en CVR-liste fra brugeren. Filen laeses i
                  browseren og lander i tekstfeltet; serveren tager alle tal med
                  8 cifre. Ingen fil sendes til serveren. --}}
+            @if($this->kanBrugePopulation())
             <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3" data-population>{{ __('Population') }}</h2>
             <select wire:model.change="population"
                     class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-2"
@@ -147,6 +148,8 @@
             @endif
             @if($populationBesked)
                 <p class="text-xs text-ink-700/70 -mt-3 mb-4" role="status" data-population-besked>{{ $populationBesked }}</p>
+            @endif
+
             @endif
 
             <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3">{{ __('Fordel på') }}</h2>
@@ -454,7 +457,7 @@
                         @if($kapitalkilde !== null)
                             @php $kilder = array_sum($kapitalkilde); @endphp
                             <p class="text-xs text-ink-700/60 mt-1" data-kapitalkilde>
-                                {{ __('Kapitalforhøjelser i udvalget: :ekstern ekstern, :intern intern og :ukendt ukendt (:andel % ukendt, ingen synlig ændring blandt ejerne).', [
+                                {{ __('Kapitalforhøjelser i udvalget før filteret på ekstern investering: :ekstern ekstern, :intern intern og :ukendt ukendt (:andel % ukendt, ingen synlig ændring blandt ejerne).', [
                                     'ekstern' => number_format($kapitalkilde['ekstern'], 0, ',', '.'),
                                     'intern' => number_format($kapitalkilde['intern'], 0, ',', '.'),
                                     'ukendt' => number_format($kapitalkilde['ukendt'], 0, ',', '.'),

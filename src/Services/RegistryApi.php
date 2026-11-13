@@ -462,6 +462,17 @@ class RegistryApi
     }
 
     /**
+     * 🚨 Populationer ejes af TOKENETS bruger i registry-api. Uden et personligt
+     * token falder `client()` tilbage paa den faelles tenant-noegle, og saa ville
+     * alle uden login dele (og kunne slette) hinandens populationer. Samme regel
+     * som `LookupAccess::kanFoelge()` for overvaagede selskaber (review af #225).
+     */
+    protected function personligtTokenFejl(): ?array
+    {
+        return filled(session('metis_user_token')) ? null : ['error' => 'personal_token_required'];
+    }
+
+    /**
      * Brugerens egne populationer (CVR-lister) til segmenteringen.
      *
      * 🔑 Ejes af tokenets bruger i registry-api. Samme licens-gate som
@@ -471,7 +482,7 @@ class RegistryApi
      */
     public function segmentPopulations(): array
     {
-        if ($blocked = $this->pilotFejl()) {
+        if ($blocked = $this->pilotFejl() ?? $this->personligtTokenFejl()) {
             return $blocked;
         }
 
@@ -487,7 +498,7 @@ class RegistryApi
      */
     public function createSegmentPopulation(string $navn, array $cvr): array
     {
-        if ($blocked = $this->pilotFejl()) {
+        if ($blocked = $this->pilotFejl() ?? $this->personligtTokenFejl()) {
             return $blocked;
         }
 
@@ -499,7 +510,7 @@ class RegistryApi
 
     public function deleteSegmentPopulation(int $id): array
     {
-        if ($blocked = $this->pilotFejl()) {
+        if ($blocked = $this->pilotFejl() ?? $this->personligtTokenFejl()) {
             return $blocked;
         }
 

@@ -501,12 +501,13 @@
             </ul>
             <p class="mb-3">
                 <strong>Investortype i en ekstern forhøjelse</strong> er typen af den nye ejer udefra: person, holdingselskab, venturefond, kapitalfond, offentlig investor, erhvervsdrivende fond, andet selskab eller udenlandsk ejer (en ejer uden dansk CVR-nummer).
-                Selskabsejernes type afgøres som i afsnit 7. Har et selskab fået ekstern investering fra flere typer, står det i gruppen for den første i rækkefølgen venturefond, kapitalfond, offentlig investor, erhvervsdrivende fond, udenlandsk ejer, holdingselskab, andet selskab og person. Grupperne giver derfor tilsammen totalen.
+                Selskabsejernes type kommer fra samme klassifikation som i afsnit 7, med to forskelle: holdingselskaber er en type for sig, og en venturefond tæller også, når den har 50 % eller mere af stemmerne i selskabet. Ejere, der siden er trådt ud, får deres type ud fra hele deres portefølje, også de tidligere ejerskaber. Har et selskab fået ekstern investering fra flere typer, står det i gruppen for den første i rækkefølgen venturefond, kapitalfond, offentlig investor, erhvervsdrivende fond, udenlandsk ejer, holdingselskab, andet selskab og person. Grupperne giver derfor tilsammen totalen.
             </p>
             <p class="mb-3">
                 <strong>Filtrene.</strong> <em>Har fået ekstern investering</em> tæller selskaber med mindst én ekstern forhøjelse. Med datoer tæller kun eksterne forhøjelser i perioden.
                 <em>Ingen ekstern investering set</em> tæller selskaber uden en ekstern forhøjelse. Det betyder ikke, at der ingen ekstern kapital er: en ukendt forhøjelse kan skjule en investor under 5 %.
-                Siden viser altid, hvor mange af forhøjelserne i udvalget der er ekstern, intern og ukendt.
+                Med et filter eller en fordeling på ekstern investering viser siden, hvor mange af forhøjelserne i udvalget der er ekstern, intern og ukendt. Tallet gælder udvalget før filteret på ekstern investering, så andelen ukendt kan ses for hele udvalget.
+                Fordeler du på år eller investortype, er selskaber uden hentet kapitalhistorik udeladt, og siden viser hvor mange.
             </p>
             <p class="mb-3">
                 <strong>Svagheder.</strong> Personer genkendes på navn, fordi ejerregistret i CVR ikke har et id for personer. Koncernen er dagens koncern, ikke koncernen på forhøjelsens dato.
@@ -518,11 +519,11 @@
             <h2 class="text-lg font-semibold text-ink-800 mb-3">13. Egen population</h2>
             <p class="mb-3">
                 Under <em>Population</em> kan du uploade en CSV-fil med CVR-numre eller indsætte dem direkte. Alle tal med præcis 8 cifre tæller som CVR-numre, så filen må gerne have flere kolonner. Højst 10.000 pr. population.
-                Siden viser, hvor mange af numrene der findes i registret, og hvilke der ikke gør.
+                Siden viser, hvor mange af numrene der findes i registret, og de første 10 af dem, der ikke gør.
             </p>
             <p class="mb-3">
                 Når populationen er valgt, gælder alle filtre, grupperinger, lister og Excel-udtræk kun for dens selskaber. Ophørte selskaber er udeladt som standard, også her. Sæt flueben i <em>Medtag ophørte selskaber</em> for at tælle dem med, fx for at se hvor mange der er lukket.
-                Andre kunder kan ikke se eller bruge jeres populationer.
+                Egen population kræver, at du er logget ind med din egen konto. Populationen hører til kontoen, og andre kunder kan ikke se eller bruge den.
             </p>
         </section>
 

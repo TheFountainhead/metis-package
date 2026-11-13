@@ -17,6 +17,8 @@ beforeEach(function () {
     config()->set('metis.registry_api.url', 'https://registry.test');
     config()->set('metis.registry_api.key', 'test-noegle');
     config()->set('metis.gating.enabled', false);
+    // Egne populationer kraever et personligt token (RegistryApi::personligtTokenFejl).
+    session(['metis_user_token' => 'personligt-token']);
 });
 
 function segSvar(array $meta = []): array
@@ -152,4 +154,32 @@ it('beholder populationen ved nulstil, men rydder ekstern-filtrene', function ()
         ->call('nulstil')
         ->assertSet('population', '7')
         ->assertSet('eksternInvestering', '');
+});
+
+it('🚨 viser og bruger ingen populationer uden personligt token (faelles noegle)', function () {
+    session()->forget('metis_user_token');
+    $this->populationerSvar = ['data' => [['id' => 7, 'navn' => 'Andens liste', 'antal_cvr' => 1, 'antal_fundet' => 1]]];
+    Http::fake(['*/company-segmentation' => Http::response(segSvar())]);
+
+    Livewire::withQueryParams(['population' => '7'])
+        ->test(CompanySegmentation::class)
+        ->assertDontSee('Andens liste')
+        ->assertDontSee('Upload egen liste med CVR-numre')
+        ->assertSet('population', '')
+        ->set('cvrTekst', '11111111')
+        ->call('opretPopulation');
+
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), '/populations'));
+    Http::assertNotSent(fn ($r) => array_key_exists('population', $r->data()));
+});
+
+it('🚨 RegistryApi kalder ikke populations-ruterne med den faelles noegle', function () {
+    session()->forget('metis_user_token');
+    $api = app(\TheFountainhead\Metis\Services\RegistryApi::class);
+
+    expect($api->segmentPopulations())->toBe(['error' => 'personal_token_required'])
+        ->and($api->createSegmentPopulation('x', ['11111111']))->toBe(['error' => 'personal_token_required'])
+        ->and($api->deleteSegmentPopulation(7))->toBe(['error' => 'personal_token_required']);
+
+    Http::assertNothingSent();
 });
