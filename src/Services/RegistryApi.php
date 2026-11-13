@@ -461,6 +461,57 @@ class RegistryApi
         return $svar['url'] ?? null;
     }
 
+    /**
+     * Brugerens egne populationer (CVR-lister) til segmenteringen.
+     *
+     * 🔑 Ejes af tokenets bruger i registry-api. Samme licens-gate som
+     * `segmentCompanies()`: populationen er en del af licensydelsen.
+     *
+     * @return array{data?: array<int, array<string, mixed>>, error?: mixed}
+     */
+    public function segmentPopulations(): array
+    {
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
+        return $this->getEnvelope('/v1/company-segmentation/populations') ?? ['error' => 'no_response'];
+    }
+
+    /**
+     * Opret en population ud fra CVR-numre. Svaret siger hvor mange der blev
+     * fundet, hvilke CVR-numre registret ikke kender, og hvor mange der er ophoert.
+     *
+     * @param  array<int, string>  $cvr
+     * @return array{data?: array<string, mixed>, errors?: mixed, message?: string, error?: mixed}
+     */
+    public function createSegmentPopulation(string $navn, array $cvr): array
+    {
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
+        return $this->postEnvelope('/v1/company-segmentation/populations', [
+            'navn' => $navn,
+            'cvr' => array_values($cvr),
+        ]) ?? ['error' => 'no_response'];
+    }
+
+    public function deleteSegmentPopulation(int $id): array
+    {
+        if ($blocked = $this->pilotFejl()) {
+            return $blocked;
+        }
+
+        try {
+            return $this->client()->delete("/v1/company-segmentation/populations/{$id}")->throw()->json() ?? ['error' => 'malformed_response'];
+        } catch (RequestException $e) {
+            return $this->errorFrom($e);
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
+        }
+    }
+
     public function fetchPropertyByAddress(string $address): array
     {
         $parsed = $this->parseAddress($address);

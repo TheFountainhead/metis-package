@@ -59,6 +59,8 @@
                 <li><a href="#kapital" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Kapitalhistorik</a></li>
                 <li><a href="#udviklingsstadie" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Kapital (udviklingsstadie)</a></li>
                 <li><a href="#koncern" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Selskaber og koncerner</a></li>
+                <li><a href="#ekstern" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Ekstern, intern eller ukendt kapital</a></li>
+                <li><a href="#egen-population" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">Egen population</a></li>
             </ol>
         </nav>
 
@@ -436,7 +438,7 @@
                 <li><strong>Fondsforhøjelser, fusioner og spaltninger tæller ikke</strong>, fordi der ikke kommer nye penge ind. Mangler registreringsteksten, kan vi ikke se formen, og så tæller forhøjelsen med.</li>
                 <li><strong>Rejst kapital</strong> er summen af beløbene for kapitalforhøjelserne. Beløbet står i registreringsteksten, og den mangler for mange ældre forhøjelser. En forhøjelse uden beløb tæller som 0 kr. Rejst kapital er derfor en nedre grænse. Kun beløb i kroner lægges sammen. Selskaber med kapital i en anden valuta tæller med i antallet af forhøjelser, men ikke i rejst kapital.</li>
                 <li><strong>Mindst og højst rejst kapital virker forskelligt.</strong> <em>Mindst</em> bruger den nedre grænse, så selskaber med manglende beløb kan være med. <em>Højst</em> tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner, fordi et manglende beløb kan skjule, at selskabet har rejst mere. Siden viser, hvor mange der er udeladt af den grund.</li>
-                <li><strong>Intern kapital er med.</strong> Gældskonvertering, apportindskud og kapital fra et moderselskab tæller som rejst kapital på samme måde som kontante indskud. Vi skiller dem ikke ad endnu. Derfor kan store, etablerede selskaber have store forhøjelser, fx når et moderselskab skyder kapital ind.</li>
+                <li><strong>Intern kapital er med.</strong> Gældskonvertering, apportindskud og kapital fra et moderselskab tæller som rejst kapital på samme måde som kontante indskud. Derfor kan store, etablerede selskaber have store forhøjelser, fx når et moderselskab skyder kapital ind. Hvor kapitalen kom fra, står i <a href="#ekstern" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">afsnit 12</a>.</li>
                 <li><strong>Seneste kapitalforhøjelse</strong> er datoen for den seneste forhøjelse, der tæller. Begge datoer er med. Selskaber uden forhøjelser har ingen dato og er ikke med, når du bruger datofilteret.</li>
                 <li><strong>Kun selskaber med hentet kapitalhistorik.</strong> Kapitalhistorikken bygges for alle selskaber, vi har hentet data for fra CVR. Bruger du et kapitalfilter, tæller kun selskaber, hvor den er bygget, så et ukendt selskab ikke ser ud som et selskab uden forhøjelser. Siden viser, hvor mange selskaber i udvalget der er udeladt af den grund.</li>
                 <li><strong>Fordel på kapitalforhøjelser</strong> giver grupperne <em>Ingen efter stiftelse</em>, <em>1</em>, <em>2 til 3</em>, <em>4 til 6</em> og <em>7 eller flere</em>. Selskaber uden hentet kapitalhistorik står på linjen <em>Kapitalhistorik ikke hentet</em>.</li>
@@ -479,6 +481,48 @@
             </p>
             <p>
                 En koncern med selskaber i flere grupper (fx to kommuner) tæller med i hver gruppe. Grupperne kan derfor tilsammen give mere end totalen.
+            </p>
+        </section>
+
+        {{-- 12. Ekstern/intern/ukendt. 🔑 Skal sige PRAECIS det samme som registry-api's
+             App\Services\Cvr\KapitalKilde. Aendres reglen der, aendres den her. --}}
+        <section id="ekstern" class="scroll-mt-20">
+            <h2 class="text-lg font-semibold text-ink-800 mb-3">12. Ekstern, intern eller ukendt kapital</h2>
+            <p class="mb-3">
+                Hver kapitalforhøjelse (se afsnit 10) er markeret som ekstern, intern eller ukendt ud fra, hvilke ejere der kommer ind, når kapitalen forhøjes.
+                CVR siger ikke, hvem der har betalt. Markeringen bygger derfor på ændringerne i ejerregistret.
+            </p>
+            <ul class="list-disc pl-5 space-y-2 mb-3">
+                <li><strong>Ejerændringer omkring forhøjelsen.</strong> Vi ser på ejerandele, der begynder højst 31 dage før eller efter forhøjelsen. Ejerregistret registrerer ofte ændringen nogle dage fra kapitalen. Ejerne på selskabets første dato i ejerregistret tæller ikke som nye. Det er stifterne, eller ejerne da ejerregistret startede i 2015.</li>
+                <li><strong>En ny ejer</strong> er en ejer, der ikke ejede andele dagen før.</li>
+                <li><strong>Ekstern:</strong> mindst én ny ejer kommer udefra. En ny ejer er ikke udefra, når det er et dansk selskab i samme koncern (afsnit 11), eller et selskab der ejes af en person, som allerede ejede andele, fx når en stifter flytter sine andele til sit holdingselskab.</li>
+                <li><strong>Intern:</strong> der er ejerændringer, men ingen ny ejer udefra, fx når de eksisterende ejeres andele ændrer sig. Også intern: én ejer havde mindst 90 % af selskabet på dagen, typisk et moderselskab der skyder kapital ind.</li>
+                <li><strong>Ukendt:</strong> ingen synlig ændring blandt ejerne. Det sker, når ejerne skyder penge ind i forhold til deres andele, eller når investoren ejer under 5 % og derfor ikke står i ejerregistret. Ukendt dækker også forhøjelser, hvor ingen ejere er registreret på dagen.</li>
+            </ul>
+            <p class="mb-3">
+                <strong>Investortype i en ekstern forhøjelse</strong> er typen af den nye ejer udefra: person, holdingselskab, venturefond, kapitalfond, offentlig investor, erhvervsdrivende fond, andet selskab eller udenlandsk ejer (en ejer uden dansk CVR-nummer).
+                Selskabsejernes type afgøres som i afsnit 7. Har et selskab fået ekstern investering fra flere typer, står det i gruppen for den første i rækkefølgen venturefond, kapitalfond, offentlig investor, erhvervsdrivende fond, udenlandsk ejer, holdingselskab, andet selskab og person. Grupperne giver derfor tilsammen totalen.
+            </p>
+            <p class="mb-3">
+                <strong>Filtrene.</strong> <em>Har fået ekstern investering</em> tæller selskaber med mindst én ekstern forhøjelse. Med datoer tæller kun eksterne forhøjelser i perioden.
+                <em>Ingen ekstern investering set</em> tæller selskaber uden en ekstern forhøjelse. Det betyder ikke, at der ingen ekstern kapital er: en ukendt forhøjelse kan skjule en investor under 5 %.
+                Siden viser altid, hvor mange af forhøjelserne i udvalget der er ekstern, intern og ukendt.
+            </p>
+            <p class="mb-3">
+                <strong>Svagheder.</strong> Personer genkendes på navn, fordi ejerregistret i CVR ikke har et id for personer. Koncernen er dagens koncern, ikke koncernen på forhøjelsens dato.
+                Familiemedlemmers holdingselskaber tæller som eksterne, fordi CVR ikke viser familieforhold.
+            </p>
+        </section>
+
+        <section id="egen-population" class="scroll-mt-20">
+            <h2 class="text-lg font-semibold text-ink-800 mb-3">13. Egen population</h2>
+            <p class="mb-3">
+                Under <em>Population</em> kan du uploade en CSV-fil med CVR-numre eller indsætte dem direkte. Alle tal med præcis 8 cifre tæller som CVR-numre, så filen må gerne have flere kolonner. Højst 10.000 pr. population.
+                Siden viser, hvor mange af numrene der findes i registret, og hvilke der ikke gør.
+            </p>
+            <p class="mb-3">
+                Når populationen er valgt, gælder alle filtre, grupperinger, lister og Excel-udtræk kun for dens selskaber. Ophørte selskaber er udeladt som standard, også her. Sæt flueben i <em>Medtag ophørte selskaber</em> for at tælle dem med, fx for at se hvor mange der er lukket.
+                Andre kunder kan ikke se eller bruge jeres populationer.
             </p>
         </section>
 
