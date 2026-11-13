@@ -8,6 +8,9 @@ use TheFountainhead\Metis\MetisServiceProvider;
 
 abstract class TestCase extends BaseTestCase
 {
+    /** Svaret paa GET populations (se setUp). */
+    public array $populationerSvar = ['data' => []];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -15,6 +18,12 @@ abstract class TestCase extends BaseTestCase
         // Enhver ikke-fake'et HTTP-request fejler straks i stedet for at ramme
         // netværket, så endpoint-drift bliver en præcis fejl frem for en DNS-timeout.
         Http::preventStrayRequests();
+
+        // Segmenteringssiden henter brugerens populationer ved mount. Uden en
+        // fake her skulle hver segmenteringstest kende et kald, den ikke tester.
+        // 🪤 Laravel bruger den FOERSTE fake der matcher, saa en test kan ikke
+        // overskrive denne med sin egen: den saetter `$this->populationerSvar`.
+        Http::fake(['*/company-segmentation/populations' => fn ($request) => $request->method() === 'GET' ? Http::response($this->populationerSvar) : null]);
     }
 
     protected function getPackageProviders($app): array

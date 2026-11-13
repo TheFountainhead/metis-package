@@ -93,7 +93,65 @@
                        ).replace(':felt', etiket).replace(':dato', dato.split('-').reverse().join('.'));
                    },
                }"
-               x-effect="$wire.foundedFrom; $wire.foundedTo; $wire.senesteForhoejelseFra; $wire.senesteForhoejelseTil; $nextTick(() => synkAlle())">
+               x-effect="$wire.foundedFrom; $wire.foundedTo; $wire.senesteForhoejelseFra; $wire.senesteForhoejelseTil; $wire.eksternFra; $wire.eksternTil; $nextTick(() => synkAlle())">
+            {{-- Egen population (ERST): en CVR-liste fra brugeren. Filen laeses i
+                 browseren og lander i tekstfeltet; serveren tager alle tal med
+                 8 cifre. Ingen fil sendes til serveren. --}}
+            @if($this->kanBrugePopulation())
+            <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3" data-population>{{ __('Population') }}</h2>
+            <select wire:model.change="population"
+                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-2"
+                    aria-label="{{ __('Population') }}">
+                <option value="">{{ __('Hele CVR') }}</option>
+                @foreach($populationer as $p)
+                    <option value="{{ $p['id'] }}">{{ $p['navn'] }} ({{ number_format($p['antal_fundet'], 0, ',', '.') }})</option>
+                @endforeach
+            </select>
+            @if($population !== '' && collect($populationer)->contains('id', (int) $population))
+                <button type="button" wire:click="sletPopulation({{ (int) $population }})"
+                        wire:confirm="{{ __('Slet populationen? Den kan ikke gendannes.') }}"
+                        class="text-xs text-ink-700/60 underline decoration-sand-300 underline-offset-2 hover:text-ink-800 mb-2">
+                    {{ __('Slet denne population') }}
+                </button>
+            @endif
+
+            <details class="mb-5" @if($populationFejl) open @endif>
+                <summary class="text-sm text-ink-800 cursor-pointer select-none">{{ __('Upload egen liste med CVR-numre') }}</summary>
+                <div class="mt-2" x-data="{
+                        laes(e) {
+                            const fil = e.target.files[0];
+                            if (! fil) return;
+                            const r = new FileReader();
+                            r.onload = () => { $refs.cvr.value = r.result; $refs.cvr.dispatchEvent(new Event('input', { bubbles: true })); };
+                            r.readAsText(fil);
+                        },
+                    }">
+                    <input type="file" accept=".csv,.txt,text/csv,text/plain" x-on:input="laes($event)"
+                           class="block w-full text-xs text-ink-700 mb-2" aria-label="{{ __('CSV-fil med CVR-numre') }}">
+                    <textarea x-ref="cvr" wire:model="cvrTekst" rows="4"
+                              placeholder="{{ __('Eller indsæt CVR-numre her') }}"
+                              class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-xs mb-2"
+                              aria-label="{{ __('CVR-numre') }}"></textarea>
+                    <input wire:model="populationNavn" type="text" maxlength="120" placeholder="{{ __('Navn, fx Sportstech 2025') }}"
+                           class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm mb-2"
+                           aria-label="{{ __('Navn på populationen') }}">
+                    <button type="button" wire:click="opretPopulation" wire:loading.attr="disabled" wire:target="opretPopulation"
+                            class="w-full text-sm font-semibold bg-ink-800 text-white rounded-lg px-3 py-2 hover:bg-ink-700 transition disabled:opacity-60">
+                        <span wire:loading.remove wire:target="opretPopulation">{{ __('Gem og brug populationen') }}</span>
+                        <span wire:loading wire:target="opretPopulation">{{ __('Gemmer…') }}</span>
+                    </button>
+                    <p class="text-xs text-ink-700/50 mt-1">{{ __('Alle tal med 8 cifre i filen tæller som CVR-numre. Højst 10.000.') }}</p>
+                </div>
+            </details>
+            @if($populationFejl)
+                <p class="text-xs text-red-700 -mt-3 mb-4" role="alert" data-population-fejl>{{ $populationFejl }}</p>
+            @endif
+            @if($populationBesked)
+                <p class="text-xs text-ink-700/70 -mt-3 mb-4" role="status" data-population-besked>{{ $populationBesked }}</p>
+            @endif
+
+            @endif
+
             <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3">{{ __('Fordel på') }}</h2>
             <select wire:model.live="groupBy"
                     class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-5"
@@ -232,7 +290,7 @@
                            aria-label="{{ __('Stiftet til') }}">
                 </div>
                 <div id="halv-dato-{{ $this->getId() }}" role="status" aria-live="polite" class="mt-1 text-xs text-red-700">
-                    <template x-for="felt in halve.filter(f => ! f.startsWith('seneste'))" :key="felt">
+                    <template x-for="felt in halve.filter(f => ! f.startsWith('seneste') && ! f.startsWith('ekstern'))" :key="felt">
                         <p data-halv-dato-hint x-text="hint(felt)"></p>
                     </template>
                 </div>
@@ -300,6 +358,54 @@
             </div>
             <p class="text-xs text-ink-700/50 mb-5">{{ __('Fondsforhøjelser, fusioner og spaltninger tæller ikke. Bruges et kapitalfilter, tæller kun selskaber, hvor kapitalhistorikken er hentet.') }}</p>
 
+            {{-- Ekstern investering (ERST, lovet 29/10-2026): kapitalforhoejelser hvor
+                 en ny ejer udefra kom ind. Reglen staar paa metodesiden. --}}
+            <h2 class="text-xs uppercase tracking-wide text-sand-300 mb-3" data-eksternfiltre>{{ __('Ekstern investering') }}</h2>
+
+            <select wire:model.change="eksternInvestering"
+                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-4"
+                    aria-label="{{ __('Ekstern investering') }}">
+                <option value="">{{ __('Alle') }}</option>
+                @foreach($this::EKSTERN_VALG as $vaerdi => $navn)
+                    <option value="{{ $vaerdi }}">{{ __($navn) }}</option>
+                @endforeach
+            </select>
+
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Investortype i den eksterne investering') }}</label>
+            <select wire:model.change="eksternInvestortype"
+                    class="w-full bg-white border border-sand-200 rounded-lg px-3 py-2 text-sm text-ink-800 mb-4"
+                    aria-label="{{ __('Investortype i den eksterne investering') }}">
+                <option value="">{{ __('Alle') }}</option>
+                @foreach($this::EKSTERN_TYPER as $vaerdi => $navn)
+                    <option value="{{ $vaerdi }}">{{ __($navn) }}</option>
+                @endforeach
+            </select>
+
+            <label class="block text-sm text-ink-800 mb-1">{{ __('Ekstern investering mellem') }}</label>
+            <div class="mb-1" x-on:input.capture="vagt($event)" x-on:change.capture="vagt($event)"
+                 x-on:keyup.capture="maal($event)" x-on:focusout.capture="maal($event)">
+                <div class="flex gap-2">
+                    <input wire:model.change="eksternFra" type="date" data-felt="eksternFra"
+                           class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                           :class="halve.includes('eksternFra') && '!border-red-500'"
+                           :aria-invalid="halve.includes('eksternFra')"
+                           aria-describedby="halv-dato-ekstern-{{ $this->getId() }}"
+                           aria-label="{{ __('Ekstern investering fra') }}">
+                    <input wire:model.change="eksternTil" type="date" data-felt="eksternTil"
+                           class="flex-1 min-w-0 bg-white border border-sand-200 rounded-lg px-2 py-2 text-xs"
+                           :class="halve.includes('eksternTil') && '!border-red-500'"
+                           :aria-invalid="halve.includes('eksternTil')"
+                           aria-describedby="halv-dato-ekstern-{{ $this->getId() }}"
+                           aria-label="{{ __('Ekstern investering til') }}">
+                </div>
+                <div id="halv-dato-ekstern-{{ $this->getId() }}" role="status" aria-live="polite" class="mt-1 text-xs text-red-700">
+                    <template x-for="felt in halve.filter(f => f.startsWith('ekstern'))" :key="felt">
+                        <p data-halv-dato-hint x-text="hint(felt)"></p>
+                    </template>
+                </div>
+            </div>
+            <p class="text-xs text-ink-700/50 mb-5">{{ __('En kapitalforhøjelse er ekstern, når en ny ejer uden for selskabets ejere og koncern kommer ind inden for 31 dage. Ejere under 5 % står ikke i CVR, så "ingen ekstern investering set" kan skjule små investorer.') }}</p>
+
             <button wire:click="nulstil" x-on:click="tomHalve()" type="button"
                     class="w-full text-sm border border-sand-200 rounded-lg px-3 py-2 hover:bg-white transition text-ink-700">
                 {{ __('Nulstil filtre') }}
@@ -345,6 +451,17 @@
                                     'antal' => number_format($udenKapitalhistorik, 0, ',', '.'),
                                     // Datalaget taeller tallet paa samme niveau som totalen.
                                     'enhed' => $vistNiveau === 'koncern' ? __('koncerner') : __('selskaber'),
+                                ]) }}
+                            </p>
+                        @endif
+                        @if($kapitalkilde !== null)
+                            @php $kilder = array_sum($kapitalkilde); @endphp
+                            <p class="text-xs text-ink-700/60 mt-1" data-kapitalkilde>
+                                {{ __('Kapitalforhøjelser i udvalget før filteret på ekstern investering: :ekstern ekstern, :intern intern og :ukendt ukendt (:andel % ukendt, ingen synlig ændring blandt ejerne).', [
+                                    'ekstern' => number_format($kapitalkilde['ekstern'], 0, ',', '.'),
+                                    'intern' => number_format($kapitalkilde['intern'], 0, ',', '.'),
+                                    'ukendt' => number_format($kapitalkilde['ukendt'], 0, ',', '.'),
+                                    'andel' => $kilder > 0 ? number_format($kapitalkilde['ukendt'] / $kilder * 100, 1, ',', '.') : '0',
                                 ]) }}
                             </p>
                         @endif

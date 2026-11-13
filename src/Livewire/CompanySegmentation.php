@@ -314,6 +314,57 @@ class CompanySegmentation extends Component
     #[Locked]
     public string $vistNiveau = 'selskab';
 
+    /**
+     * Egen population (ERST, lovet 29/10-2026): en CVR-liste brugeren har
+     * uploadet. Id'et i registry-api; datalaget tjekker at den er brugerens.
+     * Utypet af samme grund som de andre #[Url]-felter.
+     *
+     * 🚨 SKAL staa SIDST blandt de offentlige properties (se `$fintech`).
+     */
+    #[Url(as: 'population', except: '')]
+    public $population = '';
+
+    /** Ekstern investering: '' (alle), 'ja' eller 'nej' (ingen set). */
+    #[Url(as: 'ekstern', except: '')]
+    public $eksternInvestering = '';
+
+    #[Url(as: 'ekstern_fra', except: '')]
+    public $eksternFra = '';
+
+    #[Url(as: 'ekstern_til', except: '')]
+    public $eksternTil = '';
+
+    #[Url(as: 'ekstern_type', except: '')]
+    public $eksternInvestortype = '';
+
+    /** CVR-numrene brugeren har indsat eller indlaest fra en fil (ikke en del af URL'en). */
+    public $cvrTekst = '';
+
+    public $populationNavn = '';
+
+    /**
+     * Brugerens populationer, som datalaget sender dem.
+     *
+     * @var array<int, array{id: int, navn: string, antal_cvr: int, antal_fundet: int}>
+     */
+    #[Locked]
+    public array $populationer = [];
+
+    #[Locked]
+    public ?string $populationBesked = null;
+
+    #[Locked]
+    public ?string $populationFejl = null;
+
+    /**
+     * Antal kapitalforhoejelser i udvalget, der er ekstern, intern og ukendt
+     * (registry-api meta.kapitalkilde). Kun med ekstern-filter eller -gruppering.
+     *
+     * @var array{ekstern: int, intern: int, ukendt: int}|null
+     */
+    #[Locked]
+    public ?array $kapitalkilde = null;
+
     public const NIVEAUER = [
         'selskab' => 'Tæl selskaber',
         'koncern' => 'Tæl koncerner',
@@ -330,6 +381,9 @@ class CompanySegmentation extends Component
         'vertikal' => 'Uden branchekode i CVR',
         'company_type' => 'Uden selskabsform i CVR',
         'kapitalforhoejelser' => 'Kapitalhistorik ikke hentet',
+        'ekstern_investering' => 'Kapitalhistorik ikke hentet',
+        'ekstern_aar' => 'Ingen ekstern investering set',
+        'ekstern_investortype' => 'Ingen ekstern investering set',
     ];
 
     /** Grupperinger hvis noegle er en officiel kode, der giver mening at vise. */
@@ -342,7 +396,31 @@ class CompanySegmentation extends Component
         'vertikal' => 'Vertikal',
         'company_type' => 'Selskabsform',
         'kapitalforhoejelser' => 'Kapitalforhøjelser',
+        'ekstern_investering' => 'Ekstern investering (ja/nej)',
+        'ekstern_aar' => 'År for første eksterne investering',
+        'ekstern_investortype' => 'Investortype i ekstern investering',
     ];
+
+    /** 🪤 Noeglerne SKAL matche registry-api's CompanySegmentation::EKSTERN_ETIKETTER. */
+    public const EKSTERN_VALG = [
+        'ja' => 'Har fået ekstern investering',
+        'nej' => 'Ingen ekstern investering set',
+    ];
+
+    /** 🪤 Noeglerne og raekkefoelgen SKAL matche registry-api's CompanySegmentation::EKSTERN_TYPER. */
+    public const EKSTERN_TYPER = [
+        'venture' => 'Venturefond',
+        'kapitalfond' => 'Kapitalfond (ikke venture)',
+        'public' => 'Offentlig investor',
+        'foundation' => 'Erhvervsdrivende fond',
+        'udenlandsk' => 'Udenlandsk ejer',
+        'holding' => 'Holdingselskab',
+        'selskab' => 'Andet selskab',
+        'person' => 'Person',
+    ];
+
+    /** Hoejst saa mange CVR-numre i én population (samme loft som registry-api). */
+    public const MAKS_CVR = 10000;
 
     /**
      * Grupperne for kapitalforhoejelser. 🪤 Noeglerne SKAL matche registry-api's
@@ -455,6 +533,125 @@ class CompanySegmentation extends Component
     public function mount(): void
     {
         $this->normaliser();
+        $this->hentPopulationer();
+        $this->segmentér();
+    }
+
+    /**
+     * Egne populationer kraever et personligt login (pilotkonto med eget
+     * registry-token). Se `RegistryApi::personligtTokenFejl()`.
+     */
+    public function kanBrugePopulation(): bool
+    {
+        return app(LookupAccess::class)->kanFoelge();
+    }
+
+    /** Brugerens populationer til vaelgeren. En fejl her maa ikke vaelte siden. */
+    public function hentPopulationer(): void
+    {
+        if (! $this->kanBrugePopulation()) {
+            $this->populationer = [];
+
+            return;
+        }
+
+        $svar = app(RegistryApi::class)->segmentPopulations();
+        $data = $svar['data'] ?? null;
+
+        $this->populationer = is_array($data) && ! isset($svar['error'])
+            ? array_values(array_filter(array_map(fn ($p) => is_array($p) && isset($p['id'], $p['navn']) ? [
+                'id' => (int) $p['id'],
+                'navn' => (string) $p['navn'],
+                'antal_cvr' => (int) ($p['antal_cvr'] ?? 0),
+                'antal_fundet' => (int) ($p['antal_fundet'] ?? 0),
+            ] : null, $data)))
+            : [];
+    }
+
+    /**
+     * CVR-numrene i en tekst: alle tal med praecis 8 cifre. Virker paa en
+     * CSV med én kolonne, flere kolonner, semikolon eller komma, og paa
+     * "DK12345678". 🪤 Ikke `\b`: mellem "K" og "1" er der ingen ordgraense.
+     *
+     * @return array<int, string>
+     */
+    public static function cvrNumre(string $tekst): array
+    {
+        preg_match_all('/(?<!\d)\d{8}(?!\d)/', $tekst, $m);
+
+        return array_values(array_unique($m[0]));
+    }
+
+    /** Opret en population ud fra de indsatte CVR-numre og vaelg den. */
+    public function opretPopulation(): void
+    {
+        if (! $this->kanBrugePopulation()) {
+            return;
+        }
+
+        $this->populationBesked = $this->populationFejl = null;
+        $cvr = self::cvrNumre(is_string($this->cvrTekst) ? $this->cvrTekst : '');
+
+        if ($cvr === []) {
+            $this->populationFejl = __('Der er ingen CVR-numre (8 cifre) i listen.');
+
+            return;
+        }
+
+        if (count($cvr) > self::MAKS_CVR) {
+            $this->populationFejl = __('Højst :maks CVR-numre i én population. Listen har :antal.', [
+                'maks' => number_format(self::MAKS_CVR, 0, ',', '.'), 'antal' => number_format(count($cvr), 0, ',', '.'),
+            ]);
+
+            return;
+        }
+
+        $navn = trim(is_string($this->populationNavn) ? $this->populationNavn : '');
+        $navn = mb_substr($navn !== '' ? $navn : __('Population :dato', ['dato' => now('Europe/Copenhagen')->format('d.m.Y H:i')]), 0, 120);
+
+        $svar = app(RegistryApi::class)->createSegmentPopulation($navn, $cvr);
+        $data = $svar['data'] ?? null;
+
+        if (isset($svar['error']) || ! is_array($data) || ! isset($data['id'])) {
+            $this->populationFejl = isset($svar['message']) ? (string) $svar['message']
+                : __('Populationen kunne ikke gemmes. Prøv igen, eller skriv til support@frankston.io.');
+
+            return;
+        }
+
+        $ukendte = is_array($data['ukendte_cvr'] ?? null) ? $data['ukendte_cvr'] : [];
+        $ophoerte = (int) ($data['ophoerte'] ?? 0);
+
+        $this->populationBesked = trim(__(':fundet af :antal CVR-numre findes i registret.', [
+            'fundet' => number_format((int) ($data['antal_fundet'] ?? 0), 0, ',', '.'),
+            'antal' => number_format((int) ($data['antal_cvr'] ?? count($cvr)), 0, ',', '.'),
+        ])
+            .($ukendte !== [] ? ' '.__('Ukendte: :liste.', ['liste' => implode(', ', array_slice($ukendte, 0, 10)).(count($ukendte) > 10 ? ' …' : '')]) : '')
+            .($ophoerte > 0 ? ' '.__(':antal er ophørt og tælles kun med, når "Medtag ophørte selskaber" er valgt.', ['antal' => number_format($ophoerte, 0, ',', '.')]) : ''));
+
+        $this->cvrTekst = '';
+        $this->populationNavn = '';
+        $this->population = (string) $data['id'];
+        $this->hentPopulationer();
+        $this->segmentér();
+    }
+
+    /** Slet en af brugerens egne populationer (kun en der staar i listen). */
+    public function sletPopulation(int $id): void
+    {
+        if (! $this->kanBrugePopulation() || ! collect($this->populationer)->contains('id', $id)) {
+            return;
+        }
+
+        $svar = app(RegistryApi::class)->deleteSegmentPopulation($id);
+        $this->populationBesked = null;
+        $this->populationFejl = isset($svar['error']) ? __('Populationen kunne ikke slettes.') : null;
+
+        if ((string) $id === (string) $this->population) {
+            $this->population = '';
+        }
+
+        $this->hentPopulationer();
         $this->segmentér();
     }
 
@@ -490,7 +687,8 @@ class CompanySegmentation extends Component
      */
     private function normaliser(): void
     {
-        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'senesteForhoejelseFra', 'senesteForhoejelseTil'] as $felt) {
+        foreach (['groupBy', 'industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'senesteForhoejelseFra', 'senesteForhoejelseTil',
+            'population', 'eksternInvestering', 'eksternFra', 'eksternTil', 'eksternInvestortype'] as $felt) {
             $this->{$felt} = is_scalar($this->{$felt}) ? (string) $this->{$felt} : '';
         }
 
@@ -524,6 +722,18 @@ class CompanySegmentation extends Component
 
         if (! array_key_exists($this->fintech, self::FINTECH)) {
             $this->fintech = '';
+        }
+
+        if (! ctype_digit($this->population) || ! $this->kanBrugePopulation()) {
+            $this->population = '';
+        }
+
+        if (! array_key_exists($this->eksternInvestering, self::EKSTERN_VALG)) {
+            $this->eksternInvestering = '';
+        }
+
+        if (! array_key_exists($this->eksternInvestortype, self::EKSTERN_TYPER)) {
+            $this->eksternInvestortype = '';
         }
 
         $this->inklOphoerte = is_scalar($this->inklOphoerte)
@@ -604,7 +814,8 @@ class CompanySegmentation extends Component
      * `wire:model.change`, og komponenten regner selv her.
      */
     private const FILTERFELTER = ['industryPrefix', 'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
-        'kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax', 'senesteForhoejelseFra', 'senesteForhoejelseTil'];
+        'kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax', 'senesteForhoejelseFra', 'senesteForhoejelseTil',
+        'population', 'eksternInvestering', 'eksternFra', 'eksternTil', 'eksternInvestortype'];
 
     public function updated(string $felt): void
     {
@@ -620,6 +831,8 @@ class CompanySegmentation extends Component
             'municipalityCode', 'region', 'vertikal', 'investortype', 'fintech', 'foundedFrom', 'foundedTo', 'fteMin', 'fteMax',
             'inklOphoerte', 'foreslaaetStiftetFra',
             'kapitalforhoejelserMin', 'kapitalforhoejelserMax', 'rejstMin', 'rejstMax', 'senesteForhoejelseFra', 'senesteForhoejelseTil',
+            // Populationen er udvalget, ikke et filter: den bliver staaende.
+            'eksternInvestering', 'eksternFra', 'eksternTil', 'eksternInvestortype',
         ]);
         $this->segmentér();
     }
@@ -665,6 +878,7 @@ class CompanySegmentation extends Component
             $this->ejerdata = null;
             $this->udenKapitalhistorik = null;
             $this->udenKendtBeloeb = null;
+            $this->kapitalkilde = null;
             $this->fejl = match (true) {
                 ($svar['error'] ?? null) === 'pilot_required' => 'Segmenteringen kræver en pilotkonto. Skriv til support@frankston.io for adgang.',
                 isset($svar['message']) => (string) $svar['message'],
@@ -692,6 +906,10 @@ class CompanySegmentation extends Component
             : null;
         $this->udenKendtBeloeb = isset($svar['meta']['uden_kendt_beloeb'])
             ? (int) $svar['meta']['uden_kendt_beloeb']
+            : null;
+        $kilde = $svar['meta']['kapitalkilde'] ?? null;
+        $this->kapitalkilde = is_array($kilde) && isset($kilde['ekstern'], $kilde['intern'], $kilde['ukendt'])
+            ? ['ekstern' => (int) $kilde['ekstern'], 'intern' => (int) $kilde['intern'], 'ukendt' => (int) $kilde['ukendt']]
             : null;
         $this->vistGroupBy = $this->groupBy;
         $this->vistFiltre = $this->filtre();
@@ -721,6 +939,11 @@ class CompanySegmentation extends Component
             'rejst_max' => $this->rejstMax,
             'seneste_forhoejelse_fra' => $this->senesteForhoejelseFra ?: null,
             'seneste_forhoejelse_til' => $this->senesteForhoejelseTil ?: null,
+            'population' => $this->population !== '' ? (int) $this->population : null,
+            'ekstern_investering' => $this->eksternInvestering ?: null,
+            'ekstern_fra' => $this->eksternFra ?: null,
+            'ekstern_til' => $this->eksternTil ?: null,
+            'ekstern_investortype' => $this->eksternInvestortype ?: null,
         ], fn ($v) => $v !== null && $v !== '');
     }
 
@@ -744,6 +967,8 @@ class CompanySegmentation extends Component
             'region' => self::REGIONER[$key] ?? $key,
             'vertikal' => self::VERTIKALER[$key] ?? $key,
             'kapitalforhoejelser' => self::KAPITALGRUPPER[$key] ?? $key,
+            'ekstern_investering' => self::EKSTERN_VALG[$key] ?? $key,
+            'ekstern_investortype' => self::EKSTERN_TYPER[$key] ?? $key,
             default => $key,
         };
     }
