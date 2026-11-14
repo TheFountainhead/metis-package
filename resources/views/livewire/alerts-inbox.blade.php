@@ -1,7 +1,7 @@
 <div>
     <div class="flex items-center justify-between py-2 mb-4 border-b">
         <div class="flex items-center gap-3">
-            <h1 class="text-xl font-bold">{{ __('Mine alerts') }}</h1>
+            <h1 class="text-xl font-bold">{{ __('Alerts') }}</h1>
             <span class="text-sm text-zinc-500">{{ __('Ændringer på ejendomme og selskaber du følger') }}</span>
         </div>
         @php

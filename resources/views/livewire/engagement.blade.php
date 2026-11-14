@@ -5,7 +5,7 @@
                 {{ $engagement ? \TheFountainhead\Metis\Livewire\Engagements::ownerLabel($engagement) : __('Engagement') }}
             </h1>
             @if($engagement)
-                <span class="text-sm text-zinc-500">{{ __('Mit pant') }}: {{ number_format($engagement['lender_kr'] ?? 0, 0, ',', '.') }} kr.</span>
+                <span class="text-sm text-zinc-500">{{ __(':lender pant', ['lender' => \TheFountainhead\Metis\Livewire\Engagements::lenderPossessive($meta)]) }}: {{ number_format($engagement['lender_kr'] ?? 0, 0, ',', '.') }} kr.</span>
             @endif
         </div>
         <a href="{{ route('metis.engagements') }}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition">
@@ -22,7 +22,7 @@
             </button>
         </div>
     @elseif($unbound)
-        <div class="max-w-xl p-6 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-900">
+        <div class="max-w-xl p-6 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-800">
             {{ __('Din bruger er ikke knyttet til et långiverselskab endnu. Skriv til os, så sætter vi det op.') }}
         </div>
     @elseif($notFound)
@@ -30,7 +30,7 @@
             {{ __('Engagementet findes ikke blandt dine engagementer.') }}
         </div>
     @elseif($errorMessage)
-        <div class="max-w-xl p-6 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-900">
+        <div class="max-w-xl p-6 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-800">
             {{ $errorMessage }}
             <button type="button" wire:click="load" class="ml-2 underline">{{ __('Prøv igen') }}</button>
         </div>
@@ -38,6 +38,7 @@
         @php
             $caveat = ($meta['disclaimer'] ?? null) ?: __(\TheFountainhead\Metis\Livewire\Engagements::CAVEAT_FALLBACK);
             $kr = fn ($v) => number_format((int) $v, 0, ',', '.').' kr.';
+            $lenderShort = \TheFountainhead\Metis\Services\LegalName::short((string) ($meta['lender']['name'] ?? __('Långiver')));
             $dato = fn ($d) => $d ? \Carbon\Carbon::parse($d)->format('d.m.Y') : '—';
             $kindLabel = [
                 'new_lien' => __('Ny hæftelse'), 'paid_off' => __('Indfriet'),
@@ -49,7 +50,7 @@
 
         {{-- ÆNDRINGER SIDEN EGEN TINGLYSNING --}}
         <section class="mb-8">
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500 mb-2">{{ __('Siden min tinglysning') }}</h2>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500 mb-2">{{ __('Ændringer siden pantet blev tinglyst') }}</h2>
             @if(empty($engagement['changes']))
                 @php $since = collect($engagement['properties'] ?? [])->pluck('own_since')->filter()->min(); @endphp
                 <p class="p-4 text-sm border rounded-xl bg-white text-zinc-600">
@@ -64,7 +65,7 @@
                                 <div class="font-medium">
                                     {{ $kindLabel[$change['kind']] ?? $change['kind'] }}
                                     @if($change['is_ahead'] ?? false)
-                                        <span class="ml-1 text-xs text-red-700">{{ __('foran mig') }}</span>
+                                        <span class="ml-1 text-xs text-red-700">{{ __('foranstående') }}</span>
                                     @endif
                                 </div>
                                 <div class="text-xs text-zinc-500">
@@ -89,12 +90,12 @@
                         {{ $property['address'] ?? '—' }}@if($property['postal_code'] ?? null)<span class="text-zinc-500">, {{ $property['postal_code'] }} {{ $property['city'] ?? '' }}</span>@endif
                     </h2>
                     <div class="text-xs text-zinc-500">
-                        BFE {{ $property['bfe'] ?? '—' }} · {{ __('Mit pant siden') }} {{ $dato($property['own_since'] ?? null) }}
+                        BFE {{ $property['bfe'] ?? '—' }} · {{ __('Pant siden') }} {{ $dato($property['own_since'] ?? null) }}
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4 mb-2 text-sm">
                     <div class="p-3 border rounded-lg bg-white">
-                        <div class="text-xs uppercase tracking-wide text-zinc-500">{{ __('Foran mig') }}</div>
+                        <div class="text-xs uppercase tracking-wide text-zinc-500">{{ __('Foranstående pant') }}</div>
                         {{-- null = prioriteten på mit eget pant er ukendt. Det er IKKE 0:
                              et 0 ville læses som "jeg står forrest". --}}
                         @if(($property['ahead_kr'] ?? null) === null)
@@ -124,17 +125,19 @@
                         </thead>
                         <tbody class="divide-y divide-zinc-100">
                             @foreach($property['ladder'] ?? [] as $row)
-                                <tr wire:key="lien-{{ $property['id'] ?? 'p' }}-{{ $row['id'] ?? $loop->index }}" class="{{ ($row['is_own'] ?? false) ? 'bg-emerald-50/60 font-medium' : '' }}">
+                                <tr wire:key="lien-{{ $property['id'] ?? 'p' }}-{{ $row['id'] ?? $loop->index }}" class="{{ ($row['is_own'] ?? false) ? 'bg-wheat/60 font-medium' : '' }}">
                                     <td class="px-3 py-2 tabular-nums">{{ $row['priority'] ?? '?' }}</td>
                                     <td class="px-3 py-2 text-xs whitespace-nowrap">
+                                        {{-- Tekst, ikke farvede piller: rækkens tone og vægt bærer "eget pant",
+                                             og kun den foranstående status (risikoen) får farve. --}}
                                         @if($row['is_own'] ?? false)
-                                            <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">{{ __('Mig') }}</span>
+                                            <span class="text-zinc-900">{{ $lenderShort }}</span>
                                         @elseif($row['is_ahead'] ?? false)
-                                            <span class="px-2 py-0.5 rounded-full bg-red-100 text-red-800">{{ __('Foran mig') }}</span>
+                                            <span class="text-red-700">{{ __('Foranstående') }}</span>
                                         @elseif($row['is_pari'] ?? false)
-                                            <span class="px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700">{{ __('Sideordnet') }}</span>
+                                            <span class="text-zinc-600">{{ __('Sideordnet') }}</span>
                                         @elseif($row['priority_unknown'] ?? false)
-                                            <span class="px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500">{{ __('Prioritet ukendt') }}</span>
+                                            <span class="text-zinc-500">{{ __('Prioritet ukendt') }}</span>
                                         @endif
                                     </td>
                                     <td class="px-3 py-2 text-zinc-600">{{ $row['type'] ?? '—' }}</td>

@@ -46,4 +46,29 @@ class LegalName
 
         return $formatted;
     }
+
+    /**
+     * Navnet uden selskabsform: "DRAUPNIR INVESTMENT ADVISORS A/S" →
+     * "Draupnir Investment Advisors". Bruges hvor långiveren nævnes i
+     * løbende tekst ("Draupnir Investment Advisors' pant"), hvor A/S ville
+     * stå midt i sætningen. Et navn der KUN er en selskabsform, bevares.
+     */
+    public static function short(string $name): string
+    {
+        $formatted = self::format($name);
+
+        foreach (array_values(self::FORMS) as $form) {
+            if (str_ends_with($formatted, ' '.$form)) {
+                return mb_substr($formatted, 0, mb_strlen($formatted) - mb_strlen($form) - 1);
+            }
+        }
+
+        return $formatted;
+    }
+
+    /** Genitiv efter dansk retskrivning: s, x og z får apostrof, alt andet -s. */
+    public static function possessive(string $name): string
+    {
+        return in_array(mb_strtolower(mb_substr($name, -1)), ['s', 'x', 'z'], true) ? $name."'" : $name.'s';
+    }
 }

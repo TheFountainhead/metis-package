@@ -117,6 +117,18 @@ class Engagements extends Component
         return $name ? LegalName::format($name) : ($this->meta['lender']['cvr'] ?? '');
     }
 
+    /**
+     * Långiveren i løbende tekst, i genitiv: "Draupnir Investment Advisors'".
+     * Siden taler OM långiveren, ikke som den ("Mit pant", "Foran mig" læste
+     * som om Metis selv var panthaver). Uden navn: "Långiverens".
+     */
+    public static function lenderPossessive(?array $meta): string
+    {
+        $name = $meta['lender']['name'] ?? null;
+
+        return $name ? LegalName::possessive(LegalName::short($name)) : __('Långiverens');
+    }
+
     public static function ownerLabel(array $engagement): string
     {
         $labels = array_map(
