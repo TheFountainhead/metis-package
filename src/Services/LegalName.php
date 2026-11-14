@@ -34,6 +34,9 @@ class LegalName
         'Smba' => 'SmbA',
     ];
 
+    /** Selskabsformer som de kan stå i et navn, til short(). Sammenlignes i små bogstaver. */
+    private const FORM_TOKENS = ['aps', 'a/s', 'i/s', 'p/s', 'k/s', 'amba', 'fmba', 'smba', 'a.m.b.a', 'f.m.b.a', 's.m.b.a'];
+
     public static function format(string $name): string
     {
         $formatted = mb_convert_case($name, MB_CASE_TITLE, 'UTF-8');
@@ -57,9 +60,13 @@ class LegalName
     {
         $formatted = self::format($name);
 
-        foreach (array_values(self::FORMS) as $form) {
-            if (str_ends_with($formatted, ' '.$form)) {
-                return mb_substr($formatted, 0, mb_strlen($formatted) - mb_strlen($form) - 1);
+        // Klip ved FØRSTE selskabsform, også midt i navnet: "Draupnir A/S I Likvidation"
+        // skal blive "Draupnir", ikke "Draupnir A/S I Likvidation" (genitiven ville lande
+        // på "Likvidation"). Et navn der KUN er en selskabsform, bevares.
+        $words = explode(' ', $formatted);
+        foreach ($words as $i => $word) {
+            if ($i > 0 && in_array(mb_strtolower(rtrim($word, '.,')), self::FORM_TOKENS, true)) {
+                return implode(' ', array_slice($words, 0, $i));
             }
         }
 

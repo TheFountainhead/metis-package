@@ -52,6 +52,8 @@ it('giver långiverens korte navn uden selskabsform', function (string $input, s
     ['FRANKSTON ApS', 'Frankston'],
     ['Nordea Kredit Realkreditaktieselskab', 'Nordea Kredit Realkreditaktieselskab'],
     ['A/S', 'A/S'],
+    ['DRAUPNIR A/S I LIKVIDATION', 'Draupnir'],
+    ['ABC A.M.B.A.', 'Abc'],
 ]);
 
 it('sætter genitiv efter dansk retskrivning', function (string $input, string $expected) {

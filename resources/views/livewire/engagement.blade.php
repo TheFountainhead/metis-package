@@ -38,7 +38,7 @@
         @php
             $caveat = ($meta['disclaimer'] ?? null) ?: __(\TheFountainhead\Metis\Livewire\Engagements::CAVEAT_FALLBACK);
             $kr = fn ($v) => number_format((int) $v, 0, ',', '.').' kr.';
-            $lenderShort = \TheFountainhead\Metis\Services\LegalName::short((string) ($meta['lender']['name'] ?? __('Långiver')));
+            $lenderShort = \TheFountainhead\Metis\Services\LegalName::short((string) (($meta['lender']['name'] ?? null) ?: __('Långiver')));
             $dato = fn ($d) => $d ? \Carbon\Carbon::parse($d)->format('d.m.Y') : '—';
             $kindLabel = [
                 'new_lien' => __('Ny hæftelse'), 'paid_off' => __('Indfriet'),
