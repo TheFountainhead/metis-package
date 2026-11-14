@@ -34,6 +34,9 @@ class LegalName
         'Smba' => 'SmbA',
     ];
 
+    /** Selskabsformer som de kan stå i et navn, til short(). Sammenlignes i små bogstaver. */
+    private const FORM_TOKENS = ['aps', 'a/s', 'i/s', 'p/s', 'k/s', 'amba', 'fmba', 'smba', 'a.m.b.a', 'f.m.b.a', 's.m.b.a'];
+
     public static function format(string $name): string
     {
         $formatted = mb_convert_case($name, MB_CASE_TITLE, 'UTF-8');
@@ -45,5 +48,34 @@ class LegalName
         }
 
         return $formatted;
+    }
+
+    /**
+     * Navnet uden selskabsform: "DRAUPNIR INVESTMENT ADVISORS A/S" →
+     * "Draupnir Investment Advisors". Bruges hvor långiveren nævnes i
+     * løbende tekst ("Draupnir Investment Advisors' pant"), hvor A/S ville
+     * stå midt i sætningen. Et navn der KUN er en selskabsform, bevares.
+     */
+    public static function short(string $name): string
+    {
+        $formatted = self::format($name);
+
+        // Klip ved FØRSTE selskabsform, også midt i navnet: "Draupnir A/S I Likvidation"
+        // skal blive "Draupnir", ikke "Draupnir A/S I Likvidation" (genitiven ville lande
+        // på "Likvidation"). Et navn der KUN er en selskabsform, bevares.
+        $words = explode(' ', $formatted);
+        foreach ($words as $i => $word) {
+            if ($i > 0 && in_array(mb_strtolower(rtrim($word, '.,')), self::FORM_TOKENS, true)) {
+                return implode(' ', array_slice($words, 0, $i));
+            }
+        }
+
+        return $formatted;
+    }
+
+    /** Genitiv efter dansk retskrivning: s, x og z får apostrof, alt andet -s. */
+    public static function possessive(string $name): string
+    {
+        return in_array(mb_strtolower(mb_substr($name, -1)), ['s', 'x', 'z'], true) ? $name."'" : $name.'s';
     }
 }

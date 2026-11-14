@@ -131,14 +131,19 @@ it('samejet engagement vises med begge ejere, personejet som privatperson', func
         ->assertSee('Privatperson');
 });
 
-it('engagementssiden viser stigen med Mig, Foran mig og ændringerne', function () {
+it('engagementssiden viser stigen med långiverens navn, foranstående pant og ændringerne', function () {
     session(['metis_user_token' => '19|abc']);
     Http::fake(['*/v1/engagements/*' => Http::response(['data' => cockpitEngagement(), 'meta' => cockpitMeta()])]);
 
+    // Siden taler OM långiveren (fixture: LÅNGIVER A/S), aldrig i jeg-form.
     Livewire::test(Engagement::class, ['key' => 'c22222222'])
         ->assertSee('Prøvevej 1')
-        ->assertSee('Foran mig')
-        ->assertSee('Mig')
+        ->assertSee('Långivers pant')
+        ->assertSeeHtml('<span class="text-zinc-900">Långiver</span>')
+        ->assertSee('Foranstående')
+        ->assertDontSee('Foran mig')
+        ->assertDontSee('Mit pant')
+        ->assertDontSeeHtml('>Mig<')
         ->assertSee('Bank Foran A/S')
         ->assertSee('Ny hæftelse')
         ->assertSee('Privat Invest P/S')

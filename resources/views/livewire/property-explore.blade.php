@@ -88,7 +88,7 @@
                 </div>
                 @if(count($polygon) >= 3)
                     <div class="flex items-center justify-between text-xs">
-                        <span class="text-emerald-600">✓ {{ __('Område optegnet (:n punkter)', ['n' => count($polygon)]) }}</span>
+                        <span class="text-green-700">✓ {{ __('Område optegnet (:n punkter)', ['n' => count($polygon)]) }}</span>
                         <button wire:click="clearPolygon" type="button" class="text-zinc-500 hover:text-zinc-700 underline">{{ __('Ryd') }}</button>
                     </div>
                 @else

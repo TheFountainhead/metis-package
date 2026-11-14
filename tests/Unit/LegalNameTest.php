@@ -44,3 +44,23 @@ it('lader udenlandske navne med accenter være læsbare', function () {
     expect(LegalName::format('EN TYSK GIROZENTRALE MÜNCHEN'))
         ->toBe('En Tysk Girozentrale München');
 });
+
+it('giver långiverens korte navn uden selskabsform', function (string $input, string $expected) {
+    expect(LegalName::short($input))->toBe($expected);
+})->with([
+    ['DRAUPNIR INVESTMENT ADVISORS A/S', 'Draupnir Investment Advisors'],
+    ['FRANKSTON ApS', 'Frankston'],
+    ['Nordea Kredit Realkreditaktieselskab', 'Nordea Kredit Realkreditaktieselskab'],
+    ['A/S', 'A/S'],
+    ['DRAUPNIR A/S I LIKVIDATION', 'Draupnir'],
+    ['ABC A.M.B.A.', 'Abc'],
+]);
+
+it('sætter genitiv efter dansk retskrivning', function (string $input, string $expected) {
+    expect(LegalName::possessive($input))->toBe($expected);
+})->with([
+    ['Draupnir Investment Advisors', "Draupnir Investment Advisors'"],
+    ['Frankston', 'Frankstons'],
+    ['Jyske Bank', 'Jyske Banks'],
+    ['Max', "Max'"],
+]);

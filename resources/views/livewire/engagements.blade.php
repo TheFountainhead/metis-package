@@ -1,8 +1,8 @@
 <div>
     <div class="flex items-center justify-between py-2 mb-4 border-b">
         <div class="flex items-center gap-3">
-            <h1 class="text-xl font-bold">{{ __('Mine engagementer') }}</h1>
-            <span class="text-sm text-zinc-500">{{ __('Hvor har jeg pant, og hvad er der sket siden?') }}</span>
+            <h1 class="text-xl font-bold">{{ __('Engagementer') }}</h1>
+            <span class="text-sm text-zinc-500">{{ __('Hvor långiveren har pant, og hvad der er sket siden') }}</span>
         </div>
         @php
             $backRoute = Route::has('metis.index') ? 'metis.index' : (Route::has('metis.home') ? 'metis.home' : null);
@@ -28,11 +28,11 @@
             </button>
         </div>
     @elseif($unbound)
-        <div class="max-w-xl p-6 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-900">
+        <div class="max-w-xl p-6 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-800">
             {{ __('Din bruger er ikke knyttet til et långiverselskab endnu. Skriv til os, så sætter vi det op.') }}
         </div>
     @elseif($errorMessage)
-        <div class="max-w-xl p-6 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-900">
+        <div class="max-w-xl p-6 text-sm border rounded-xl border-amber-200 bg-amber-50 text-amber-800">
             {{ $errorMessage }}
             <button type="button" wire:click="load" class="ml-2 underline">{{ __('Prøv igen') }}</button>
         </div>
@@ -59,7 +59,7 @@
         @else
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                 <div class="p-4 border rounded-xl bg-white">
-                    <div class="text-xs uppercase tracking-wide text-zinc-500">{{ __('Mit pant') }}</div>
+                    <div class="text-xs uppercase tracking-wide text-zinc-500">{{ __('Pant i alt') }}</div>
                     <div class="mt-1 text-2xl font-bold tabular-nums">{{ number_format($totals['lender_kr'] ?? 0, 0, ',', '.') }} kr.</div>
                 </div>
                 <div class="p-4 border rounded-xl bg-white">
@@ -90,10 +90,10 @@
                             <th class="px-4 py-2 text-left font-medium">{{ __('Låntager') }}</th>
                             <th class="px-4 py-2 text-right font-medium">{{ __('Ejd.') }}</th>
                             <th class="px-4 py-2 text-right font-medium">
-                                <button type="button" wire:click="sortBy('lender_kr')" class="hover:underline {{ $sort === 'lender_kr' ? 'text-zinc-900' : '' }}">{{ __('Mit pant') }}</button>
+                                <button type="button" wire:click="sortBy('lender_kr')" class="hover:underline {{ $sort === 'lender_kr' ? 'text-zinc-900' : '' }}">{{ __('Pant') }}</button>
                             </th>
                             <th class="px-4 py-2 text-right font-medium">
-                                <button type="button" wire:click="sortBy('worst_ahead_kr')" class="hover:underline {{ $sort === 'worst_ahead_kr' ? 'text-zinc-900' : '' }}">{{ __('Foran mig') }}</button>
+                                <button type="button" wire:click="sortBy('worst_ahead_kr')" class="hover:underline {{ $sort === 'worst_ahead_kr' ? 'text-zinc-900' : '' }}">{{ __('Foranstående') }}</button>
                             </th>
                             <th class="px-4 py-2 text-right font-medium">
                                 <button type="button" wire:click="sortBy('total_debt_kr')" class="hover:underline {{ $sort === 'total_debt_kr' ? 'text-zinc-900' : '' }}">{{ __('Samlet pant') }}</button>
@@ -105,7 +105,7 @@
                     </thead>
                     <tbody class="divide-y divide-zinc-100">
                         @foreach($this->sorted as $row)
-                            <tr wire:key="engagement-{{ $row['key'] ?? $loop->index }}" class="{{ ($row['has_changes_since_own'] ?? false) ? 'bg-amber-50/40' : '' }}">
+                            <tr wire:key="engagement-{{ $row['key'] ?? $loop->index }}" class="{{ ($row['has_changes_since_own'] ?? false) ? 'bg-wheat/50' : '' }}">
                                 <td class="px-4 py-2">
                                     <a href="{{ route('metis.engagement', ['key' => $row['key']]) }}" class="font-medium hover:underline">
                                         {{ \TheFountainhead\Metis\Livewire\Engagements::ownerLabel($row) }}

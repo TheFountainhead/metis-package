@@ -66,7 +66,7 @@
                 @if(! empty(session('metis_user_token')))
                     <a href="{{ Route::has('metis.alerts') ? route('metis.alerts') : '/alerts' }}"
                        class="px-4 py-2 text-sm bg-white border border-zinc-200 rounded-full hover:border-zinc-400 hover:shadow-sm transition">
-                        Mine alerts
+                        Alerts
                     </a>
                 @endif
             </div>
