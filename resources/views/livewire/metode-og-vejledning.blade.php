@@ -76,7 +76,9 @@
                 </li>
                 <li>
                     <strong>Vælg fordeling.</strong> Under <em>Fordel på</em> vælger du, hvordan selskaberne skal fordeles:
-                    kommune, region, branche, vertikal, selskabsform eller antal kapitalforhøjelser.
+                    kommune, region, branche, vertikal, selskabsform, antal kapitalforhøjelser, ekstern investering (ja/nej),
+                    år for første eksterne investering eller investortype i ekstern investering. De tre sidste er forklaret i
+                    <a href="#ekstern" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">afsnit 12</a>.
                 </li>
                 <li>
                     <strong>Afgræns.</strong> Brug filtrene i venstre side. Tallet opdateres, når du ændrer et filter.
@@ -507,6 +509,8 @@
                 <strong>Filtrene.</strong> <em>Har fået ekstern investering</em> tæller selskaber med mindst én ekstern forhøjelse. Med datoer tæller kun eksterne forhøjelser i perioden.
                 <em>Ingen ekstern investering set</em> tæller selskaber uden en ekstern forhøjelse. Det betyder ikke, at der ingen ekstern kapital er: en ukendt forhøjelse kan skjule en investor under 5 %.
                 Med et filter eller en fordeling på ekstern investering viser siden, hvor mange af forhøjelserne i udvalget der er ekstern, intern og ukendt. Tallet gælder udvalget før filteret på ekstern investering, så andelen ukendt kan ses for hele udvalget.
+                <strong>Fordeling på år</strong> placerer hvert selskab i året for dets første eksterne forhøjelse. Med datoer eller en investortype i filtrene er det den første eksterne forhøjelse i perioden og af den type.
+                Selskaber uden en ekstern forhøjelse står på linjen <em>Ingen ekstern investering set</em>.
                 Fordeler du på år eller investortype, er selskaber uden hentet kapitalhistorik udeladt, og siden viser hvor mange.
             </p>
             <p class="mb-3">

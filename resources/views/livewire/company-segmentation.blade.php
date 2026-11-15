@@ -425,10 +425,11 @@
                             {{ number_format($total ?? 0, 0, ',', '.') }}
                         </p>
                         <p class="text-sm text-ink-700/60" data-total-etiket>
+                            {{-- Ental ved 1 ("1 selskab", ikke "1 selskaber"). --}}
                             @if($vistNiveau === 'koncern')
-                                {{ __('koncerner i alt med de valgte afgrænsninger') }}
+                                {{ trans_choice('{1} koncern i alt med de valgte afgrænsninger|[0,*] koncerner i alt med de valgte afgrænsninger', $total ?? 0) }}
                             @else
-                                {{ __('selskaber i alt med de valgte afgrænsninger') }}
+                                {{ trans_choice('{1} selskab i alt med de valgte afgrænsninger|[0,*] selskaber i alt med de valgte afgrænsninger', $total ?? 0) }}
                             @endif
                         </p>
                         @if($vistNiveau === 'koncern')
@@ -450,7 +451,9 @@
                                 {{ __('Kun selskaber, hvor kapitalhistorikken er hentet. :antal :enhed i udvalget er udeladt, fordi den ikke er hentet.', [
                                     'antal' => number_format($udenKapitalhistorik, 0, ',', '.'),
                                     // Datalaget taeller tallet paa samme niveau som totalen.
-                                    'enhed' => $vistNiveau === 'koncern' ? __('koncerner') : __('selskaber'),
+                                    'enhed' => $vistNiveau === 'koncern'
+                                        ? trans_choice('{1} koncern|[0,*] koncerner', $udenKapitalhistorik)
+                                        : trans_choice('{1} selskab|[0,*] selskaber', $udenKapitalhistorik),
                                 ]) }}
                             </p>
                         @endif
@@ -469,7 +472,9 @@
                             <p class="text-xs text-ink-700/60 mt-1" data-kendt-beloeb>
                                 {{ __('Højst rejst kapital tæller kun selskaber, hvor alle forhøjelser har et kendt beløb i kroner. :antal :enhed er udeladt, fordi et beløb mangler eller er i en anden valuta.', [
                                     'antal' => number_format($udenKendtBeloeb, 0, ',', '.'),
-                                    'enhed' => $vistNiveau === 'koncern' ? __('koncerner') : __('selskaber'),
+                                    'enhed' => $vistNiveau === 'koncern'
+                                        ? trans_choice('{1} koncern|[0,*] koncerner', $udenKendtBeloeb)
+                                        : trans_choice('{1} selskab|[0,*] selskaber', $udenKendtBeloeb),
                                 ]) }}
                             </p>
                         @endif
@@ -599,7 +604,7 @@
                                 {{ $this->valgtEtiket() }}
                                 @if($selskabTotal !== null)
                                     <span class="font-normal text-ink-700/60">
-                                        &middot; {{ number_format($selskabTotal, 0, ',', '.') }} {{ __('selskaber') }}
+                                        &middot; {{ number_format($selskabTotal, 0, ',', '.') }} {{ trans_choice('{1} selskab|[0,*] selskaber', $selskabTotal) }}
                                     </span>
                                 @endif
                             </h2>

@@ -215,3 +215,24 @@ it('ruller listen frem ved klik, og igen ved ny gruppe eller side', function () 
 
     expect($c->call('gaaTilSide', 2)->html())->toContain('wire:key="selskabsliste-751-2"');
 });
+
+it('skriver "1 selskab" i listeoverskriften, ikke "1 selskaber"', function () {
+    config()->set('metis.gating.enabled', false);
+    Http::fake([
+        '*/company-segmentation/companies' => Http::response([
+            'data' => [
+                ['cvr' => '40447024', 'name' => 'ENESTE ApS', 'company_type' => 'aps', 'industry_code' => '62.01.00', 'industry_description' => 'Computerprogrammering', 'municipality_code' => '751', 'founded_date' => '2019-03-01', 'max_fte' => 2],
+            ],
+            'meta' => ['total' => 1, 'page' => 1, 'per_page' => 50, 'last_page' => 1],
+        ]),
+        '*/company-segmentation' => Http::response([
+            'data' => [['key' => '751', 'label' => null, 'count' => 1]],
+            'meta' => ['total' => 5],
+        ]),
+    ]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->call('visSelskaber', '751')
+        ->assertSeeHtml('&middot; 1 selskab')
+        ->assertDontSeeHtml('&middot; 1 selskaber');
+});
