@@ -41,7 +41,8 @@ it('viser reglerne for en bekraeftet pilot', function () {
         // Afsnit 1 naevner alle fordelinger, ogsaa de tre paa ekstern investering.
         ->assertSee('ekstern investering (ja/nej)')
         ->assertSee('år for første eksterne investering')
-        ->assertSee('investortype i ekstern investering');
+        ->assertSee('investortype i ekstern investering')
+        ->assertSee('året for dets første eksterne forhøjelse');
 });
 
 it('🚨 en ikke-pilot ser login-beskeden og ingen regler', function (array $session) {

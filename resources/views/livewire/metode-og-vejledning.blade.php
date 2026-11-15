@@ -509,6 +509,8 @@
                 <strong>Filtrene.</strong> <em>Har fået ekstern investering</em> tæller selskaber med mindst én ekstern forhøjelse. Med datoer tæller kun eksterne forhøjelser i perioden.
                 <em>Ingen ekstern investering set</em> tæller selskaber uden en ekstern forhøjelse. Det betyder ikke, at der ingen ekstern kapital er: en ukendt forhøjelse kan skjule en investor under 5 %.
                 Med et filter eller en fordeling på ekstern investering viser siden, hvor mange af forhøjelserne i udvalget der er ekstern, intern og ukendt. Tallet gælder udvalget før filteret på ekstern investering, så andelen ukendt kan ses for hele udvalget.
+                <strong>Fordeling på år</strong> placerer hvert selskab i året for dets første eksterne forhøjelse. Med datoer eller en investortype i filtrene er det den første eksterne forhøjelse i perioden og af den type.
+                Selskaber uden en ekstern forhøjelse står på linjen <em>Ingen ekstern investering set</em>.
                 Fordeler du på år eller investortype, er selskaber uden hentet kapitalhistorik udeladt, og siden viser hvor mange.
             </p>
             <p class="mb-3">
