@@ -211,7 +211,9 @@ trait ResolvesGraphEnrichment
             'equity' => $toKroner($latest['equity'] ?? null),
             'result' => $toKroner($latest['profit_loss'] ?? null),
             'fiscal_year' => $latest['year'] ?? null,
-            'employees' => $company['employees'] ?? null,
+            // employees er en serie ({latest: {count}, history}), ikke et tal: som CompanyOverview.
+            // Kortet viste ellers "[object Object]" (JS String() paa et objekt).
+            'employees' => is_numeric($antal = data_get($company, 'employees.latest.count')) ? (int) $antal : null,
             'website' => $this->safeWebsite(data_get($company, 'contact.website')),
             'founded_date' => $company['founded_date'] ?? null,
             'industry' => $company['industry'] ?? null,

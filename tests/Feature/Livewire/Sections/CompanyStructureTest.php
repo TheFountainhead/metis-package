@@ -94,7 +94,8 @@ function fakeRegistryCompanyInfo(string $cvr, array $overrides = []): void
         "*/v1/cvr/company/{$cvr}*" => Http::response(['data' => ['company' => array_merge([
             'cvr' => $cvr,
             'name' => 'Kirketorvet Ejendomme ApS',
-            'employees' => 4,
+            // Samme form som registry-api's extractEmployees() og CompanyOverviewTest: en serie, ikke et tal.
+            'employees' => ['latest' => ['count' => 4, 'fte' => 3, 'year' => 2026, 'month' => 8, 'interval' => null], 'history' => []],
             'founded_date' => '2010-01-01',
             'industry' => 'Ejendomshandel',
             'contact' => ['website' => 'kirketorvet.dk'],
