@@ -5,10 +5,12 @@ namespace TheFountainhead\Metis\Livewire\Sections;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 /**
- * "Aktieposter & relationer" — shareholder-relationer (begge retninger).
+ * "Stiftere og stiftede selskaber": shareholder-relationer (begge retninger).
  *
- * ADSKILT fra CompanyStructure (datterselskaber = legal_owner). Vises MÆRKET
- * som aktieposter, IKKE bekræftet koncern-ejerskab. Backend leverer dette fra
+ * 🔑 registry-api skriver rollen shareholder KUN fra CVR's organisation "Stiftere"
+ * (CvrService::mapRoleType), saa listen viser stiftelse, ikke ejerskab. Den hed
+ * "Aktieposter & relationer" med "Aktionær i"/"Aktionærer" (rettet 15/11-2026,
+ * brugervejledningen til ERST). ADSKILT fra CompanyStructure (ejere = legal_owner). Backend leverer dette fra
  * et dedikeret endpoint (Option B), så relations aldrig blandes i ejendom/gæld.
  */
 class CompanyRelations extends MetisSection
@@ -20,7 +22,7 @@ class CompanyRelations extends MetisSection
 
     protected function sectionTitle(): string
     {
-        return __('Aktieposter & relationer');
+        return __('Stiftere og stiftede selskaber');
     }
 
     public function mount(string $query): void

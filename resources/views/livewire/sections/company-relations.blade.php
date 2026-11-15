@@ -2,17 +2,17 @@
     @if($outgoingCount > 0 || $incomingCount > 0)
         <flux:card>
             <div class="flex flex-wrap items-center gap-2 mb-1">
-                <flux:heading size="lg">{{ __('Aktieposter & relationer') }}</flux:heading>
+                <flux:heading size="lg">{{ __('Stiftere og stiftede selskaber') }}</flux:heading>
             </div>
             <p class="text-xs text-zinc-500 mb-4">
-                {{ __('Aktiepost-relationer fra CVR — ikke bekræftet koncern-ejerskab. Datterselskaber vises under Struktur.') }}
+                {{ __('Fra CVR\'s registrering af stiftere. Viser ikke nuværende ejerskab. Ejere og datterselskaber står under Virksomhedsstruktur.') }}
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {{-- Selskabet er aktionær i --}}
+                {{-- Selskaber, dette selskab står som stifter af (CVR's organisation Stiftere) --}}
                 <div>
                     <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-2">
-                        {{ __('Aktionær i') }}
+                        {{ __('Stifter af') }}
                         @if($outgoingCount > 0)<span class="text-zinc-400 font-normal">({{ $outgoingCount }})</span>@endif
                     </h3>
                     @if($outgoingCount > 0)
@@ -37,10 +37,10 @@
                     @endif
                 </div>
 
-                {{-- Aktionærer i selskabet --}}
+                {{-- Selskaber, der står som stiftere af dette selskab --}}
                 <div>
                     <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-2">
-                        {{ __('Aktionærer') }}
+                        {{ __('Stiftet af') }}
                         @if($incomingCount > 0)<span class="text-zinc-400 font-normal">({{ $incomingCount }})</span>@endif
                     </h3>
                     @if($incomingCount > 0)
