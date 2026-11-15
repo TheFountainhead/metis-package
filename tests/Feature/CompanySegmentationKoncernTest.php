@@ -185,3 +185,25 @@ it('andel() giver null paa koncernniveau', function () {
 
     expect($side->instance()->andel(40))->toBeNull();
 });
+
+/**
+ * Ental ved 1: "1 selskaber" stod i listeoverskriften (set i browseren 15/11-2026).
+ */
+it('skriver ental ved 1 i totalen og kapitaldaekningen', function (string $niveau, string $ental) {
+    Http::fake(['*/company-segmentation' => Http::response([
+        'data' => [['key' => '751', 'label' => null, 'count' => 1]],
+        'meta' => ['total' => 1, 'niveau' => $niveau, 'uden_kapitalhistorik' => 1, 'uden_kendt_beloeb' => 1],
+    ])]);
+
+    Livewire::test(CompanySegmentation::class)
+        ->set('niveau', $niveau)
+        ->set('rejstMax', 1000000)
+        ->assertSee("{$ental} i alt med de valgte afgrænsninger")
+        ->assertSee("1 {$ental} i udvalget er udeladt")
+        ->assertSee("1 {$ental} er udeladt")
+        ->assertDontSee("{$ental}er i alt")
+        ->assertDontSee("1 {$ental}er");
+})->with([
+    'selskab' => ['selskab', 'selskab'],
+    'koncern' => ['koncern', 'koncern'],
+]);

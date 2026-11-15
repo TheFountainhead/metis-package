@@ -76,7 +76,9 @@
                 </li>
                 <li>
                     <strong>Vælg fordeling.</strong> Under <em>Fordel på</em> vælger du, hvordan selskaberne skal fordeles:
-                    kommune, region, branche, vertikal, selskabsform eller antal kapitalforhøjelser.
+                    kommune, region, branche, vertikal, selskabsform, antal kapitalforhøjelser, ekstern investering (ja/nej),
+                    år for første eksterne investering eller investortype i ekstern investering. De tre sidste er forklaret i
+                    <a href="#ekstern" class="underline decoration-sand-300 underline-offset-2 hover:decoration-ink-700">afsnit 12</a>.
                 </li>
                 <li>
                     <strong>Afgræns.</strong> Brug filtrene i venstre side. Tallet opdateres, når du ændrer et filter.
