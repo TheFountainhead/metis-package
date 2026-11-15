@@ -1123,7 +1123,7 @@ class RegistryApi
     }
 
     /**
-     * Aktiepost-relationer (begge retninger) — SEPARAT endpoint fra structure,
+     * Stifter-relationer mellem selskaber (begge retninger; rollen shareholder kommer kun fra CVR's Stiftere) — SEPARAT endpoint fra structure,
      * så relations aldrig blandes i ejendoms-/gæld-aggregering (Option B).
      */
     public function fetchCompanyRelations(string $cvr): array

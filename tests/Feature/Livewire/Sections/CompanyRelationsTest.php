@@ -29,6 +29,7 @@ it('viser stiftere begge retninger og siger, at det ikke er ejerskab', function 
     Livewire::test(CompanyRelations::class, ['query' => '10000001'])
         ->assertSee('Stiftere og stiftede selskaber')
         ->assertSee('Viser ikke nuværende ejerskab')
+        ->assertSee('Personer vises under Ledelse & roller')
         ->assertSeeInOrder(['Stifter af', 'Stiftet ApS', 'Stiftet af', 'Stifter A/S'])
         ->assertDontSee('Aktionær')
         ->assertDontSee('Aktieposter')

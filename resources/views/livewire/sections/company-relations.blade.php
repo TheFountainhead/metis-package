@@ -5,7 +5,7 @@
                 <flux:heading size="lg">{{ __('Stiftere og stiftede selskaber') }}</flux:heading>
             </div>
             <p class="text-xs text-zinc-500 mb-4">
-                {{ __('Fra CVR\'s registrering af stiftere. Viser ikke nuværende ejerskab. Ejere og datterselskaber står under Virksomhedsstruktur.') }}
+                {{ __('Selskaber registreret som stiftere i CVR. Personer vises under Ledelse & roller. Viser ikke nuværende ejerskab. Ejere og datterselskaber står under Virksomhedsstruktur.') }}
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
