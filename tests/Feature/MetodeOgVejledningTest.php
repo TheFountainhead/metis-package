@@ -217,3 +217,15 @@ it('dropdownens angel-forklaringer siger at 50 %-grænsen er vores og at holding
         ->and($f['angel_person'])->toContain('holdingselskab tæller ikke selv med')
         ->and($f['venture'])->toContain('under 50 % af stemmerne');
 });
+
+it('lister alle ejerregistrets intervaller, ikke kun 50 %', function () {
+    // Kilde: Virk, vejledning om registrering af ejerforhold. Maalt i prod 16/11-2026:
+    // legal_owner-andele ligger kun paa 0, 5, 10, 15, 20, 25, 33,33, 50, 66,67, 90 og 100.
+    config()->set('metis.gating.enabled', false);
+
+    $this->get('/metode')->assertOk()
+        ->assertSee('under 5 %, 5 til 9,99 %, 10 til 14,99 %, 15 til 19,99 %, 20 til 24,99 %, 25 til 33,32 %, 33,33 til 49,99 %, 50 til 66,66 %, 66,67 til 89,99 %, 90 til 99,99 % og 100 %')
+        ->assertSee('Andelen står som intervallets laveste værdi.', false)
+        ->assertSee('Reelle ejere oplyses med en præcis procent')
+        ->assertDontSee('til under 2/3');
+});

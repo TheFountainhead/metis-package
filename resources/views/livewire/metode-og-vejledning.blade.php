@@ -367,7 +367,7 @@
                     <ol class="list-[lower-alpha] pl-5 mt-1 space-y-1">
                         <li>Højst halvdelen af porteføljeselskaberne (talt i antal) ligger i energi, byggeri, anlæg, fast ejendom eller andre fonde (branchekode 35, 41, 42, 68, 64.3 og 64.99), og fonden har ikke selv en af branchekoderne 35, 41, 42 eller 68.</li>
                         <li>Porteføljeselskaberne er unge: medianalderen, da fonden blev ejer, er højst 10 år.</li>
-                        <li>Fonden har minoritetsposter: median-stemmeandelen er under 50 %. CVR's andel "50" dækker intervallet fra 50 % til under 2/3, så den tæller som kontrol.</li>
+                        <li>Fonden har minoritetsposter: median-stemmeandelen er under 50 %. CVR's andel "50" dækker intervallet fra 50 % til 66,66 %, så den tæller som kontrol.</li>
                     </ol>
                     Ellers er den en <strong>kapitalfond</strong> (private equity, infrastruktur, energi eller ejendom). Kan medianalderen eller stemmeandelen ikke beregnes, regnes fonden som kapitalfond. Mangler startdatoen for et ejerskab, regnes alderen til i dag, så den bliver for høj, aldrig for lav.
                     Under venturefond tæller kun selskaber, hvor fonden har under 50 % af stemmerne. Det gælder også fonde fra EuVECA-registret.
@@ -465,7 +465,9 @@
             </ul>
             <p class="mb-3">
                 Er stemmeandelen ikke registreret i CVR, bruges ejerandelen.
-                CVR oplyser andele i intervaller. "50 %" betyder fra 50 % til under 2/3 og kan være præcis halvdelen.
+                Ejerregistret i CVR oplyser andele i intervaller: under 5 %, 5 til 9,99 %, 10 til 14,99 %, 15 til 19,99 %, 20 til 24,99 %, 25 til 33,32 %, 33,33 til 49,99 %, 50 til 66,66 %, 66,67 til 89,99 %, 90 til 99,99 % og 100 %.
+                Andelen står som intervallets laveste værdi. "50 %" betyder derfor fra 50 % til 66,66 % og kan være præcis halvdelen.
+                Reelle ejere oplyses med en præcis procent, men de bruges ikke her.
                 Derfor tæller en ejer med 50 % kun, når ingen anden ejer har lige så meget. Ejer to parter hver 50 %, har selskabet intet moderselskab. En ejer, hvis andel ikke står i CVR, regnes ikke med her.
                 Opfylder flere danske selskaber reglen (typisk fordi et gammelt ejerskab ikke er afsluttet i CVR), bruges det selskab, hvis ejerskab senest er begyndt.
                 Kan det ikke afgøres, får selskabet intet moderselskab.
