@@ -137,6 +137,32 @@ class RegistryApi
         return null;
     }
 
+    /**
+     * Transport-valg der ikke er DNS: peg registry-api-vaertsnavnet paa en
+     * bestemt IP (`metis.registry_api.resolve_ip`), typisk 127.0.0.1 naar begge
+     * apps ligger paa samme server.
+     *
+     * 🔑 Navn, certifikat-kontrol og Host-header er uaendrede (cURL's
+     * CURLOPT_RESOLVE), saa det er det samme kald; kun omvejen via det
+     * offentlige domaene (Cloudflare) er vaek. Ugyldig eller tom vaerdi giver
+     * ingen aendring: DNS som foer. 🪤 Alle tre steder der bygger requests
+     * (client() og de to Http::pool) skal bruge den.
+     */
+    protected function transportOptions(): array
+    {
+        $ip = trim((string) config('metis.registry_api.resolve_ip'));
+        $url = (string) config('metis.registry_api.url');
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if ($ip === '' || ! filter_var($ip, FILTER_VALIDATE_IP) || ! $host) {
+            return [];
+        }
+
+        $port = parse_url($url, PHP_URL_SCHEME) === 'http' ? 80 : 443;
+
+        return ['curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"]]];
+    }
+
     protected function client()
     {
         // 🚨 KVOTE-GATEN SIDDER HER, ikke i `get()`. Maalt 9/8: FIRE kaldsteder
@@ -191,6 +217,7 @@ class RegistryApi
         $maintenanceRetries = 0;
 
         return Http::withToken($token)
+            ->withOptions($this->transportOptions())
             ->acceptJson()
             ->timeout(60)
             ->connectTimeout(10)
@@ -924,6 +951,7 @@ class RegistryApi
         $responses = Http::pool(fn ($pool) => collect($missing)
             ->map(fn ($cvr) => $pool->as($cvr)
                 ->withToken($token)
+                ->withOptions($this->transportOptions())
                 ->acceptJson()
                 ->timeout(30)
                 ->baseUrl($baseUrl)
@@ -1105,6 +1133,7 @@ class RegistryApi
         $responses = Http::pool(fn ($pool) => collect($cvrs)
             ->map(fn ($cvr) => $pool->as($cvr)
                 ->withToken($token)
+                ->withOptions($this->transportOptions())
                 ->acceptJson()
                 ->timeout(30)
                 ->baseUrl($baseUrl)
