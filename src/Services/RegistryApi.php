@@ -801,9 +801,39 @@ class RegistryApi
         return $result;
     }
 
+    /**
+     * Roller for en liste af CVR'er, cachet 1 time pr. (sorteret) liste.
+     *
+     * 🔑 Maalt i browseren 17/11-2026: hvert rollekald fra Metis tog 0,24-1,2 s,
+     * mens endpointet i registry-api selv tager 6-105 ms. Forskellen er
+     * transport (kaldet gaar via det offentlige domaene, dvs. Cloudflare). Kaldet
+     * blev foer lavet paa hvert sidebesoeg, selv om selskabsinfo ved siden af
+     * har ligget i 24t-cache hele tiden.
+     *
+     * 🚨 Gaten FOER cachen: `fraCache()` kraever kvote, saa en session med
+     * opbrugt kvote ikke faar cachede svar (samme regel som company-info).
+     *
+     * 🪤 Kun et RIGTIGT svar caches (`companies` er en liste). Et fejlsvar
+     * (`error`) eller et svar uden roller-noegle maa ikke skygge for friske
+     * data. Cache-noeglen er sorteret, saa [A, B] og [B, A] er samme opslag.
+     */
     public function fetchRolesByCvr(array $cvrs): array
     {
-        return $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $cvrs]);
+        $sorted = array_values(array_unique(array_map('strval', $cvrs)));
+        sort($sorted);
+        $cacheKey = 'metis:roles_by_cvr:'.implode(',', $sorted);
+
+        if (is_array($cached = $this->fraCache($cacheKey))) {
+            return $cached;
+        }
+
+        $result = $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $cvrs]);
+
+        if (is_array($result['companies'] ?? null)) {
+            Cache::put($cacheKey, $result, 3600);
+        }
+
+        return $result;
     }
 
     public function fetchCompanyInfo(string $cvr): ?array
