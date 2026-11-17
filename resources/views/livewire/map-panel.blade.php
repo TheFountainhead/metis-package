@@ -14,6 +14,9 @@
             lng: @js($lng),
             searchType: @js($searchType),
             markers: @js($markers),
+            query: @js($query),
+            naboUrl: @js(route('metis.lookup', ['type' => 'address', 'query' => '__Q__'])),
+            naboLag: null,
             layersUnavailable: @js($layersUnavailable),
 
             destroy() {
@@ -142,6 +145,125 @@
                 L.control.layers(baseLayers, overlays, { position: 'topright' }).addTo(this.map);
 
                 this.addMarkers();
+                this.addNaboKontrol();
+            },
+
+            // Naboejendomme: en lille kontrol paa kortet. Alt bygges som DOM-noder med
+            // textContent, fordi adresserne kommer fra API et og aldrig maa tolkes som HTML.
+            addNaboKontrol() {
+                if (!this.query || this.searchType !== 'address') return;
+                const self = this;
+                const Kontrol = L.Control.extend({
+                    options: { position: 'topleft' },
+                    onAdd() {
+                        const boks = L.DomUtil.create('div', 'leaflet-bar');
+                        boks.style.cssText = 'background:#fff;padding:6px 8px;font-size:12px;line-height:1.4;max-width:230px;';
+                        const radiusValg = document.createElement('select');
+                        for (const r of [100, 250, 500]) {
+                            const o = document.createElement('option');
+                            o.value = String(r);
+                            o.textContent = r + ' m';
+                            if (r === 250) o.selected = true;
+                            radiusValg.appendChild(o);
+                        }
+                        const knap = document.createElement('button');
+                        knap.type = 'button';
+                        knap.textContent = 'Vis naboejendomme';
+                        knap.style.cssText = 'margin-left:6px;cursor:pointer;';
+                        const status = document.createElement('div');
+                        status.style.cssText = 'margin-top:4px;color:#555;';
+                        boks.append(radiusValg, knap, status);
+                        L.DomEvent.disableClickPropagation(boks);
+
+                        const hent = async () => {
+                            knap.disabled = true;
+                            status.textContent = 'Henter ...';
+                            status.textContent = await self.visNaboer(Number(radiusValg.value));
+                            knap.disabled = false;
+                            knap.textContent = self.naboLag ? 'Skjul naboejendomme' : 'Vis naboejendomme';
+                        };
+                        knap.addEventListener('click', () => {
+                            if (self.naboLag) {
+                                self.skjulNaboer();
+                                knap.textContent = 'Vis naboejendomme';
+                                status.textContent = '';
+                                return;
+                            }
+                            hent();
+                        });
+                        radiusValg.addEventListener('change', () => { if (self.naboLag) hent(); });
+                        return boks;
+                    },
+                });
+                new Kontrol().addTo(this.map);
+            },
+
+            skjulNaboer() {
+                if (this.naboLag) {
+                    this.map.removeLayer(this.naboLag);
+                    this.naboLag = null;
+                }
+            },
+
+            async visNaboer(radius) {
+                let svar;
+                try {
+                    svar = await $wire.hentNaboer(this.query, radius);
+                } catch (e) {
+                    svar = { error: 'fejl' };
+                }
+                if (!svar || svar.error) {
+                    const tekster = {
+                        for_mange: 'For mange opslag lige nu. Prøv igen om lidt.',
+                        kvote: 'Dagens opslag er brugt.',
+                        ikke_godkendt: 'Opslaget er ikke godkendt i denne session.',
+                        ingen_koordinater: 'Adressen har ingen koordinater.',
+                    };
+                    return tekster[svar && svar.error] || 'Naboejendomme kunne ikke hentes.';
+                }
+                this.skjulNaboer();
+                const lag = L.layerGroup();
+                for (const n of svar.naboer) {
+                    L.circleMarker([n.lat, n.lng], { radius: 6, weight: 2, color: '#1d4ed8', fillColor: '#60a5fa', fillOpacity: 0.8 })
+                        .bindPopup(this.naboPopup(n))
+                        .addTo(lag);
+                }
+                lag.addTo(this.map);
+                this.naboLag = lag;
+                if (svar.naboer.length === 0) {
+                    return 'Ingen andre ejendomme inden for ' + svar.radius + ' m.';
+                }
+                const antal = svar.naboer.length + ' ejendomme inden for ' + svar.radius + ' m.';
+                return svar.flere
+                    ? antal + ' Der er flere, men ikke nødvendigvis de nærmeste. Vælg en mindre radius.'
+                    : antal;
+            },
+
+            naboPopup(n) {
+                const boks = document.createElement('div');
+                const titel = document.createElement('strong');
+                titel.textContent = n.adresse || 'Ukendt adresse';
+                boks.appendChild(titel);
+                const by = [n.postnr, n.by].filter(Boolean).join(' ');
+                const linjer = [];
+                if (by) linjer.push(by);
+                if (n.byggeaar) linjer.push('Byggeår: ' + n.byggeaar);
+                if (n.areal) linjer.push('Bygningsareal: ' + Number(n.areal).toLocaleString('da-DK') + ' m²');
+                if (n.vurdering) linjer.push('Vurdering: ' + Number(n.vurdering).toLocaleString('da-DK') + ' kr.');
+                for (const tekst of linjer) {
+                    const l = document.createElement('div');
+                    l.textContent = tekst;
+                    boks.appendChild(l);
+                }
+                if (n.adresse) {
+                    const kode = encodeURIComponent([n.adresse, by].filter(Boolean).join(', '));
+                    const a = document.createElement('a');
+                    a.href = this.naboUrl.replace('__Q__', () => kode);
+                    a.textContent = 'Åbn ejendom';
+                    a.style.cssText = 'display:inline-block;margin-top:4px;';
+                    boks.appendChild(a);
+                }
+                return boks;
             },
 
             getDefaultLayerIds() {
