@@ -813,8 +813,15 @@ class RegistryApi
      * 🚨 Gaten FOER cachen: `fraCache()` kraever kvote, saa en session med
      * opbrugt kvote ikke faar cachede svar (samme regel som company-info).
      *
-     * 🪤 Kun et svar MED indhold caches (`companies` er en ikke-tom liste). Et
-     * fejlsvar eller en tom liste maa ikke skygge for friske data.
+     * 🪤 Kun et KOMPLET svar caches (ét selskab pr. oensket CVR). Fejl, tom liste
+     * og delvise svar maa ikke skygge for friske data.
+     *
+     * 🔑 Bevidste valg (review af #232): (1) Noeglen har ingen token/tenant. Det er
+     * offentlige CVR-roller, og endpointet filtrerer ikke paa token (samme
+     * begrundelse som company-info, se `companyInfoCacheKey`). (2) Op til 1 time
+     * gammelt: en fratraadt direktoer kan staa i op til en time. (3) Svarets
+     * raekkefoelge foelger ikke kaldets (serveren bruger `whereIn()->get()`); laes
+     * selskaber paa `cvr`, ikke paa position.
      */
     public function fetchRolesByCvr(array $cvrs): array
     {
@@ -832,10 +839,10 @@ class RegistryApi
 
         $result = $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $sorted]);
 
-        // Kun et svar MED indhold caches. En tom liste betyder "ikke i registret
-        // endnu", og det maa ikke blive staaende i en time, efter selskabet er
-        // indlaest.
-        if (is_array($result['companies'] ?? null) && $result['companies'] !== []) {
+        // Kun et KOMPLET svar caches: ét selskab pr. ønsket CVR. En tom liste ("ikke i
+        // registret endnu") eller et delvist svar maa ikke blive staaende i en time,
+        // efter selskabet er indlaest.
+        if (is_array($result['companies'] ?? null) && count($result['companies']) === count($sorted)) {
             Cache::put($cacheKey, $result, 3600);
         }
 

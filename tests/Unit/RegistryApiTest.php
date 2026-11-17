@@ -450,7 +450,7 @@ it('cacher IKKE et fejlsvar fra roles-by-cvr', function () {
 
 it('roller: forskellige cvr-lister deler ikke cache, og rækkefølgen er ligegyldig', function () {
     Http::fake([
-        '*/v1/cvr/roles-by-cvr' => Http::response(['data' => ['companies' => [['cvr' => '11111111', 'roles' => []]]]]),
+        '*/v1/cvr/roles-by-cvr' => fn ($req) => Http::response(['data' => ['companies' => array_map(fn ($c) => ['cvr' => $c, 'roles' => []], $req['cvr_numbers'])]]),
     ]);
 
     $api = new RegistryApi;
@@ -476,9 +476,26 @@ it('cacher IKKE en tom roller-liste: selskabet kan blive indlæst bagefter', fun
     Http::assertSentCount(2);
 });
 
+it('cacher IKKE et delvist roller-svar: ét selskab pr. ønsket CVR', function () {
+    Http::fake([
+        '*/v1/cvr/roles-by-cvr' => Http::sequence()
+            ->push(['data' => ['companies' => [['cvr' => '11111111', 'roles' => []]]]])
+            ->push(['data' => ['companies' => [['cvr' => '11111111', 'roles' => []], ['cvr' => '22222222', 'roles' => []]]]]),
+    ]);
+
+    $api = new RegistryApi;
+    expect($api->fetchRolesByCvr(['11111111', '22222222'])['companies'])->toHaveCount(1);
+    expect($api->fetchRolesByCvr(['11111111', '22222222'])['companies'])->toHaveCount(2);
+    Http::assertSentCount(2);
+
+    // Det komplette svar caches nu.
+    $api->fetchRolesByCvr(['22222222', '11111111']);
+    Http::assertSentCount(2);
+});
+
 it('roller: dubletter og talstrenge giver samme nøgle og samme kald', function () {
     Http::fake([
-        '*/v1/cvr/roles-by-cvr' => Http::response(['data' => ['companies' => [['cvr' => '12345678', 'roles' => []]]]]),
+        '*/v1/cvr/roles-by-cvr' => fn ($req) => Http::response(['data' => ['companies' => array_map(fn ($c) => ['cvr' => $c, 'roles' => []], $req['cvr_numbers'])]]),
     ]);
 
     $api = new RegistryApi;
