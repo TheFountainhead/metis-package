@@ -81,7 +81,7 @@ it('henter ejendomme omkring adressen og sender kun hvidlistede felter ud', func
         ->not->toContain('"Roskildevej 10"')->not->toContain('Uden koordinater');
 
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore')
-        && $r['lat'] === 55.6761 && $r['lng'] === 12.5683 && $r['radius'] === 250 && $r['limit'] === 50
+        && $r['lat'] === 55.6761 && $r['lng'] === 12.5683 && $r['radius'] === 250 && $r['limit'] === 50 && $r['sort'] === 'distance_asc'
         && $r->header('X-Search-Source')[0] === 'map_neighbours');
 });
 
@@ -177,6 +177,12 @@ it('viser kvotefejl som kvote og lader andre fejl rapportere', function () {
         $m->shouldReceive('resolveAddressAnalysis')->once()->andThrow(new \TypeError('rigtig fejl'));
     });
     expect(fn () => (new MapPanel)->hentNaboer(ADRESSE, 250))->toThrow(\TypeError::class);
+});
+
+it('melder flere, når registry-api siger truncated (afstandssortering har ingen cursor)', function () {
+    fakeNaboer(['svar' => Http::response(['data' => ['results' => [naboRaekke()], 'cursor' => null, 'has_more' => false, 'truncated' => true]])]);
+
+    expect((new MapPanel)->hentNaboer(ADRESSE, 500)['flere'])->toBeTrue();
 });
 
 it('melder flere, når der er mere end de viste', function () {

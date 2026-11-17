@@ -17,6 +17,11 @@
             radier: @js(\TheFountainhead\Metis\Livewire\MapPanel::NABO_RADIER),
             standardRadius: @js(\TheFountainhead\Metis\Livewire\MapPanel::NABO_STANDARD_RADIUS),
             naboSerie: 0,
+            kanUdforske: @js($kanUdforske),
+            minZoom: @js(\TheFountainhead\Metis\Livewire\MapPanel::UDSNIT_MIN_ZOOM),
+            udsnitSerie: 0,
+            udsnitTid: null,
+            udsnitLytter: null,
             naboNulstil: null,
             naboKontrol: null,
             layersUnavailable: @js($layersUnavailable),
@@ -186,6 +191,25 @@
                         const status = document.createElement('div');
                         status.style.cssText = 'margin-top:4px;color:#555;';
                         boks.append(radiusValg, knap, status);
+
+                        // Fri udforskning (kun piloter): ejendomme i det udsnit man kigger paa.
+                        if (self.kanUdforske) {
+                            const raekke = document.createElement('label');
+                            raekke.style.cssText = 'display:block;margin-top:8px;cursor:pointer;';
+                            const kryds = document.createElement('input');
+                            kryds.type = 'checkbox';
+                            raekke.append(kryds, document.createTextNode(' Udforsk kortet frit'));
+                            const udsnitStatus = document.createElement('div');
+                            udsnitStatus.style.cssText = 'margin-top:4px;color:#555;';
+                            boks.append(raekke, udsnitStatus);
+                            kryds.addEventListener('change', () => {
+                                if (kryds.checked) {
+                                    self.slaaUdsnitTil(udsnitStatus);
+                                } else {
+                                    self.slaaUdsnitFra(udsnitStatus);
+                                }
+                            });
+                        }
                         L.DomEvent.disableClickPropagation(boks);
 
                         self.naboNulstil = () => {
@@ -227,6 +251,74 @@
                     },
                 });
                 this.naboKontrol = new Kontrol().addTo(this.map);
+            },
+
+            slaaUdsnitTil(udsnitStatus) {
+                this.udsnitLytter = () => {
+                    clearTimeout(this.udsnitTid);
+                    this.udsnitTid = setTimeout(() => this.hentUdsnit(udsnitStatus), 400);
+                };
+                this.map.on('moveend', this.udsnitLytter);
+                this.hentUdsnit(udsnitStatus);
+            },
+
+            slaaUdsnitFra(udsnitStatus) {
+                if (this.udsnitLytter) this.map.off('moveend', this.udsnitLytter);
+                this.udsnitLytter = null;
+                clearTimeout(this.udsnitTid);
+                this.udsnitSerie++;
+                this.skjulUdsnit();
+                udsnitStatus.textContent = '';
+            },
+
+            skjulUdsnit() {
+                const lag = this.$refs.map._metisUdsnitLag;
+                if (lag) {
+                    this.map.removeLayer(lag);
+                    this.$refs.map._metisUdsnitLag = null;
+                }
+            },
+
+            async hentUdsnit(udsnitStatus) {
+                const serie = ++this.udsnitSerie;
+                if (this.map.getZoom() < this.minZoom) {
+                    this.skjulUdsnit();
+                    udsnitStatus.textContent = 'Zoom ind for at se ejendomme.';
+                    return;
+                }
+                udsnitStatus.textContent = 'Henter ...';
+                const b = this.map.getBounds();
+                let svar;
+                try {
+                    svar = await $wire.hentUdsnit(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
+                } catch (e) {
+                    svar = { error: 'fejl' };
+                }
+                // Et nyere flyt eller en afkrydsning der er slaaet fra har overtaget.
+                if (serie !== this.udsnitSerie) return;
+                if (!svar || svar.error) {
+                    this.skjulUdsnit();
+                    const tekster = {
+                        zoom_ind: 'Zoom ind for at se ejendomme.',
+                        for_mange: 'For mange opslag lige nu. Flyt kortet igen om lidt.',
+                        kvote: 'Dagens opslag er brugt.',
+                        kraever_pilot: 'Fri udforskning er kun for pilotbrugere.',
+                    };
+                    udsnitStatus.textContent = tekster[svar && svar.error] || 'Ejendomme kunne ikke hentes.';
+                    return;
+                }
+                this.skjulUdsnit();
+                const lag = L.layerGroup();
+                for (const n of svar.naboer) {
+                    L.circleMarker([n.lat, n.lng], { radius: 5, weight: 2, color: '#0f766e', fillColor: '#5eead4', fillOpacity: 0.8 })
+                        .bindPopup(this.naboPopup(n))
+                        .addTo(lag);
+                }
+                lag.addTo(this.map);
+                this.$refs.map._metisUdsnitLag = lag;
+                udsnitStatus.textContent = svar.flere
+                    ? svar.naboer.length + ' ejendomme vises. Der er flere her: zoom ind for at se dem alle.'
+                    : svar.naboer.length + ' ejendomme i udsnittet.';
             },
 
             // Laget ligger paa DOM-elementet og ikke i Alpines reaktive data, ligesom selve kortet:
@@ -279,7 +371,7 @@
                 }
                 const antal = svar.naboer.length + ' ejendomme inden for ' + svar.radius + ' m.';
                 return svar.flere
-                    ? antal + ' Der er flere, men ikke nødvendigvis de nærmeste. Vælg en mindre radius.'
+                    ? antal + ' Der er flere; de nærmeste vises. Vælg en mindre radius, eller udforsk kortet.'
                     : antal;
             },
 
