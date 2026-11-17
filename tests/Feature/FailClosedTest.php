@@ -220,6 +220,15 @@ it('🚨 uden session giver datalaget hverken person-, CPR-, adresse- eller CVR-
     Http::assertNothingSent();
 });
 
+it('🚨 uden session giver cachede roller intet: kvote-gaten ligger FØR cachen', function () {
+    expect(app(LookupAccess::class)->harSession())->toBeFalse();
+    $key = 'metis:roles_by_cvr:'.sha1('37792594');
+    Cache::put($key, ['companies' => [['cvr' => '37792594', 'roles' => [['person_name' => 'Cachet Person']]]]], 3600);
+
+    expect(fn () => app(RegistryApi::class)->fetchRolesByCvr(['37792594']))->toThrow(QuotaExceededException::class);
+    Http::assertNothingSent();
+});
+
 it('🚨 uden session henter en sektion mountet direkte intet', function () {
     expect(app(LookupAccess::class)->harSession())->toBeFalse();
 

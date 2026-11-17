@@ -801,9 +801,52 @@ class RegistryApi
         return $result;
     }
 
+    /**
+     * Roller for en liste af CVR'er, cachet 1 time pr. (sorteret) liste.
+     *
+     * 🔑 Maalt i browseren 17/11-2026: hvert rollekald fra Metis tog 0,24-1,2 s,
+     * mens endpointet i registry-api selv tager 6-105 ms. Forskellen er
+     * transport (kaldet gaar via det offentlige domaene, dvs. Cloudflare). Kaldet
+     * blev foer lavet paa hvert sidebesoeg, selv om selskabsinfo ved siden af
+     * har ligget i 24t-cache hele tiden.
+     *
+     * 🚨 Gaten FOER cachen: `fraCache()` kraever kvote, saa en session med
+     * opbrugt kvote ikke faar cachede svar (samme regel som company-info).
+     *
+     * 🪤 Kun et KOMPLET svar caches (ét selskab pr. oensket CVR). Fejl, tom liste
+     * og delvise svar maa ikke skygge for friske data.
+     *
+     * 🔑 Bevidste valg (review af #232): (1) Noeglen har ingen token/tenant. Det er
+     * offentlige CVR-roller, og endpointet filtrerer ikke paa token (samme
+     * begrundelse som company-info, se `companyInfoCacheKey`). (2) Op til 1 time
+     * gammelt: en fratraadt direktoer kan staa i op til en time. (3) Svarets
+     * raekkefoelge foelger ikke kaldets (serveren bruger `whereIn()->get()`); laes
+     * selskaber paa `cvr`, ikke paa position.
+     */
     public function fetchRolesByCvr(array $cvrs): array
     {
-        return $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $cvrs]);
+        // Unik og sorteret som STRENGE (`sort()` uden flag sammenligner talstrenge
+        // numerisk). Den samme liste bruges til noeglen OG til kaldet, saa et
+        // cachet svar altid svarer til noeglen. Hashet, saa en lang liste ikke
+        // giver en noegle, som fx memcached afviser.
+        $sorted = array_values(array_unique(array_map('strval', $cvrs)));
+        sort($sorted, SORT_STRING);
+        $cacheKey = 'metis:roles_by_cvr:'.sha1(implode(',', $sorted));
+
+        if (is_array($cached = $this->fraCache($cacheKey))) {
+            return $cached;
+        }
+
+        $result = $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $sorted]);
+
+        // Kun et KOMPLET svar caches: ét selskab pr. ønsket CVR. En tom liste ("ikke i
+        // registret endnu") eller et delvist svar maa ikke blive staaende i en time,
+        // efter selskabet er indlaest.
+        if (is_array($result['companies'] ?? null) && count($result['companies']) === count($sorted)) {
+            Cache::put($cacheKey, $result, 3600);
+        }
+
+        return $result;
     }
 
     public function fetchCompanyInfo(string $cvr): ?array
