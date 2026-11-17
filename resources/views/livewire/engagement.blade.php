@@ -123,31 +123,78 @@
                                 <th class="px-3 py-2 text-left font-medium">{{ __('Tinglyst') }}</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-zinc-100">
                             @foreach($property['ladder'] ?? [] as $row)
-                                <tr wire:key="lien-{{ $property['id'] ?? 'p' }}-{{ $row['id'] ?? $loop->index }}" class="{{ ($row['is_own'] ?? false) ? 'bg-wheat/60 font-medium' : '' }}">
-                                    <td class="px-3 py-2 tabular-nums">{{ $row['priority'] ?? '?' }}</td>
-                                    <td class="px-3 py-2 text-xs whitespace-nowrap">
-                                        {{-- Tekst, ikke farvede piller: rækkens tone og vægt bærer "eget pant",
-                                             og kun den foranstående status (risikoen) får farve. --}}
-                                        @if($row['is_own'] ?? false)
-                                            <span class="text-zinc-900">{{ $lenderShort }}</span>
-                                        @elseif($row['is_ahead'] ?? false)
-                                            <span class="text-red-700">{{ __('Foranstående') }}</span>
-                                        @elseif($row['is_pari'] ?? false)
-                                            <span class="text-zinc-600">{{ __('Sideordnet') }}</span>
-                                        @elseif($row['priority_unknown'] ?? false)
-                                            <span class="text-zinc-500">{{ __('Prioritet ukendt') }}</span>
-                                        @endif
-                                    </td>
-                                    <td class="px-3 py-2 text-zinc-600">{{ $row['type'] ?? '—' }}</td>
-                                    <td class="px-3 py-2">{{ $row['creditor'] ?? '—' }}</td>
-                                    <td class="px-3 py-2 text-zinc-600">{{ implode(', ', $row['pledgees'] ?? []) ?: '—' }}</td>
-                                    <td class="px-3 py-2 text-right tabular-nums">{{ $kr($row['amount_kr'] ?? 0) }}</td>
-                                    <td class="px-3 py-2 text-zinc-600">{{ $dato($row['registered_at'] ?? null) }}</td>
-                                </tr>
+                                @php
+                                    $rente = is_numeric($row['interest_rate'] ?? null) ? (float) $row['interest_rate'] : null;
+                                    $renteType = $row['interest_rate_type'] ?? null;
+                                    $udloeb = $row['maturity_date'] ?? null;
+                                    // Foldud kun når der ER noget bag rækken: en sats, en forklaring på
+                                    // hvorfor den mangler, eller et udløb. 'fast' uden sats er ingenting.
+                                    $harDetaljer = $rente !== null || in_array($renteType, ['variabel', 'kontantlaan'], true) || $udloeb;
+                                    $detaljeId = 'lien-detalje-'.($property['id'] ?? 'p').'-'.($row['id'] ?? $loop->index);
+                                @endphp
+                                <tbody wire:key="lien-{{ $property['id'] ?? 'p' }}-{{ $row['id'] ?? $loop->index }}" x-data="{ aaben: false }" class="border-t border-zinc-100">
+                                    <tr class="{{ ($row['is_own'] ?? false) ? 'bg-wheat/60 font-medium' : '' }}">
+                                        <td class="px-3 py-2 tabular-nums">
+                                            @if($harDetaljer)
+                                                <button type="button" @click="aaben = !aaben" :aria-expanded="aaben.toString()" aria-controls="{{ $detaljeId }}"
+                                                        class="inline-flex items-center gap-1 hover:underline" title="{{ __('Vis rente og udløb') }}">
+                                                    <span aria-hidden="true" class="text-zinc-400 transition-transform" :class="aaben ? 'rotate-90' : ''">&#9656;</span>
+                                                    {{ $row['priority'] ?? '?' }}
+                                                </button>
+                                            @else
+                                                {{ $row['priority'] ?? '?' }}
+                                            @endif
+                                        </td>
+                                        <td class="px-3 py-2 text-xs whitespace-nowrap">
+                                            {{-- Tekst, ikke farvede piller: rækkens tone og vægt bærer "eget pant",
+                                                 og kun den foranstående status (risikoen) får farve. --}}
+                                            @if($row['is_own'] ?? false)
+                                                <span class="text-zinc-900">{{ $lenderShort }}</span>
+                                            @elseif($row['is_ahead'] ?? false)
+                                                <span class="text-red-700">{{ __('Foranstående') }}</span>
+                                            @elseif($row['is_pari'] ?? false)
+                                                <span class="text-zinc-600">{{ __('Sideordnet') }}</span>
+                                            @elseif($row['priority_unknown'] ?? false)
+                                                <span class="text-zinc-500">{{ __('Prioritet ukendt') }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-3 py-2 text-zinc-600">{{ $row['type'] ?? '—' }}</td>
+                                        <td class="px-3 py-2">{{ $row['creditor'] ?? '—' }}</td>
+                                        <td class="px-3 py-2 text-zinc-600">{{ implode(', ', $row['pledgees'] ?? []) ?: '—' }}</td>
+                                        <td class="px-3 py-2 text-right tabular-nums">{{ $kr($row['amount_kr'] ?? 0) }}</td>
+                                        <td class="px-3 py-2 text-zinc-600">{{ $dato($row['registered_at'] ?? null) }}</td>
+                                    </tr>
+                                    @if($harDetaljer)
+                                        {{-- display:none inline: pakken ejer ikke værtens CSS, så x-cloak alene virker ikke. --}}
+                                        <tr id="{{ $detaljeId }}" data-lien-detalje x-show="aaben" style="display:none" class="bg-zinc-50 text-xs text-zinc-600">
+                                            <td colspan="7" class="px-3 py-2">
+                                                <dl class="flex flex-wrap gap-x-8 gap-y-1">
+                                                    <div>
+                                                        <dt class="inline text-zinc-500">{{ __('Rente') }}:</dt>
+                                                        <dd class="inline">
+                                                            @if($rente !== null && ($row['interest_rate_nominal'] ?? false))
+                                                                {{ __('rammerente') }} {{ number_format($rente, 2, ',', '.') }} % {{ __('(juridisk maksimum, ikke den faktiske rente)') }}
+                                                            @elseif($rente !== null)
+                                                                {{ number_format($rente, 2, ',', '.') }} %
+                                                            @elseif($renteType === 'variabel')
+                                                                {{ __('variabel, sats ikke oplyst') }}
+                                                            @elseif($renteType === 'kontantlaan')
+                                                                {{ __('kontantlån, sats ikke oplyst') }}
+                                                            @else
+                                                                {{ __('ikke oplyst') }}
+                                                            @endif
+                                                        </dd>
+                                                    </div>
+                                                    @if($udloeb)
+                                                        <div><dt class="inline text-zinc-500">{{ __('Udløb') }}:</dt> <dd class="inline">{{ $dato($udloeb) }}</dd></div>
+                                                    @endif
+                                                </dl>
+                                            </td>
+                                        </tr>
+                                    @endif
+                                </tbody>
                             @endforeach
-                        </tbody>
                     </table>
                 </div>
             </section>
