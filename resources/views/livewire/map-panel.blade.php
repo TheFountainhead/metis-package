@@ -14,6 +14,11 @@
             lng: @js($lng),
             searchType: @js($searchType),
             markers: @js($markers),
+            radier: @js(\TheFountainhead\Metis\Livewire\MapPanel::NABO_RADIER),
+            standardRadius: @js(\TheFountainhead\Metis\Livewire\MapPanel::NABO_STANDARD_RADIUS),
+            naboSerie: 0,
+            naboNulstil: null,
+            naboKontrol: null,
             layersUnavailable: @js($layersUnavailable),
 
             destroy() {
@@ -34,6 +39,16 @@
                     this.lng = $wire.lng;
                     this.searchType = $wire.searchType;
                     this.markers = $wire.markers;
+
+                    // Naboerne hoerer til den forrige adresse.
+                    this.naboSerie++;
+                    this.skjulNaboer();
+                    if (this.naboNulstil) this.naboNulstil();
+                    // Flyttet af en soegning uden adresse: der er ingen adresse at hente naboer til.
+                    if (!$wire.query && this.naboKontrol) {
+                        this.naboKontrol.remove();
+                        this.naboKontrol = null;
+                    }
 
                     if (this.lat && this.lng) {
                         this.map.setView([this.lat, this.lng], 16);
@@ -142,6 +157,156 @@
                 L.control.layers(baseLayers, overlays, { position: 'topright' }).addTo(this.map);
 
                 this.addMarkers();
+                this.addNaboKontrol();
+            },
+
+            // Naboejendomme: en lille kontrol paa kortet. Alt bygges som DOM-noder med
+            // textContent, fordi adresserne kommer fra API et og aldrig maa tolkes som HTML.
+            addNaboKontrol() {
+                if (!$wire.query || this.searchType !== 'address') return;
+                const self = this;
+                const Kontrol = L.Control.extend({
+                    options: { position: 'topleft' },
+                    onAdd() {
+                        const boks = L.DomUtil.create('div', 'leaflet-bar');
+                        boks.style.cssText = 'background:#fff;padding:6px 8px;font-size:12px;line-height:1.4;max-width:230px;';
+                        const radiusValg = document.createElement('select');
+                        radiusValg.setAttribute('aria-label', 'Radius for naboejendomme');
+                        for (const r of self.radier) {
+                            const o = document.createElement('option');
+                            o.value = String(r);
+                            o.textContent = r + ' m';
+                            if (r === self.standardRadius) o.selected = true;
+                            radiusValg.appendChild(o);
+                        }
+                        const knap = document.createElement('button');
+                        knap.type = 'button';
+                        knap.textContent = 'Vis naboejendomme';
+                        knap.style.cssText = 'margin-left:6px;cursor:pointer;';
+                        const status = document.createElement('div');
+                        status.style.cssText = 'margin-top:4px;color:#555;';
+                        boks.append(radiusValg, knap, status);
+                        L.DomEvent.disableClickPropagation(boks);
+
+                        self.naboNulstil = () => {
+                            knap.textContent = 'Vis naboejendomme';
+                            status.textContent = '';
+                        };
+
+                        const hent = async () => {
+                            knap.disabled = true;
+                            radiusValg.disabled = true;
+                            status.textContent = 'Henter ...';
+                            let tekst;
+                            try {
+                                tekst = await self.visNaboer(Number(radiusValg.value));
+                            } catch (e) {
+                                self.skjulNaboer();
+                                tekst = 'Naboejendomme kunne ikke vises.';
+                            } finally {
+                                knap.disabled = false;
+                                radiusValg.disabled = false;
+                            }
+                            // null = kortet er flyttet imens; kontrollen er allerede nulstillet.
+                            if (tekst === null) return;
+                            status.textContent = tekst;
+                            knap.textContent = self.harNaboer() ? 'Skjul naboejendomme' : 'Vis naboejendomme';
+                        };
+                        knap.addEventListener('click', () => {
+                            if (self.harNaboer()) {
+                                self.skjulNaboer();
+                                knap.textContent = 'Vis naboejendomme';
+                                status.textContent = '';
+                                return;
+                            }
+                            hent();
+                        });
+                        // Ogsaa efter en fejl: et nyt radiusvalg proever igen.
+                        radiusValg.addEventListener('change', () => { if (self.harNaboer() || status.textContent !== '') hent(); });
+                        return boks;
+                    },
+                });
+                this.naboKontrol = new Kontrol().addTo(this.map);
+            },
+
+            // Laget ligger paa DOM-elementet og ikke i Alpines reaktive data, ligesom selve kortet:
+            // Leaflet identificerer objekter ved identitet, og en Proxy er ikke samme objekt.
+            harNaboer() {
+                return !!this.$refs.map._metisNaboLag;
+            },
+
+            skjulNaboer() {
+                const lag = this.$refs.map._metisNaboLag;
+                if (lag) {
+                    this.map.removeLayer(lag);
+                    this.$refs.map._metisNaboLag = null;
+                }
+            },
+
+            async visNaboer(radius) {
+                const serie = ++this.naboSerie;
+                if (!$wire.query || this.searchType !== 'address') {
+                    return 'Naboejendomme findes kun ved et opslag på en adresse.';
+                }
+                let svar;
+                try {
+                    svar = await $wire.hentNaboer($wire.query, radius);
+                } catch (e) {
+                    svar = { error: 'fejl' };
+                }
+                if (serie !== this.naboSerie) return null;
+                if (!svar || svar.error) {
+                    this.skjulNaboer();
+                    const tekster = {
+                        for_mange: 'For mange opslag lige nu. Prøv igen om lidt.',
+                        kvote: 'Dagens opslag er brugt.',
+                        ikke_godkendt: 'Opslaget er ikke godkendt i denne session.',
+                        ingen_koordinater: 'Adressen har ingen koordinater.',
+                    };
+                    return tekster[svar && svar.error] || 'Naboejendomme kunne ikke hentes.';
+                }
+                this.skjulNaboer();
+                const lag = L.layerGroup();
+                for (const n of svar.naboer) {
+                    L.circleMarker([n.lat, n.lng], { radius: 6, weight: 2, color: '#1d4ed8', fillColor: '#60a5fa', fillOpacity: 0.8 })
+                        .bindPopup(this.naboPopup(n))
+                        .addTo(lag);
+                }
+                lag.addTo(this.map);
+                this.$refs.map._metisNaboLag = lag;
+                if (svar.naboer.length === 0) {
+                    return 'Ingen andre ejendomme inden for ' + svar.radius + ' m.';
+                }
+                const antal = svar.naboer.length + ' ejendomme inden for ' + svar.radius + ' m.';
+                return svar.flere
+                    ? antal + ' Der er flere, men ikke nødvendigvis de nærmeste. Vælg en mindre radius.'
+                    : antal;
+            },
+
+            naboPopup(n) {
+                const boks = document.createElement('div');
+                const titel = document.createElement('strong');
+                titel.textContent = n.adresse || 'Ukendt adresse';
+                boks.appendChild(titel);
+                const by = [n.postnr, n.by].filter(Boolean).join(' ');
+                const linjer = [];
+                if (by) linjer.push(by);
+                if (n.byggeaar) linjer.push('Byggeår: ' + n.byggeaar);
+                if (n.areal) linjer.push('Bygningsareal: ' + Number(n.areal).toLocaleString('da-DK') + ' m²');
+                if (n.vurdering) linjer.push('Vurdering: ' + Number(n.vurdering).toLocaleString('da-DK') + ' kr.');
+                for (const tekst of linjer) {
+                    const l = document.createElement('div');
+                    l.textContent = tekst;
+                    boks.appendChild(l);
+                }
+                if (n.url) {
+                    const a = document.createElement('a');
+                    a.href = n.url;
+                    a.textContent = 'Åbn ejendom';
+                    a.style.cssText = 'display:inline-block;margin-top:4px;';
+                    boks.appendChild(a);
+                }
+                return boks;
             },
 
             getDefaultLayerIds() {

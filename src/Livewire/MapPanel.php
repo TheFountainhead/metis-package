@@ -2,10 +2,15 @@
 
 namespace TheFountainhead\Metis\Livewire;
 
-use Livewire\Component;
-use Livewire\Attributes\On;
-use TheFountainhead\Metis\Services\RegistryApi;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\RateLimiter;
+use Livewire\Attributes\On;
+use Livewire\Component;
+use TheFountainhead\Metis\Services\LookupAccess;
+use TheFountainhead\Metis\Services\QuotaExceededException;
+use TheFountainhead\Metis\Services\RegistryApi;
+use TheFountainhead\Metis\View\Components\MetisLink;
 
 class MapPanel extends Component
 {
@@ -16,11 +21,24 @@ class MapPanel extends Component
     public array $layers = [];
     public bool $layersUnavailable = false;
 
+    /** Adressen kortet blev bygget til. Klienten kan ændre den, så den stoles aldrig på uden gaten (se hentNaboer). */
+    public ?string $query = null;
+
+    /** Radier (meter) brugeren kan vælge til naboejendomme. */
+    public const NABO_RADIER = [100, 250, 500];
+
+    /** Forvalgt radius; bruges af både serveren og kortets kontrol. */
+    public const NABO_STANDARD_RADIUS = 250;
+
+    /** Så mange ejendomme hentes højst pr. opslag (registry-apis loft er 50). */
+    public const NABO_MAKS = 50;
+
     public function mount(?float $lat = null, ?float $lng = null, ?string $searchType = null, ?string $query = null): void
     {
         $this->lat = $lat;
         $this->lng = $lng;
         $this->searchType = $searchType;
+        $this->query = $query;
 
         // Resolve address query to coordinates if lat/lng not provided
         if (! $this->lat && $query) {
@@ -43,7 +61,122 @@ class MapPanel extends Component
         $this->lng = $lng;
         $this->searchType = $type;
         $this->markers = $markers;
+        // Kortet flyttes til noget andet end adressen; naboopslaget hører til den gamle.
+        $this->query = null;
         $this->dispatch('map-update');
+    }
+
+    /**
+     * Ejendomme omkring adressen: adresse, byggeår, bygningsareal og vurdering.
+     *
+     * 🚨 Gaten ligger HER og ikke i mount(): en offentlig Livewire-metode kan kaldes
+     * af klienten med et gammelt snapshot, og `lat`/`lng` kan klienten sætte selv.
+     * Derfor tager metoden adressen, lader `resolveAddressAnalysis()` (som kræver
+     * at sessionen har godkendt netop dén adresse) finde koordinaterne, og bruger
+     * aldrig `$this->lat`/`$this->lng`. Uden godkendelse kommer der intet ud.
+     *
+     * Ejernavne og gæld er med vilje ikke med: registry-api leverer dem ikke i
+     * udforsk-svaret, og gæld hører til bestilte analyser (som i Udforsk).
+     *
+     * @return array{error: string}|array{naboer: list<array<string, mixed>>, flere: bool, radius: int}
+     */
+    public function hentNaboer(string $query, int $radius = self::NABO_STANDARD_RADIUS): array
+    {
+        $radius = in_array($radius, self::NABO_RADIER, true) ? $radius : self::NABO_STANDARD_RADIUS;
+        $api = app(RegistryApi::class);
+
+        // Kvotefejl vises som kvotefejl; alle andre undtagelser får lov at rapportere.
+        try {
+            $analysis = $api->resolveAddressAnalysis($query);
+        } catch (QuotaExceededException) {
+            return ['error' => 'kvote'];
+        }
+        if (isset($analysis['error'])) {
+            return ['error' => ($analysis['status'] ?? null) === 403 ? 'ikke_godkendt' : 'fejl'];
+        }
+
+        $coords = $analysis['property']['coordinates'] ?? null;
+        $lat = (float) ($coords['lat'] ?? $coords['latitude'] ?? 0);
+        $lng = (float) ($coords['lng'] ?? $coords['longitude'] ?? 0);
+        if (! $lat || ! $lng) {
+            return ['error' => 'ingen_koordinater'];
+        }
+
+        // Cachen læses FØRST nu, bag godkendelsen, så den ikke kan springe gaten over.
+        $cacheNoegle = 'metis:naboer:'.md5(mb_strtolower(trim($query))).':'.$radius;
+        if (is_array($cached = Cache::get($cacheNoegle))) {
+            return $cached;
+        }
+
+        // Taelleren bruges kun, naar der faktisk skal et kald til registry-api.
+        $noegle = 'metis-naboer:'.(app(LookupAccess::class)->klientIp() ?? request()->ip());
+        if (! RateLimiter::attempt($noegle, 20, fn () => true, 60)) {
+            return ['error' => 'for_mange'];
+        }
+
+        try {
+            $svar = $api->propertyExplore([
+                'lat' => $lat,
+                'lng' => $lng,
+                'radius' => $radius,
+                'limit' => self::NABO_MAKS,
+            ], source: 'map_neighbours');
+        } catch (QuotaExceededException) {
+            return ['error' => 'kvote'];
+        }
+
+        if (isset($svar['error'])) {
+            return ['error' => ($svar['status'] ?? null) === 429 ? 'kvote' : 'fejl'];
+        }
+
+        // Selve ejendommen har allerede sin markør. Den kendes på matrikel_id fra analysen; findes
+        // det ikke, sammenlignes adressen. Aldrig koordinater: andre lejligheder i samme bygning
+        // deler koordinater og skal blive. 🪤 parseAddress() kan ikke dele alle adresser
+        // (husbogstav, etage), så adressematchet er kun en reserve.
+        $selvId = $analysis['property']['matrikel_id'] ?? null;
+        $p = $api->parseAddress($query);
+        $selv = mb_strtolower(trim(($p['street'] ?? '').' '.($p['number'] ?? '')));
+
+        $naboer = [];
+        foreach ($svar['data']['results'] ?? [] as $r) {
+            $rLat = $r['latitude'] ?? null;
+            $rLng = $r['longitude'] ?? null;
+            if ($rLat === null || $rLng === null) {
+                continue;
+            }
+            if ($selvId !== null && (string) ($r['matrikel_id'] ?? '') === (string) $selvId) {
+                continue;
+            }
+            if ($selvId === null && $selv !== '' && mb_strtolower(trim((string) ($r['address'] ?? ''))) === $selv) {
+                continue;
+            }
+            // Linket bygges af MetisLink (samme guards som alle andre opslagslinks);
+            // null, hvis adressen ikke kan slås op, og så vises ingen "Åbn"-knap.
+            $adresseTekst = trim(($r['address'] ?? '').', '.trim(($r['postal_code'] ?? '').' '.($r['city'] ?? '')), ' ,');
+            $url = ($r['address'] ?? null) ? MetisLink::urlFor('address', $adresseTekst) : null;
+
+            // Hvidliste: intet andet end disse felter forlader serveren.
+            $naboer[] = [
+                'adresse' => $r['address'] ?? null,
+                'postnr' => $r['postal_code'] ?? null,
+                'by' => $r['city'] ?? null,
+                'byggeaar' => $r['year_built'] ?? null,
+                'areal' => $r['area_building'] ?? null,
+                'vurdering' => $r['valuation'] ?? null,
+                'url' => $url,
+                'lat' => (float) $rLat,
+                'lng' => (float) $rLng,
+            ];
+        }
+
+        $resultat = [
+            'naboer' => $naboer,
+            'flere' => (bool) ($svar['data']['has_more'] ?? false),
+            'radius' => $radius,
+        ];
+        Cache::put($cacheNoegle, $resultat, now()->addMinutes(5));
+
+        return $resultat;
     }
 
     protected function loadLayers(): void
