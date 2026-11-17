@@ -113,19 +113,95 @@
              "Henter data" (maalt 11/8: 5 haengende uden scroll, 0 efter).
              🪤 Attributten overskriver `#[Lazy(isolate: false)]` paa klassen. --}}
         @elseif($type === 'address')
-            <livewire:metis-map-panel :query="$query" lazy="on-load" />
-            <livewire:metis-address-bbr :query="$query" lazy="on-load" />
-            <livewire:metis-address-valuation :query="$query" lazy="on-load" />
-            <livewire:metis-address-skraafoto :query="$query" lazy="on-load" />
-            <livewire:metis-address-owners :query="$query" lazy="on-load" />
-            <livewire:metis-address-mortgages :query="$query" lazy="on-load" />
-            <livewire:metis-address-transactions :query="$query" lazy="on-load" />
-            <livewire:metis-address-similar-trades :query="$query" lazy="on-load" />
-            <livewire:metis-address-comparison :query="$query" lazy="on-load" />
-            <livewire:metis-address-companies :query="$query" lazy="on-load" />
-            <livewire:metis-address-planning :query="$query" lazy="on-load" />
-            <livewire:metis-address-energy :query="$query" lazy="on-load" />
-            <livewire:metis-address-heritage :query="$query" lazy="on-load" />
+            {{-- Faner: man hopper mellem sektionerne i stedet for at scrolle en lang side.
+                 ALLE sektioner renderes stadig og er lazy="on-load", saa fanerne aendrer IKKE
+                 hvad der hentes eller hvornaar, kun hvad der er synligt. Skjult panel =
+                 `style="display:none"` + x-show (x-cloak virker ikke uden vaertens CSS).
+                 Siden kraever allerede Livewire+Alpine (alle sektioner er lazy), saa
+                 display:none uden Alpine gaar ikke ud over noget der virkede uden JS. --}}
+            @php
+                $faner = [
+                    'overblik' => __('Overblik'),
+                    'bbr' => __('BBR'),
+                    'ejerforhold' => __('Ejerforhold'),
+                    'tinglysning' => __('Tinglysning'),
+                    'handler' => __('Handler'),
+                    'omraade' => __('Område'),
+                ];
+            @endphp
+            <div x-data="{
+                    fane: 'overblik',
+                    faner: @js(array_keys($faner)),
+                    init() { this.fraHash(); },
+                    fraHash() {
+                        const h = window.location.hash.replace('#', '');
+                        if (this.faner.includes(h)) this.skift(h);
+                    },
+                    skift(f) {
+                        this.fane = f;
+                        // Kortet (Leaflet) maaler sin container; staar det paa et skjult panel
+                        // bliver det grat til containeren faar stoerrelse igen.
+                        this.$nextTick(() => window.dispatchEvent(new CustomEvent('metis-fane', { detail: f })));
+                    },
+                    vaelg(f) {
+                        this.skift(f);
+                        history.replaceState(history.state, '', '#' + f);
+                    },
+                    flyt(retning) {
+                        const i = (this.faner.indexOf(this.fane) + retning + this.faner.length) % this.faner.length;
+                        this.vaelg(this.faner[i]);
+                        this.$nextTick(() => document.getElementById('fane-' + this.fane)?.focus());
+                    },
+                }" @hashchange.window="fraHash()" class="space-y-6">
+                <div role="tablist" aria-label="{{ __('Ejendomsoplysninger') }}"
+                     class="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-700"
+                     @keydown.arrow-right.prevent="flyt(1)" @keydown.arrow-left.prevent="flyt(-1)"
+                     @keydown.home.prevent="vaelg(faner[0])" @keydown.end.prevent="vaelg(faner[faner.length - 1])">
+                    @foreach($faner as $id => $navn)
+                        <button type="button" role="tab" id="fane-{{ $id }}"
+                                aria-controls="panel-{{ $id }}"
+                                :aria-selected="fane === '{{ $id }}' ? 'true' : 'false'"
+                                :tabindex="fane === '{{ $id }}' ? 0 : -1"
+                                @click="vaelg('{{ $id }}')"
+                                :class="fane === '{{ $id }}' ? 'border-ink-800 text-ink-800 font-semibold' : 'border-transparent text-ink-600 hover:text-ink-800'"
+                                class="px-4 py-2 text-sm whitespace-nowrap border-b-2 transition">
+                            {{ $navn }}
+                        </button>
+                    @endforeach
+                </div>
+
+                <div role="tabpanel" id="panel-overblik" aria-labelledby="fane-overblik"
+                     x-show="fane === 'overblik'" style="display:none" class="space-y-6">
+                    <livewire:metis-map-panel :query="$query" lazy="on-load" />
+                    <livewire:metis-address-valuation :query="$query" lazy="on-load" />
+                    <livewire:metis-address-skraafoto :query="$query" lazy="on-load" />
+                </div>
+                <div role="tabpanel" id="panel-bbr" aria-labelledby="fane-bbr"
+                     x-show="fane === 'bbr'" style="display:none" class="space-y-6">
+                    <livewire:metis-address-bbr :query="$query" lazy="on-load" />
+                    <livewire:metis-address-energy :query="$query" lazy="on-load" />
+                </div>
+                <div role="tabpanel" id="panel-ejerforhold" aria-labelledby="fane-ejerforhold"
+                     x-show="fane === 'ejerforhold'" style="display:none" class="space-y-6">
+                    <livewire:metis-address-owners :query="$query" lazy="on-load" />
+                    <livewire:metis-address-companies :query="$query" lazy="on-load" />
+                </div>
+                <div role="tabpanel" id="panel-tinglysning" aria-labelledby="fane-tinglysning"
+                     x-show="fane === 'tinglysning'" style="display:none" class="space-y-6">
+                    <livewire:metis-address-mortgages :query="$query" lazy="on-load" />
+                    <livewire:metis-address-transactions :query="$query" lazy="on-load" />
+                </div>
+                <div role="tabpanel" id="panel-handler" aria-labelledby="fane-handler"
+                     x-show="fane === 'handler'" style="display:none" class="space-y-6">
+                    <livewire:metis-address-similar-trades :query="$query" lazy="on-load" />
+                    <livewire:metis-address-comparison :query="$query" lazy="on-load" />
+                </div>
+                <div role="tabpanel" id="panel-omraade" aria-labelledby="fane-omraade"
+                     x-show="fane === 'omraade'" style="display:none" class="space-y-6">
+                    <livewire:metis-address-planning :query="$query" lazy="on-load" />
+                    <livewire:metis-address-heritage :query="$query" lazy="on-load" />
+                </div>
+            </div>
         @endif
     </div>
     @endif

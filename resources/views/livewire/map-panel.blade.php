@@ -7,6 +7,7 @@
 
     <div
         wire:ignore
+        @metis-fane.window="map && map.invalidateSize()"
         x-data="{
             map: null,
             layers: @js($layers),
