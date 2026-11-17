@@ -28,10 +28,13 @@ class MapPanel extends Component
     /** Må brugeren udforske frit? Kun til visning; hentUdsnit() tjekker selv, hver gang. */
     public bool $kanUdforske = false;
 
-    /** Udsnit: loft for kortets udstrækning (grader) og for antal sider pr. udsnit. */
-    public const UDSNIT_MAKS_BREDDE_LAT = 0.03;
+    /** Må brugeren hente naboejendomme? Kun til visning; hentNaboer() tjekker selv, hver gang. */
+    public bool $kanNaboer = false;
 
-    public const UDSNIT_MAKS_BREDDE_LNG = 0.06;
+    /** Udsnit: loft for kortets udstrækning (grader) og for antal sider pr. udsnit. */
+    public const UDSNIT_MAKS_BREDDE_LAT = 0.04;
+
+    public const UDSNIT_MAKS_BREDDE_LNG = 0.08;
 
     /** Registry-api giver højst 50 pr. side; udsnittet henter højst tre sider (150 ejendomme). */
     public const UDSNIT_SIDE = 50;
@@ -60,6 +63,7 @@ class MapPanel extends Component
         $this->searchType = $searchType;
         $this->query = $query;
         $this->kanUdforske = app(LookupAccess::class)->harPilotAdgang();
+        $this->kanNaboer = app(LookupAccess::class)->erKvoteFritaget();
 
         // Resolve address query to coordinates if lat/lng not provided
         if (! $this->lat && $query) {
@@ -104,6 +108,13 @@ class MapPanel extends Component
     #[Renderless]
     public function hentNaboer(string $query, int $radius = self::NABO_STANDARD_RADIUS): array
     {
+        // 🚨 Naboernes vurderinger er data om ANDRE ejendomme end den godkendte adresse; en anonym
+        // gratis-prøve (ét opslag) må ikke kunne hente dem igen og igen. Samme regel som kvote-fritagelsen
+        // (verificeret mail eller pilot).
+        if (! app(LookupAccess::class)->erKvoteFritaget()) {
+            return ['error' => 'kraever_login'];
+        }
+
         $radius = in_array($radius, self::NABO_RADIER, true) ? $radius : self::NABO_STANDARD_RADIUS;
         $api = app(RegistryApi::class);
 
@@ -224,17 +235,20 @@ class MapPanel extends Component
      * @return array{error: string}|array{naboer: list<array<string, mixed>>, flere: bool}
      */
     #[Renderless]
-    public function hentUdsnit(float $syd, float $vest, float $nord, float $oest): array
+    public function hentUdsnit(mixed $syd, mixed $vest, mixed $nord, mixed $oest): array
     {
         if (! app(LookupAccess::class)->harPilotAdgang()) {
             return ['error' => 'kraever_pilot'];
         }
 
+        // Ingen typede parametre: et ikke-tal fra klienten ville ellers give en TypeError (500) i stedet
+        // for 'ugyldigt', og ville ramme før adgangstjekket ovenfor.
         foreach ([$syd, $vest, $nord, $oest] as $v) {
-            if (! is_finite($v)) {
+            if (! is_numeric($v) || ! is_finite((float) $v)) {
                 return ['error' => 'ugyldigt'];
             }
         }
+        [$syd, $vest, $nord, $oest] = [(float) $syd, (float) $vest, (float) $nord, (float) $oest];
         // Danmark med god margen. Alt andet er ikke et gyldigt udsnit.
         if ($syd < 54.4 || $nord > 57.9 || $vest < 7.8 || $oest > 15.3 || $syd >= $nord || $vest >= $oest) {
             return ['error' => 'ugyldigt'];
@@ -248,7 +262,8 @@ class MapPanel extends Component
         $nord = ceil(round($nord / $g, 6)) * $g;
         $oest = ceil(round($oest / $g, 6)) * $g;
 
-        if (($nord - $syd) > self::UDSNIT_MAKS_BREDDE_LAT || ($oest - $vest) > self::UDSNIT_MAKS_BREDDE_LNG) {
+        // Tolerance: 20 x 0,002 er 0,04000000000000001 i flydende tal.
+        if (($nord - $syd) > self::UDSNIT_MAKS_BREDDE_LAT + 1e-9 || ($oest - $vest) > self::UDSNIT_MAKS_BREDDE_LNG + 1e-9) {
             return ['error' => 'zoom_ind'];
         }
 

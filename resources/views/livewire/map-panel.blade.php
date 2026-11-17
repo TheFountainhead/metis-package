@@ -18,6 +18,8 @@
             standardRadius: @js(\TheFountainhead\Metis\Livewire\MapPanel::NABO_STANDARD_RADIUS),
             naboSerie: 0,
             kanUdforske: @js($kanUdforske),
+            kanNaboer: @js($kanNaboer),
+            udsnitForsoeg: 0,
             minZoom: @js(\TheFountainhead\Metis\Livewire\MapPanel::UDSNIT_MIN_ZOOM),
             udsnitSerie: 0,
             udsnitTid: null,
@@ -179,7 +181,7 @@
             // Naboejendomme: en lille kontrol paa kortet. Alt bygges som DOM-noder med
             // textContent, fordi adresserne kommer fra API et og aldrig maa tolkes som HTML.
             addNaboKontrol() {
-                if (!$wire.query || this.searchType !== 'address') return;
+                if (!this.kanNaboer || !$wire.query || this.searchType !== 'address') return;
                 const self = this;
                 const Kontrol = L.Control.extend({
                     options: { position: 'topleft' },
@@ -267,6 +269,7 @@
             slaaUdsnitTil(udsnitStatus) {
                 this.udsnitStatusEl = udsnitStatus;
                 this.udsnitLytter = () => {
+                    this.udsnitForsoeg = 0;
                     clearTimeout(this.udsnitTid);
                     this.udsnitTid = setTimeout(() => this.hentUdsnit(udsnitStatus), 400);
                 };
@@ -313,15 +316,18 @@
                     // Kun et ugyldigt udsnit skjuler markørerne. Ved en forbigaaende fejl bliver de
                     // gamle staaende, og der proeves igen om lidt (ellers staar kortet tomt, indtil
                     // man panorerer igen).
-                    if (svar && ['zoom_ind', 'kraever_pilot'].includes(svar.error)) this.skjulUdsnit();
+                    if (!svar || !['for_mange', 'fejl'].includes(svar.error)) this.skjulUdsnit();
                     const tekster = {
                         zoom_ind: 'Zoom ind for at se ejendomme.',
                         for_mange: 'For mange opslag lige nu. Flyt kortet igen om lidt.',
                         kvote: 'Dagens opslag er brugt.',
                         kraever_pilot: 'Fri udforskning er kun for pilotbrugere.',
+                        ugyldigt: 'Kortudsnittet er uden for Danmark.',
                     };
                     udsnitStatus.textContent = tekster[svar && svar.error] || 'Ejendomme kunne ikke hentes.';
-                    if (!svar || ['for_mange', 'fejl'].includes(svar.error)) {
+                    // Højst tre nye forsøg i træk; et nyt flyt af kortet nulstiller tælleren.
+                    if ((!svar || ['for_mange', 'fejl'].includes(svar.error)) && this.udsnitForsoeg < 3) {
+                        this.udsnitForsoeg++;
                         clearTimeout(this.udsnitRetry);
                         this.udsnitRetry = setTimeout(() => {
                             if (this.udsnitLytter && serie === this.udsnitSerie) this.hentUdsnit(udsnitStatus);
@@ -329,6 +335,7 @@
                     }
                     return;
                 }
+                this.udsnitForsoeg = 0;
                 this.skjulUdsnit();
                 const lag = L.layerGroup();
                 for (const n of svar.naboer) {
@@ -374,6 +381,7 @@
                     const tekster = {
                         for_mange: 'For mange opslag lige nu. Prøv igen om lidt.',
                         kvote: 'Dagens opslag er brugt.',
+                        kraever_login: 'Naboejendomme kræver at du er logget ind.',
                         ikke_godkendt: 'Opslaget er ikke godkendt i denne session.',
                         ingen_koordinater: 'Adressen har ingen koordinater.',
                     };

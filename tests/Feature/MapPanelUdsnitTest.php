@@ -94,6 +94,30 @@ it('en værdi præcis på en gitterlinje giver samme udsnit som en lidt større'
     Http::assertSentCount(1);
 });
 
+it('🚨 giver ugyldigt (ikke en 500) ved ikke-tal fra klienten, og gaten kommer først', function () {
+    Http::fake(['*' => Http::response(['data' => []])]);
+
+    expect((new MapPanel)->hentUdsnit('abc', 12.5, 55.7, 12.6))->toBe(['error' => 'ugyldigt'])
+        ->and((new MapPanel)->hentUdsnit(null, 12.5, 55.7, 12.6))->toBe(['error' => 'ugyldigt'])
+        ->and((new MapPanel)->hentUdsnit([1], 12.5, 55.7, 12.6))->toBe(['error' => 'ugyldigt']);
+
+    // Anonym: afvises FØR parametrene tolkes, så de ikke kan bruges til at fremprovokere fejl.
+    config()->set('metis.gating.enabled', true);
+    expect((new MapPanel)->hentUdsnit('abc', 12.5, 55.7, 12.6))->toBe(['error' => 'kraever_pilot']);
+
+    Http::assertNothingSent();
+});
+
+it('et udsnit lige under loftet afvises ikke af gitter-snapping eller flydende tal', function () {
+    Http::fake(['*/v1/property-explore' => udsnitSide([udsnitRaekke(1)])]);
+
+    // Præcis på gitterlinjerne: 55.602..55.642 er 20 gitterceller = 0,040 (0,04000000000000001 i flydende
+    // tal) og 12.502..12.582 er 0,080. Det er loftet, og skal igennem; uden tolerancen ville det afvises.
+    expect(udsnit(55.602, 12.502, 55.642, 12.582))->toHaveKey('naboer');
+    // En gittercelle mere nord-syd (snappes op til 55.644): 0,042 > 0,040.
+    expect(udsnit(55.602, 12.502, 55.6421, 12.582))->toBe(['error' => 'zoom_ind']);
+});
+
 it('afviser ugyldige og for store udsnit uden at kalde registry-api', function () {
     Http::fake(['*' => Http::response(['data' => []])]);
 

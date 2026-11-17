@@ -107,26 +107,23 @@ it('🚨 bruger ikke klientens lat/lng, men adressens koordinater', function () 
     Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore') && $r['lat'] === 10.0);
 });
 
-it('🚨 henter intet for en adresse sessionen ikke har fået godkendt', function () {
+it('🚨 afviser en anonym gratis-prøve: naboernes vurderinger hører ikke til det ene godkendte opslag', function () {
     config()->set('metis.gating.enabled', true);
     fakeNaboer([]);
 
-    $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
+    $panel = new MapPanel;
+    $panel->kanNaboer = true; // klienten kan sætte egenskaben selv; gaten ligger i hentNaboer()
 
-    expect($svar)->toBe(['error' => 'ikke_godkendt']);
-    Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore'));
+    expect($panel->hentNaboer(ADRESSE, 250))->toBe(['error' => 'kraever_login']);
+    Http::assertNothingSent();
 });
 
-it('henter, når sessionen har godkendt netop den adresse', function () {
+it('henter for en verificeret bruger (kvote-fritaget)', function () {
     config()->set('metis.gating.enabled', true);
-    config()->set('metis.gating.free_lookups', 5);
     fakeNaboer(['svar' => Http::response(naboSvar([naboRaekke()]))]);
-    $this->withSession(['metis_session_started' => true]);
-    app(LookupAccess::class)->godkendOpslag('address', ADRESSE);
+    $this->withSession(['metis_verified_email' => 'bruger@firma.dk']);
 
-    $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
-
-    expect($svar)->toHaveKey('naboer');
+    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toHaveKey('naboer');
 });
 
 it('beholder andre lejligheder i samme bygning, men ikke selve adressen', function () {
@@ -155,16 +152,16 @@ it('kender selve ejendommen på matrikel_id, også når adressen ikke kan deles'
     expect($adresser)->toBe(['Strandvejen 100 B']);
 });
 
-it('cacher et svar kort, men aldrig uden godkendelse', function () {
+it('cacher et svar kort, men aldrig til en anonym', function () {
     fakeNaboer(['svar' => Http::response(naboSvar([naboRaekke()]))]);
 
     (new MapPanel)->hentNaboer(ADRESSE, 250);
     (new MapPanel)->hentNaboer(ADRESSE, 250);
     Http::assertSentCount(2); // analyse + udforsk; andet opslag kommer fra cachen
 
-    // 🚨 Samme adresse og radius, men nu uden godkendelse: cachen må ikke udlevere noget.
+    // 🚨 Samme adresse og radius, men nu som anonym: cachen må ikke udlevere noget.
     config()->set('metis.gating.enabled', true);
-    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'ikke_godkendt']);
+    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'kraever_login']);
 });
 
 it('viser kvotefejl som kvote og lader andre fejl rapportere', function () {
