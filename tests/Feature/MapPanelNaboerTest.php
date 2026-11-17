@@ -60,7 +60,7 @@ function fakeNaboer(array $explore): void
 it('henter ejendomme omkring adressen og sender kun hvidlistede felter ud', function () {
     fakeNaboer(['svar' => Http::response(naboSvar([
         naboRaekke(),
-        naboRaekke(['address' => 'Selve ejendommen', 'latitude' => 55.6761, 'longitude' => 12.5683]),
+        naboRaekke(['address' => 'Roskildevej 10']),
         naboRaekke(['address' => 'Uden koordinater', 'latitude' => null, 'longitude' => null]),
     ]))]);
 
@@ -78,7 +78,7 @@ it('henter ejendomme omkring adressen og sender kun hvidlistede felter ud', func
 
     // Gæld må aldrig forlade serveren, og selve ejendommen har allerede sin markør.
     expect(json_encode($svar))->not->toContain('total_debt')->not->toContain('weighted_rate')
-        ->not->toContain('Selve ejendommen')->not->toContain('Uden koordinater');
+        ->not->toContain('"Roskildevej 10"')->not->toContain('Uden koordinater');
 
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore')
         && $r['lat'] === 55.6761 && $r['lng'] === 12.5683 && $r['radius'] === 250 && $r['limit'] === 50
@@ -129,6 +129,41 @@ it('henter, når sessionen har godkendt netop den adresse', function () {
     expect($svar)->toHaveKey('naboer');
 });
 
+it('beholder andre lejligheder i samme bygning, men ikke selve adressen', function () {
+    fakeNaboer(['svar' => Http::response(naboSvar([
+        naboRaekke(['address' => 'Roskildevej 10', 'latitude' => 55.6761, 'longitude' => 12.5683]),
+        naboRaekke(['address' => 'Roskildevej 10, 2. th', 'latitude' => 55.6761, 'longitude' => 12.5683]),
+    ]))]);
+
+    $adresser = array_column((new MapPanel)->hentNaboer(ADRESSE, 250)['naboer'], 'adresse');
+
+    expect($adresser)->toBe(['Roskildevej 10, 2. th']);
+});
+
+it('cacher et svar kort, men aldrig uden godkendelse', function () {
+    fakeNaboer(['svar' => Http::response(naboSvar([naboRaekke()]))]);
+
+    (new MapPanel)->hentNaboer(ADRESSE, 250);
+    (new MapPanel)->hentNaboer(ADRESSE, 250);
+    Http::assertSentCount(2); // analyse + udforsk; andet opslag kommer fra cachen
+
+    // 🚨 Samme adresse og radius, men nu uden godkendelse: cachen må ikke udlevere noget.
+    config()->set('metis.gating.enabled', true);
+    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'ikke_godkendt']);
+});
+
+it('viser kvotefejl som kvote og lader andre fejl rapportere', function () {
+    $this->mock(\TheFountainhead\Metis\Services\RegistryApi::class, function ($m) {
+        $m->shouldReceive('resolveAddressAnalysis')->once()->andThrow(new \TheFountainhead\Metis\Services\QuotaExceededException('brugt'));
+    });
+    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'kvote']);
+
+    $this->mock(\TheFountainhead\Metis\Services\RegistryApi::class, function ($m) {
+        $m->shouldReceive('resolveAddressAnalysis')->once()->andThrow(new \TypeError('rigtig fejl'));
+    });
+    expect(fn () => (new MapPanel)->hentNaboer(ADRESSE, 250))->toThrow(\TypeError::class);
+});
+
 it('melder flere, når der er mere end de viste', function () {
     fakeNaboer(['svar' => Http::response(naboSvar([naboRaekke()], flere: true))]);
 
@@ -150,11 +185,11 @@ it('oversætter andre fejl fra registry-api til fejl', function () {
 it('begrænser til 20 opslag i minuttet', function () {
     fakeNaboer([]);
 
-    for ($i = 0; $i < 20; $i++) {
-        expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toHaveKey('naboer');
+    for ($i = 1; $i <= 20; $i++) {
+        expect((new MapPanel)->hentNaboer("Roskildevej $i, 2000 Frederiksberg", 250))->toHaveKey('naboer');
     }
 
-    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'for_mange']);
+    expect((new MapPanel)->hentNaboer('Roskildevej 99, 2000 Frederiksberg', 250))->toBe(['error' => 'for_mange']);
 });
 
 it('🚨 kortets x-data kan parses som JavaScript med naboejendomme', function () {

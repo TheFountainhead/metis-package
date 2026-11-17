@@ -3,10 +3,12 @@
 namespace TheFountainhead\Metis\Livewire;
 
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Services\LookupAccess;
+use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\RegistryApi;
 use TheFountainhead\Metis\View\Components\MetisLink;
 
@@ -56,6 +58,8 @@ class MapPanel extends Component
         $this->lng = $lng;
         $this->searchType = $type;
         $this->markers = $markers;
+        // Kortet flyttes til noget andet end adressen; naboopslaget hører til den gamle.
+        $this->query = null;
         $this->dispatch('map-update');
     }
 
@@ -76,13 +80,14 @@ class MapPanel extends Component
     public function hentNaboer(string $query, int $radius = 250): array
     {
         $radius = in_array($radius, self::NABO_RADIER, true) ? $radius : 250;
+        $api = app(RegistryApi::class);
 
-        $noegle = 'metis-naboer:'.(app(LookupAccess::class)->klientIp() ?? request()->ip());
-        if (! RateLimiter::attempt($noegle, 20, fn () => true, 60)) {
-            return ['error' => 'for_mange'];
+        // Kvotefejl vises som kvotefejl; alle andre undtagelser får lov at rapportere.
+        try {
+            $analysis = $api->resolveAddressAnalysis($query);
+        } catch (QuotaExceededException) {
+            return ['error' => 'kvote'];
         }
-
-        $analysis = rescue(fn () => app(RegistryApi::class)->resolveAddressAnalysis($query), ['error' => 'fejl'], false);
         if (isset($analysis['error'])) {
             return ['error' => ($analysis['status'] ?? null) === 403 ? 'ikke_godkendt' : 'fejl'];
         }
@@ -94,16 +99,37 @@ class MapPanel extends Component
             return ['error' => 'ingen_koordinater'];
         }
 
-        $svar = rescue(fn () => app(RegistryApi::class)->propertyExplore([
-            'lat' => $lat,
-            'lng' => $lng,
-            'radius' => $radius,
-            'limit' => self::NABO_MAKS,
-        ], source: 'map_neighbours'), ['error' => 'fejl'], false);
+        // Cachen læses FØRST nu, bag godkendelsen, så den ikke kan springe gaten over.
+        $cacheNoegle = 'metis:naboer:'.md5(mb_strtolower(trim($query))).':'.$radius;
+        if (is_array($cached = Cache::get($cacheNoegle))) {
+            return $cached;
+        }
+
+        // Taelleren bruges kun, naar der faktisk skal et kald til registry-api.
+        $noegle = 'metis-naboer:'.(app(LookupAccess::class)->klientIp() ?? request()->ip());
+        if (! RateLimiter::attempt($noegle, 20, fn () => true, 60)) {
+            return ['error' => 'for_mange'];
+        }
+
+        try {
+            $svar = $api->propertyExplore([
+                'lat' => $lat,
+                'lng' => $lng,
+                'radius' => $radius,
+                'limit' => self::NABO_MAKS,
+            ], source: 'map_neighbours');
+        } catch (QuotaExceededException) {
+            return ['error' => 'kvote'];
+        }
 
         if (isset($svar['error'])) {
             return ['error' => ($svar['status'] ?? null) === 429 ? 'kvote' : 'fejl'];
         }
+
+        // Selve ejendommen har allerede sin markør. Matches på adressen og ikke på koordinater:
+        // andre lejligheder i samme bygning deler koordinater og skal blive.
+        $p = $api->parseAddress($query);
+        $selv = mb_strtolower(trim(($p['street'] ?? '').' '.($p['number'] ?? '')));
 
         $naboer = [];
         foreach ($svar['data']['results'] ?? [] as $r) {
@@ -112,8 +138,7 @@ class MapPanel extends Component
             if ($rLat === null || $rLng === null) {
                 continue;
             }
-            // Selve ejendommen har allerede sin egen markør.
-            if (abs($rLat - $lat) < 0.00005 && abs($rLng - $lng) < 0.00005) {
+            if ($selv !== '' && mb_strtolower(trim((string) ($r['address'] ?? ''))) === $selv) {
                 continue;
             }
             // Linket bygges af MetisLink (samme guards som alle andre opslagslinks);
@@ -135,11 +160,14 @@ class MapPanel extends Component
             ];
         }
 
-        return [
+        $resultat = [
             'naboer' => $naboer,
             'flere' => (bool) ($svar['data']['has_more'] ?? false),
             'radius' => $radius,
         ];
+        Cache::put($cacheNoegle, $resultat, now()->addMinutes(5));
+
+        return $resultat;
     }
 
     protected function loadLayers(): void

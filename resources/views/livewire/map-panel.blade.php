@@ -14,8 +14,10 @@
             lng: @js($lng),
             searchType: @js($searchType),
             markers: @js($markers),
-            query: @js($query),
+            radier: @js(\TheFountainhead\Metis\Livewire\MapPanel::NABO_RADIER),
             naboLag: null,
+            naboSerie: 0,
+            naboNulstil: null,
             layersUnavailable: @js($layersUnavailable),
 
             destroy() {
@@ -36,6 +38,11 @@
                     this.lng = $wire.lng;
                     this.searchType = $wire.searchType;
                     this.markers = $wire.markers;
+
+                    // Naboerne hoerer til den forrige adresse.
+                    this.naboSerie++;
+                    this.skjulNaboer();
+                    if (this.naboNulstil) this.naboNulstil();
 
                     if (this.lat && this.lng) {
                         this.map.setView([this.lat, this.lng], 16);
@@ -150,7 +157,7 @@
             // Naboejendomme: en lille kontrol paa kortet. Alt bygges som DOM-noder med
             // textContent, fordi adresserne kommer fra API et og aldrig maa tolkes som HTML.
             addNaboKontrol() {
-                if (!this.query || this.searchType !== 'address') return;
+                if (!$wire.query || this.searchType !== 'address') return;
                 const self = this;
                 const Kontrol = L.Control.extend({
                     options: { position: 'topleft' },
@@ -158,7 +165,8 @@
                         const boks = L.DomUtil.create('div', 'leaflet-bar');
                         boks.style.cssText = 'background:#fff;padding:6px 8px;font-size:12px;line-height:1.4;max-width:230px;';
                         const radiusValg = document.createElement('select');
-                        for (const r of [100, 250, 500]) {
+                        radiusValg.setAttribute('aria-label', 'Radius for naboejendomme');
+                        for (const r of self.radier) {
                             const o = document.createElement('option');
                             o.value = String(r);
                             o.textContent = r + ' m';
@@ -174,11 +182,21 @@
                         boks.append(radiusValg, knap, status);
                         L.DomEvent.disableClickPropagation(boks);
 
+                        self.naboNulstil = () => {
+                            knap.textContent = 'Vis naboejendomme';
+                            status.textContent = '';
+                        };
+
                         const hent = async () => {
                             knap.disabled = true;
+                            radiusValg.disabled = true;
                             status.textContent = 'Henter ...';
-                            status.textContent = await self.visNaboer(Number(radiusValg.value));
+                            const tekst = await self.visNaboer(Number(radiusValg.value));
                             knap.disabled = false;
+                            radiusValg.disabled = false;
+                            // null = kortet er flyttet imens; kontrollen er allerede nulstillet.
+                            if (tekst === null) return;
+                            status.textContent = tekst;
                             knap.textContent = self.naboLag ? 'Skjul naboejendomme' : 'Vis naboejendomme';
                         };
                         knap.addEventListener('click', () => {
@@ -205,13 +223,19 @@
             },
 
             async visNaboer(radius) {
+                const serie = ++this.naboSerie;
+                if (!$wire.query || this.searchType !== 'address') {
+                    return 'Naboejendomme findes kun ved et opslag på en adresse.';
+                }
                 let svar;
                 try {
-                    svar = await $wire.hentNaboer(this.query, radius);
+                    svar = await $wire.hentNaboer($wire.query, radius);
                 } catch (e) {
                     svar = { error: 'fejl' };
                 }
+                if (serie !== this.naboSerie) return null;
                 if (!svar || svar.error) {
+                    this.skjulNaboer();
                     const tekster = {
                         for_mange: 'For mange opslag lige nu. Prøv igen om lidt.',
                         kvote: 'Dagens opslag er brugt.',
