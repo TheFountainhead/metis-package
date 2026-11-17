@@ -4,6 +4,7 @@ use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 it('fetches company by CVR', function () {
@@ -1030,4 +1031,92 @@ it('never leaks the curl message (varying ms) into the returned error value', fu
     $result = app(RegistryApi::class)->fetchCompaniesByName('Jens Testsen');
 
     expect(json_encode($result))->not->toContain('30002')->not->toContain('cURL');
+});
+
+// ---- REGISTRY_API_RESOLVE_IP: peg registry-api paa en IP uden om DNS/Cloudflare ----
+
+function resolveOptionsSeenBy(callable $kald): array
+{
+    $set = [];
+    Cache::flush(); // roller/selskabsinfo caches; ellers sendes der ingen request
+    Http::fake(function ($request, $options = []) use (&$set) {
+        $set[] = $options['curl'][CURLOPT_RESOLVE] ?? null;
+
+        return Http::response(['data' => ['company' => ['cvr' => '12345678', 'name' => 'X'], 'companies' => [['cvr' => '12345678', 'roles' => []]]]]);
+    });
+    $kald(new RegistryApi);
+
+    return $set;
+}
+
+it('resolve_ip: uden indstilling er der ingen RESOLVE-option (DNS som altid)', function () {
+    config(['metis.registry_api.resolve_ip' => null]);
+
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([null]);
+});
+
+it('resolve_ip: sat IP peger vaertsnavnet paa IP\'en, med porten fra URL\'ens skema', function () {
+    config(['metis.registry_api.resolve_ip' => '127.0.0.1', 'metis.registry_api.url' => 'https://registry-api.test/api']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:443:127.0.0.1']]);
+
+    config(['metis.registry_api.url' => 'http://registry-api.test/api']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:80:127.0.0.1']]);
+});
+
+it('resolve_ip: en ugyldig værdi ignoreres, aldrig en halv RESOLVE-linje', function () {
+    foreach (['ikke-en-ip', '127.0.0', ' ', '127.0.0.1:443'] as $vaerdi) {
+        config(['metis.registry_api.resolve_ip' => $vaerdi]);
+
+        expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([null]);
+    }
+});
+
+it('resolve_ip: også de to Http::pool-veje bruger den', function () {
+    config(['metis.registry_api.resolve_ip' => '127.0.0.1', 'metis.registry_api.url' => 'https://registry-api.test/api']);
+
+    $info = resolveOptionsSeenBy(fn ($api) => $api->fetchCompanyInfosPooled(['11111111', '22222222']));
+    $struktur = resolveOptionsSeenBy(fn ($api) => $api->fetchCompanyStructuresPooled(['11111111', '22222222']));
+
+    expect($info)->toBe(array_fill(0, 2, ['registry-api.test:443:127.0.0.1']))
+        ->and($struktur)->toBe(array_fill(0, 2, ['registry-api.test:443:127.0.0.1']));
+});
+
+it('resolve_ip: en eksplicit port i URL\'en bruges, og skemaet er ligegyldigt med store bogstaver', function () {
+    config(['metis.registry_api.resolve_ip' => '127.0.0.1', 'metis.registry_api.url' => 'https://registry-api.test:8443/api']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:8443:127.0.0.1']]);
+
+    config(['metis.registry_api.url' => 'HTTP://registry-api.test/api']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:80:127.0.0.1']]);
+});
+
+it('resolve_ip: IPv6 ignoreres (kræver klammer i RESOLVE-linjen), IPv4 virker', function () {
+    config(['metis.registry_api.url' => 'https://registry-api.test/api']);
+
+    config(['metis.registry_api.resolve_ip' => '::1']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([null]);
+
+    config(['metis.registry_api.resolve_ip' => '10.1.2.3']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:443:10.1.2.3']]);
+});
+
+it('resolve_ip: en sat men afvist værdi giver én advarsel i loggen, ikke tavshed', function () {
+    Log::spy();
+    config(['metis.registry_api.resolve_ip' => 'ikke-en-ip', 'metis.registry_api.url' => 'https://registry-api.test/api']);
+    Http::fake(['*' => Http::response(['data' => ['companies' => [['cvr' => '1', 'roles' => []]]]])]);
+
+    $api = new RegistryApi;
+    $api->fetchRolesByCvr(['11111111']);
+    $api->fetchRolesByCvr(['22222222']);
+
+    Log::shouldHaveReceived('warning')->withArgs(fn ($m) => str_contains($m, 'resolve_ip ignoreret'))->once();
+});
+
+it('resolve_ip: tom værdi giver ingen advarsel', function () {
+    Log::spy();
+    config(['metis.registry_api.resolve_ip' => null]);
+    Http::fake(['*' => Http::response(['data' => ['companies' => [['cvr' => '1', 'roles' => []]]]])]);
+
+    (new RegistryApi)->fetchRolesByCvr(['11111111']);
+
+    Log::shouldNotHaveReceived('warning');
 });

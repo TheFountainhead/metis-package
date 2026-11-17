@@ -316,3 +316,30 @@ it('modstykke: vaertens egen vaerdi vinder over pakkens', function () {
 
     expect(app(LookupAccess::class)->ipGraense())->toBe(2);
 });
+
+it('🪤 en publiceret vaerts-config uden resolve_ip faar nøglen alligevel (registry_api fletter)', function () {
+    // Vaertens config/metis.php har kun `url` og `key` under registry_api.
+    // Uden fletning blev REGISTRY_API_RESOLVE_IP aldrig laest, og kaldene gik
+    // stadig via Cloudflare uden en eneste fejl (review af #234).
+    $vaert = require __DIR__.'/../../config/metis.php';
+    $vaert['registry_api'] = ['url' => 'https://registry-api.test/api', 'key' => 'k'];
+    config()->set('metis', $vaert);
+
+    expect(array_key_exists('resolve_ip', config('metis.registry_api')))->toBeFalse();
+
+    (new MetisServiceProvider(app()))->register();
+
+    expect(array_key_exists('resolve_ip', config('metis.registry_api')))->toBeTrue()
+        ->and(config('metis.registry_api.url'))->toBe('https://registry-api.test/api')
+        ->and(config('metis.registry_api.key'))->toBe('k');
+});
+
+it('modstykke: vaertens egen resolve_ip vinder over pakkens', function () {
+    $vaert = require __DIR__.'/../../config/metis.php';
+    $vaert['registry_api'] = ['url' => 'https://registry-api.test/api', 'key' => 'k', 'resolve_ip' => '10.0.0.7'];
+    config()->set('metis', $vaert);
+
+    (new MetisServiceProvider(app()))->register();
+
+    expect(config('metis.registry_api.resolve_ip'))->toBe('10.0.0.7');
+});

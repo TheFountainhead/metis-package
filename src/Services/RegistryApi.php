@@ -6,6 +6,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class RegistryApi
 {
@@ -137,6 +138,54 @@ class RegistryApi
         return null;
     }
 
+    /**
+     * Transport-valg der ikke er DNS: peg registry-api-vaertsnavnet paa en
+     * bestemt IP (`metis.registry_api.resolve_ip`), typisk 127.0.0.1 naar begge
+     * apps ligger paa samme server.
+     *
+     * 🔑 Navn, certifikat-kontrol og Host-header er uaendrede (cURL's
+     * CURLOPT_RESOLVE), saa det er det samme kald; kun omvejen via det
+     * offentlige domaene (Cloudflare) er vaek. Ugyldig eller tom vaerdi giver
+     * ingen aendring: DNS som foer. 🪤 Alle tre steder der bygger requests
+     * (client() og de to Http::pool) skal bruge den.
+     */
+    protected function transportOptions(): array
+    {
+        // Constant for instansen: beregnes (og eventuelt advares om) én gang.
+        return $this->transportOptions ??= $this->beregnTransportOptions();
+    }
+
+    /** @var array<string, mixed>|null */
+    private ?array $transportOptions = null;
+
+    private function beregnTransportOptions(): array
+    {
+        $ip = trim((string) config('metis.registry_api.resolve_ip'));
+        $url = (string) config('metis.registry_api.url');
+        $host = parse_url($url, PHP_URL_HOST);
+
+        // Kun IPv4: en IPv6-adresse skal staa i [klammer] i RESOLVE-linjen, og det
+        // er ikke noedvendigt her (registry-api ligger paa samme server).
+        if ($ip === '') {
+            return [];
+        }
+
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || ! $host) {
+            // En sat, men afvist vaerdi maa ikke blive til en tavs "virker ikke":
+            // kaldene gaar bare stadig via det offentlige domaene.
+            Log::warning('metis.registry_api.resolve_ip ignoreret: kraever en gyldig IPv4-adresse og en URL med vaertsnavn.', ['resolve_ip' => $ip]);
+
+            return [];
+        }
+
+        // Porten staar i URL'en, hvis den er angivet; ellers fra skemaet (uanset
+        // store/smaa bogstaver). Ellers matcher RESOLVE-linjen aldrig.
+        $port = parse_url($url, PHP_URL_PORT)
+            ?? (strtolower((string) parse_url($url, PHP_URL_SCHEME)) === 'http' ? 80 : 443);
+
+        return ['curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"]]];
+    }
+
     protected function client()
     {
         // 🚨 KVOTE-GATEN SIDDER HER, ikke i `get()`. Maalt 9/8: FIRE kaldsteder
@@ -191,6 +240,7 @@ class RegistryApi
         $maintenanceRetries = 0;
 
         return Http::withToken($token)
+            ->withOptions($this->transportOptions())
             ->acceptJson()
             ->timeout(60)
             ->connectTimeout(10)
@@ -920,10 +970,12 @@ class RegistryApi
 
         $token = session('metis_user_token') ?: config('metis.registry_api.key');
         $baseUrl = config('metis.registry_api.url');
+        $transport = $this->transportOptions();
 
         $responses = Http::pool(fn ($pool) => collect($missing)
             ->map(fn ($cvr) => $pool->as($cvr)
                 ->withToken($token)
+                ->withOptions($transport)
                 ->acceptJson()
                 ->timeout(30)
                 ->baseUrl($baseUrl)
@@ -1101,10 +1153,12 @@ class RegistryApi
 
         $token = session('metis_user_token') ?: config('metis.registry_api.key');
         $baseUrl = config('metis.registry_api.url');
+        $transport = $this->transportOptions();
 
         $responses = Http::pool(fn ($pool) => collect($cvrs)
             ->map(fn ($cvr) => $pool->as($cvr)
                 ->withToken($token)
+                ->withOptions($transport)
                 ->acceptJson()
                 ->timeout(30)
                 ->baseUrl($baseUrl)

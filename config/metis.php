@@ -39,6 +39,12 @@ return [
     'registry_api' => [
         'url' => env('REGISTRY_API_URL'),
         'key' => env('REGISTRY_API_KEY'),
+        // Valgfri. Peg URL'ens vaertsnavn paa en bestemt IP (fx 127.0.0.1, naar
+        // registry-api ligger paa SAMME server) i stedet for at slaa det op i DNS.
+        // Navn, TLS-certifikat og Host-header er uaendrede; kun IP-opslaget flyttes.
+        // Tom = DNS som altid. Maalt 17/11-2026: ca. 100 ms mod 480-1.150 ms, naar
+        // kaldet ellers gaar via det offentlige domaene (Cloudflare) og tilbage.
+        'resolve_ip' => env('REGISTRY_API_RESOLVE_IP'),
     ],
 
     // Google Static Street View API key — used by CompanyStructure's
