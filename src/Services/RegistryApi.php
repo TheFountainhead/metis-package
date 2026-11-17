@@ -813,23 +813,29 @@ class RegistryApi
      * 🚨 Gaten FOER cachen: `fraCache()` kraever kvote, saa en session med
      * opbrugt kvote ikke faar cachede svar (samme regel som company-info).
      *
-     * 🪤 Kun et RIGTIGT svar caches (`companies` er en liste). Et fejlsvar
-     * (`error`) eller et svar uden roller-noegle maa ikke skygge for friske
-     * data. Cache-noeglen er sorteret, saa [A, B] og [B, A] er samme opslag.
+     * 🪤 Kun et svar MED indhold caches (`companies` er en ikke-tom liste). Et
+     * fejlsvar eller en tom liste maa ikke skygge for friske data.
      */
     public function fetchRolesByCvr(array $cvrs): array
     {
+        // Unik og sorteret som STRENGE (`sort()` uden flag sammenligner talstrenge
+        // numerisk). Den samme liste bruges til noeglen OG til kaldet, saa et
+        // cachet svar altid svarer til noeglen. Hashet, saa en lang liste ikke
+        // giver en noegle, som fx memcached afviser.
         $sorted = array_values(array_unique(array_map('strval', $cvrs)));
-        sort($sorted);
-        $cacheKey = 'metis:roles_by_cvr:'.implode(',', $sorted);
+        sort($sorted, SORT_STRING);
+        $cacheKey = 'metis:roles_by_cvr:'.sha1(implode(',', $sorted));
 
         if (is_array($cached = $this->fraCache($cacheKey))) {
             return $cached;
         }
 
-        $result = $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $cvrs]);
+        $result = $this->post('/v1/cvr/roles-by-cvr', ['cvr_numbers' => $sorted]);
 
-        if (is_array($result['companies'] ?? null)) {
+        // Kun et svar MED indhold caches. En tom liste betyder "ikke i registret
+        // endnu", og det maa ikke blive staaende i en time, efter selskabet er
+        // indlaest.
+        if (is_array($result['companies'] ?? null) && $result['companies'] !== []) {
             Cache::put($cacheKey, $result, 3600);
         }
 

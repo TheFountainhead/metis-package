@@ -450,7 +450,7 @@ it('cacher IKKE et fejlsvar fra roles-by-cvr', function () {
 
 it('roller: forskellige cvr-lister deler ikke cache, og rækkefølgen er ligegyldig', function () {
     Http::fake([
-        '*/v1/cvr/roles-by-cvr' => Http::response(['data' => ['companies' => []]]),
+        '*/v1/cvr/roles-by-cvr' => Http::response(['data' => ['companies' => [['cvr' => '11111111', 'roles' => []]]]]),
     ]);
 
     $api = new RegistryApi;
@@ -461,6 +461,36 @@ it('roller: forskellige cvr-lister deler ikke cache, og rækkefølgen er ligegyl
     $api->fetchRolesByCvr(['11111111', '22222222']);
     $api->fetchRolesByCvr(['22222222', '11111111']);
     Http::assertSentCount(3);
+});
+
+it('cacher IKKE en tom roller-liste: selskabet kan blive indlæst bagefter', function () {
+    Http::fake([
+        '*/v1/cvr/roles-by-cvr' => Http::sequence()
+            ->push(['data' => ['companies' => []]])
+            ->push(['data' => ['companies' => [['cvr' => '12345678', 'roles' => []]]]]),
+    ]);
+
+    $api = new RegistryApi;
+    expect($api->fetchRolesByCvr(['12345678'])['companies'])->toBe([]);
+    expect($api->fetchRolesByCvr(['12345678'])['companies'])->toHaveCount(1);
+    Http::assertSentCount(2);
+});
+
+it('roller: dubletter og talstrenge giver samme nøgle og samme kald', function () {
+    Http::fake([
+        '*/v1/cvr/roles-by-cvr' => Http::response(['data' => ['companies' => [['cvr' => '12345678', 'roles' => []]]]]),
+    ]);
+
+    $api = new RegistryApi;
+    $api->fetchRolesByCvr(['12345678', '12345678']);
+    $api->fetchRolesByCvr(['12345678']);
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($req) => $req['cvr_numbers'] === ['12345678']);
+
+    // Foranstillet nul: "01234567" og "1234567" er to forskellige opslag.
+    $api->fetchRolesByCvr(['1234567', '01234567']);
+    $api->fetchRolesByCvr(['01234567', '1234567']);
+    Http::assertSentCount(2);
 });
 
 it('cacher company-structure under den nye nøgle-konvention', function () {
