@@ -70,6 +70,7 @@ it('henter ejendomme omkring adressen og sender kun hvidlistede felter ud', func
         ->and($svar['naboer'][0])->toEqual([
             'adresse' => 'Roskildevej 12', 'postnr' => '2000', 'by' => 'Frederiksberg',
             'byggeaar' => 1932, 'areal' => 180, 'vurdering' => 4500000,
+            'url' => 'http://localhost/lookup/address/Roskildevej%2012%2C%202000%20Frederiksberg',
             'lat' => 55.677, 'lng' => 12.569,
         ])
         ->and($svar['radius'])->toBe(250)
@@ -174,5 +175,5 @@ it('🚨 kortets x-data kan parses som JavaScript med naboejendomme', function (
     @unlink($fil);
 
     expect($kode)->toBe(0, implode("\n", $ud))
-        ->and($js)->toContain('hentNaboer')->toContain('__Q__');
+        ->and($js)->toContain('hentNaboer')->toContain('n.url')->not->toContain('route(');
 });

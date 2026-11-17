@@ -15,7 +15,6 @@
             searchType: @js($searchType),
             markers: @js($markers),
             query: @js($query),
-            naboUrl: @js(route('metis.lookup', ['type' => 'address', 'query' => '__Q__'])),
             naboLag: null,
             layersUnavailable: @js($layersUnavailable),
 
@@ -255,10 +254,9 @@
                     l.textContent = tekst;
                     boks.appendChild(l);
                 }
-                if (n.adresse) {
-                    const kode = encodeURIComponent([n.adresse, by].filter(Boolean).join(', '));
+                if (n.url) {
                     const a = document.createElement('a');
-                    a.href = this.naboUrl.replace('__Q__', () => kode);
+                    a.href = n.url;
                     a.textContent = 'Åbn ejendom';
                     a.style.cssText = 'display:inline-block;margin-top:4px;';
                     boks.appendChild(a);

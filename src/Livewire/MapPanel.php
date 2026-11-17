@@ -8,6 +8,7 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 use TheFountainhead\Metis\Services\LookupAccess;
 use TheFountainhead\Metis\Services\RegistryApi;
+use TheFountainhead\Metis\View\Components\MetisLink;
 
 class MapPanel extends Component
 {
@@ -115,6 +116,11 @@ class MapPanel extends Component
             if (abs($rLat - $lat) < 0.00005 && abs($rLng - $lng) < 0.00005) {
                 continue;
             }
+            // Linket bygges af MetisLink (samme guards som alle andre opslagslinks);
+            // null, hvis adressen ikke kan slås op, og så vises ingen "Åbn"-knap.
+            $adresseTekst = trim(($r['address'] ?? '').', '.trim(($r['postal_code'] ?? '').' '.($r['city'] ?? '')), ' ,');
+            $url = ($r['address'] ?? null) ? MetisLink::urlFor('address', $adresseTekst) : null;
+
             // Hvidliste: intet andet end disse felter forlader serveren.
             $naboer[] = [
                 'adresse' => $r['address'] ?? null,
@@ -123,6 +129,7 @@ class MapPanel extends Component
                 'byggeaar' => $r['year_built'] ?? null,
                 'areal' => $r['area_building'] ?? null,
                 'vurdering' => $r['valuation'] ?? null,
+                'url' => $url,
                 'lat' => (float) $rLat,
                 'lng' => (float) $rLng,
             ];
