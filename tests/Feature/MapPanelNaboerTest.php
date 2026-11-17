@@ -140,6 +140,21 @@ it('beholder andre lejligheder i samme bygning, men ikke selve adressen', functi
     expect($adresser)->toBe(['Roskildevej 10, 2. th']);
 });
 
+it('kender selve ejendommen på matrikel_id, også når adressen ikke kan deles', function () {
+    Http::fake([
+        '*/v1/map/layers' => Http::response(['data' => []]),
+        '*/v1/property/analysis' => Http::response(['data' => ['property' => ['matrikel_id' => 'X1', 'coordinates' => ['lat' => 55.7, 'lng' => 12.5]]]]),
+        '*/v1/property-explore' => Http::response(naboSvar([
+            naboRaekke(['matrikel_id' => 'X1', 'address' => 'Strandvejen 100B']),
+            naboRaekke(['matrikel_id' => 'X2', 'address' => 'Strandvejen 100 B']),
+        ])),
+    ]);
+
+    $adresser = array_column((new MapPanel)->hentNaboer('Strandvejen 100 B, 2900 Hellerup', 250)['naboer'], 'adresse');
+
+    expect($adresser)->toBe(['Strandvejen 100 B']);
+});
+
 it('cacher et svar kort, men aldrig uden godkendelse', function () {
     fakeNaboer(['svar' => Http::response(naboSvar([naboRaekke()]))]);
 

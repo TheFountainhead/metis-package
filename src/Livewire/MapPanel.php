@@ -27,6 +27,9 @@ class MapPanel extends Component
     /** Radier (meter) brugeren kan vælge til naboejendomme. */
     public const NABO_RADIER = [100, 250, 500];
 
+    /** Forvalgt radius; bruges af både serveren og kortets kontrol. */
+    public const NABO_STANDARD_RADIUS = 250;
+
     /** Så mange ejendomme hentes højst pr. opslag (registry-apis loft er 50). */
     public const NABO_MAKS = 50;
 
@@ -77,9 +80,9 @@ class MapPanel extends Component
      *
      * @return array{error: string}|array{naboer: list<array<string, mixed>>, flere: bool, radius: int}
      */
-    public function hentNaboer(string $query, int $radius = 250): array
+    public function hentNaboer(string $query, int $radius = self::NABO_STANDARD_RADIUS): array
     {
-        $radius = in_array($radius, self::NABO_RADIER, true) ? $radius : 250;
+        $radius = in_array($radius, self::NABO_RADIER, true) ? $radius : self::NABO_STANDARD_RADIUS;
         $api = app(RegistryApi::class);
 
         // Kvotefejl vises som kvotefejl; alle andre undtagelser får lov at rapportere.
@@ -126,8 +129,11 @@ class MapPanel extends Component
             return ['error' => ($svar['status'] ?? null) === 429 ? 'kvote' : 'fejl'];
         }
 
-        // Selve ejendommen har allerede sin markør. Matches på adressen og ikke på koordinater:
-        // andre lejligheder i samme bygning deler koordinater og skal blive.
+        // Selve ejendommen har allerede sin markør. Den kendes på matrikel_id fra analysen; findes
+        // det ikke, sammenlignes adressen. Aldrig koordinater: andre lejligheder i samme bygning
+        // deler koordinater og skal blive. 🪤 parseAddress() kan ikke dele alle adresser
+        // (husbogstav, etage), så adressematchet er kun en reserve.
+        $selvId = $analysis['property']['matrikel_id'] ?? null;
         $p = $api->parseAddress($query);
         $selv = mb_strtolower(trim(($p['street'] ?? '').' '.($p['number'] ?? '')));
 
@@ -138,7 +144,10 @@ class MapPanel extends Component
             if ($rLat === null || $rLng === null) {
                 continue;
             }
-            if ($selv !== '' && mb_strtolower(trim((string) ($r['address'] ?? ''))) === $selv) {
+            if ($selvId !== null && (string) ($r['matrikel_id'] ?? '') === (string) $selvId) {
+                continue;
+            }
+            if ($selvId === null && $selv !== '' && mb_strtolower(trim((string) ($r['address'] ?? ''))) === $selv) {
                 continue;
             }
             // Linket bygges af MetisLink (samme guards som alle andre opslagslinks);

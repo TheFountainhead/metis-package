@@ -15,9 +15,10 @@
             searchType: @js($searchType),
             markers: @js($markers),
             radier: @js(\TheFountainhead\Metis\Livewire\MapPanel::NABO_RADIER),
-            naboLag: null,
+            standardRadius: @js(\TheFountainhead\Metis\Livewire\MapPanel::NABO_STANDARD_RADIUS),
             naboSerie: 0,
             naboNulstil: null,
+            naboKontrol: null,
             layersUnavailable: @js($layersUnavailable),
 
             destroy() {
@@ -43,6 +44,11 @@
                     this.naboSerie++;
                     this.skjulNaboer();
                     if (this.naboNulstil) this.naboNulstil();
+                    // Flyttet af en soegning uden adresse: der er ingen adresse at hente naboer til.
+                    if (!$wire.query && this.naboKontrol) {
+                        this.naboKontrol.remove();
+                        this.naboKontrol = null;
+                    }
 
                     if (this.lat && this.lng) {
                         this.map.setView([this.lat, this.lng], 16);
@@ -170,7 +176,7 @@
                             const o = document.createElement('option');
                             o.value = String(r);
                             o.textContent = r + ' m';
-                            if (r === 250) o.selected = true;
+                            if (r === self.standardRadius) o.selected = true;
                             radiusValg.appendChild(o);
                         }
                         const knap = document.createElement('button');
@@ -191,16 +197,23 @@
                             knap.disabled = true;
                             radiusValg.disabled = true;
                             status.textContent = 'Henter ...';
-                            const tekst = await self.visNaboer(Number(radiusValg.value));
-                            knap.disabled = false;
-                            radiusValg.disabled = false;
+                            let tekst;
+                            try {
+                                tekst = await self.visNaboer(Number(radiusValg.value));
+                            } catch (e) {
+                                self.skjulNaboer();
+                                tekst = 'Naboejendomme kunne ikke vises.';
+                            } finally {
+                                knap.disabled = false;
+                                radiusValg.disabled = false;
+                            }
                             // null = kortet er flyttet imens; kontrollen er allerede nulstillet.
                             if (tekst === null) return;
                             status.textContent = tekst;
-                            knap.textContent = self.naboLag ? 'Skjul naboejendomme' : 'Vis naboejendomme';
+                            knap.textContent = self.harNaboer() ? 'Skjul naboejendomme' : 'Vis naboejendomme';
                         };
                         knap.addEventListener('click', () => {
-                            if (self.naboLag) {
+                            if (self.harNaboer()) {
                                 self.skjulNaboer();
                                 knap.textContent = 'Vis naboejendomme';
                                 status.textContent = '';
@@ -208,17 +221,25 @@
                             }
                             hent();
                         });
-                        radiusValg.addEventListener('change', () => { if (self.naboLag) hent(); });
+                        // Ogsaa efter en fejl: et nyt radiusvalg proever igen.
+                        radiusValg.addEventListener('change', () => { if (self.harNaboer() || status.textContent !== '') hent(); });
                         return boks;
                     },
                 });
-                new Kontrol().addTo(this.map);
+                this.naboKontrol = new Kontrol().addTo(this.map);
+            },
+
+            // Laget ligger paa DOM-elementet og ikke i Alpines reaktive data, ligesom selve kortet:
+            // Leaflet identificerer objekter ved identitet, og en Proxy er ikke samme objekt.
+            harNaboer() {
+                return !!this.$refs.map._metisNaboLag;
             },
 
             skjulNaboer() {
-                if (this.naboLag) {
-                    this.map.removeLayer(this.naboLag);
-                    this.naboLag = null;
+                const lag = this.$refs.map._metisNaboLag;
+                if (lag) {
+                    this.map.removeLayer(lag);
+                    this.$refs.map._metisNaboLag = null;
                 }
             },
 
@@ -252,7 +273,7 @@
                         .addTo(lag);
                 }
                 lag.addTo(this.map);
-                this.naboLag = lag;
+                this.$refs.map._metisNaboLag = lag;
                 if (svar.naboer.length === 0) {
                     return 'Ingen andre ejendomme inden for ' + svar.radius + ' m.';
                 }
