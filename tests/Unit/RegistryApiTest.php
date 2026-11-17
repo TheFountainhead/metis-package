@@ -1079,3 +1079,21 @@ it('resolve_ip: også de to Http::pool-veje bruger den', function () {
     expect($info)->toBe(array_fill(0, 2, ['registry-api.test:443:127.0.0.1']))
         ->and($struktur)->toBe(array_fill(0, 2, ['registry-api.test:443:127.0.0.1']));
 });
+
+it('resolve_ip: en eksplicit port i URL\'en bruges, og skemaet er ligegyldigt med store bogstaver', function () {
+    config(['metis.registry_api.resolve_ip' => '127.0.0.1', 'metis.registry_api.url' => 'https://registry-api.test:8443/api']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:8443:127.0.0.1']]);
+
+    config(['metis.registry_api.url' => 'HTTP://registry-api.test/api']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:80:127.0.0.1']]);
+});
+
+it('resolve_ip: IPv6 ignoreres (kræver klammer i RESOLVE-linjen), IPv4 virker', function () {
+    config(['metis.registry_api.url' => 'https://registry-api.test/api']);
+
+    config(['metis.registry_api.resolve_ip' => '::1']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([null]);
+
+    config(['metis.registry_api.resolve_ip' => '10.1.2.3']);
+    expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:443:10.1.2.3']]);
+});

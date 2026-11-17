@@ -32,7 +32,7 @@ class MetisServiceProvider extends ServiceProvider
      * en pakke-opdatering lukke den anonyme proeve i prod.
      *
      * Kun ét niveau: vaertens lister (fx `free_email_domains`) erstatter
-     * pakkens, som foer.
+     * pakkens, som foer. Gaelder `gating` og `registry_api`.
      */
     protected function fletGatingNoegler(): void
     {
@@ -41,10 +41,17 @@ class MetisServiceProvider extends ServiceProvider
             return;
         }
 
-        $pakke = (require __DIR__.'/../config/metis.php')['gating'] ?? [];
+        $pakkeConfig = require __DIR__.'/../config/metis.php';
         $config = $this->app->make('config');
 
-        $config->set('metis.gating', array_merge($pakke, (array) $config->get('metis.gating', [])));
+        // 🪤 `registry_api` har samme fælde: værtens publicerede config har kun
+        // `url` og `key`, så en ny nøgle her (`resolve_ip`) nåede aldrig frem, og
+        // `REGISTRY_API_RESOLVE_IP` virkede ikke uden fejl (review af #234).
+        foreach (['gating', 'registry_api'] as $afsnit) {
+            $pakke = $pakkeConfig[$afsnit] ?? [];
+
+            $config->set("metis.{$afsnit}", array_merge($pakke, (array) $config->get("metis.{$afsnit}", [])));
+        }
     }
 
     public function boot(): void

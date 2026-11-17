@@ -154,11 +154,16 @@ class RegistryApi
         $url = (string) config('metis.registry_api.url');
         $host = parse_url($url, PHP_URL_HOST);
 
-        if ($ip === '' || ! filter_var($ip, FILTER_VALIDATE_IP) || ! $host) {
+        // Kun IPv4: en IPv6-adresse skal staa i [klammer] i RESOLVE-linjen, og det
+        // er ikke noedvendigt her (registry-api ligger paa samme server).
+        if ($ip === '' || ! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || ! $host) {
             return [];
         }
 
-        $port = parse_url($url, PHP_URL_SCHEME) === 'http' ? 80 : 443;
+        // Porten staar i URL'en, hvis den er angivet; ellers fra skemaet (uanset
+        // store/smaa bogstaver). Ellers matcher RESOLVE-linjen aldrig.
+        $port = parse_url($url, PHP_URL_PORT)
+            ?? (strtolower((string) parse_url($url, PHP_URL_SCHEME)) === 'http' ? 80 : 443);
 
         return ['curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"]]];
     }
@@ -947,11 +952,12 @@ class RegistryApi
 
         $token = session('metis_user_token') ?: config('metis.registry_api.key');
         $baseUrl = config('metis.registry_api.url');
+        $transport = $this->transportOptions();
 
         $responses = Http::pool(fn ($pool) => collect($missing)
             ->map(fn ($cvr) => $pool->as($cvr)
                 ->withToken($token)
-                ->withOptions($this->transportOptions())
+                ->withOptions($transport)
                 ->acceptJson()
                 ->timeout(30)
                 ->baseUrl($baseUrl)
@@ -1129,11 +1135,12 @@ class RegistryApi
 
         $token = session('metis_user_token') ?: config('metis.registry_api.key');
         $baseUrl = config('metis.registry_api.url');
+        $transport = $this->transportOptions();
 
         $responses = Http::pool(fn ($pool) => collect($cvrs)
             ->map(fn ($cvr) => $pool->as($cvr)
                 ->withToken($token)
-                ->withOptions($this->transportOptions())
+                ->withOptions($transport)
                 ->acceptJson()
                 ->timeout(30)
                 ->baseUrl($baseUrl)
