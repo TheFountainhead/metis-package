@@ -173,7 +173,9 @@
                                                     <div>
                                                         <dt class="inline text-zinc-500">{{ __('Rente') }}:</dt>
                                                         <dd class="inline">
-                                                            @if($rente !== null)
+                                                            @if($rente !== null && ($row['interest_rate_nominal'] ?? false))
+                                                                {{ __('rammerente') }} {{ number_format($rente, 2, ',', '.') }} % {{ __('(juridisk maksimum, ikke den faktiske rente)') }}
+                                                            @elseif($rente !== null)
                                                                 {{ number_format($rente, 2, ',', '.') }} %
                                                             @elseif($renteType === 'variabel')
                                                                 {{ __('variabel, sats ikke oplyst') }}

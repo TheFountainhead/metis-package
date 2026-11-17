@@ -156,7 +156,7 @@ it('stigen kan foldes ud: oplyst rente og udløb vises, variabel uden sats forkl
     session(['metis_user_token' => '19|abc']);
     $e = cockpitEngagement();
     $e['properties'][0]['ladder'][0] += ['interest_rate' => '2.68', 'interest_rate_type' => 'fast', 'maturity_date' => '2046-03-01'];
-    $e['properties'][0]['ladder'][1] += ['interest_rate' => null, 'interest_rate_type' => 'variabel', 'maturity_date' => null];
+    $e['properties'][0]['ladder'][1] += ['interest_rate' => 10.0, 'interest_rate_nominal' => true, 'interest_rate_type' => 'fast', 'maturity_date' => null];
     // 'fast' uden sats og uden udløb, og en tom streng: ingenting at folde ud, og aldrig 0,00 %
     $e['properties'][0]['ladder'][2] += ['interest_rate' => '', 'interest_rate_type' => 'fast', 'maturity_date' => null];
     Http::fake(['*/v1/engagements/*' => Http::response(['data' => $e, 'meta' => cockpitMeta()])]);
@@ -164,9 +164,12 @@ it('stigen kan foldes ud: oplyst rente og udløb vises, variabel uden sats forkl
     $html = Livewire::test(Engagement::class, ['key' => 'c22222222'])
         ->assertSee('2,68 %')
         ->assertSee('01.03.2046')
-        ->assertSee('variabel, sats ikke oplyst')
-        ->assertDontSee('0,00 %')
+        ->assertSee('rammerente 10,00 %')
+        ->assertSee('juridisk maksimum')
         ->html();
+
+    // Aldrig en falsk nul-rente (10,00 % må ikke tælle som 0,00 %).
+    expect(preg_match('/(?<![\d,.])0,00 %/', $html))->toBe(0);
 
     // Præcis to foldud-rækker, begge skjulte fra start, hver med en knap der styrer dem.
     expect(substr_count($html, 'data-lien-detalje'))->toBe(2)
