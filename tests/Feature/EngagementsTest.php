@@ -152,6 +152,23 @@ it('engagementssiden viser stigen med långiverens navn, foranstående pant og �
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/v1/engagements/c22222222'));
 });
 
+it('stigen kan foldes ud: oplyst rente og udløb vises, variabel uden sats forklares, og række uden data er ikke klikbar', function () {
+    session(['metis_user_token' => '19|abc']);
+    $e = cockpitEngagement();
+    $e['properties'][0]['ladder'][0] += ['interest_rate' => 2.68, 'interest_rate_type' => 'fast', 'maturity_date' => '2046-03-01'];
+    $e['properties'][0]['ladder'][1] += ['interest_rate' => null, 'interest_rate_type' => 'variabel', 'maturity_date' => null];
+    Http::fake(['*/v1/engagements/*' => Http::response(['data' => $e, 'meta' => cockpitMeta()])]);
+
+    Livewire::test(Engagement::class, ['key' => 'c22222222'])
+        ->assertSee('2,68 %')
+        ->assertSee('01.03.2046')
+        ->assertSee('variabel, sats ikke oplyst')
+        // Række 3 mangler alle tre felter: ingen foldud, ingen falsk 0,00 %
+        ->assertDontSee('0,00 %')
+        ->assertDontSee('ikke oplyst')
+        ->assertSeeHtmlInOrder(['role="button"', 'role="button"']);
+});
+
 it('engagementssiden uden ændringer siger det med dato, ikke en tom boks', function () {
     session(['metis_user_token' => '19|abc']);
     // array_replace_recursive kan ikke TØMME en liste; sæt den eksplicit.

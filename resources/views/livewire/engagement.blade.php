@@ -123,9 +123,10 @@
                                 <th class="px-3 py-2 text-left font-medium">{{ __('Tinglyst') }}</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-zinc-100">
                             @foreach($property['ladder'] ?? [] as $row)
-                                <tr wire:key="lien-{{ $property['id'] ?? 'p' }}-{{ $row['id'] ?? $loop->index }}" class="{{ ($row['is_own'] ?? false) ? 'bg-wheat/60 font-medium' : '' }}">
+                                @php($harDetaljer = ($row['interest_rate'] ?? null) !== null || ($row['interest_rate_type'] ?? null) || ($row['maturity_date'] ?? null))
+                                <tbody wire:key="lien-{{ $property['id'] ?? 'p' }}-{{ $row['id'] ?? $loop->index }}" x-data="{ aaben: false }" class="border-t border-zinc-100">
+                                <tr @if($harDetaljer) @click="aaben = !aaben" role="button" tabindex="0" @keydown.enter="aaben = !aaben" :aria-expanded="aaben" @endif class="{{ ($row['is_own'] ?? false) ? 'bg-wheat/60 font-medium' : '' }} {{ $harDetaljer ? 'cursor-pointer hover:bg-zinc-50' : '' }}">
                                     <td class="px-3 py-2 tabular-nums">{{ $row['priority'] ?? '?' }}</td>
                                     <td class="px-3 py-2 text-xs whitespace-nowrap">
                                         {{-- Tekst, ikke farvede piller: rækkens tone og vægt bærer "eget pant",
@@ -146,8 +147,31 @@
                                     <td class="px-3 py-2 text-right tabular-nums">{{ $kr($row['amount_kr'] ?? 0) }}</td>
                                     <td class="px-3 py-2 text-zinc-600">{{ $dato($row['registered_at'] ?? null) }}</td>
                                 </tr>
+                                    @if($harDetaljer)
+                                        <tr x-show="aaben" x-cloak class="bg-zinc-50 text-xs text-zinc-600">
+                                            <td colspan="7" class="px-3 py-2">
+                                                <dl class="flex flex-wrap gap-x-8 gap-y-1">
+                                                    <div><dt class="inline text-zinc-500">{{ __('Rente') }}:</dt>
+                                                        <dd class="inline">
+                                                            @if(($row['interest_rate'] ?? null) !== null)
+                                                                {{ number_format((float) $row['interest_rate'], 2, ',', '.') }} %
+                                                            @elseif(($row['interest_rate_type'] ?? null) === 'variabel')
+                                                                {{ __('variabel, sats ikke oplyst') }}
+                                                            @elseif(($row['interest_rate_type'] ?? null) === 'kontantlaan')
+                                                                {{ __('kontantlån, sats ikke oplyst') }}
+                                                            @else
+                                                                {{ __('ikke oplyst') }}
+                                                            @endif
+                                                        </dd></div>
+                                                    @if($row['maturity_date'] ?? null)
+                                                        <div><dt class="inline text-zinc-500">{{ __('Udløb') }}:</dt> <dd class="inline">{{ $dato($row['maturity_date']) }}</dd></div>
+                                                    @endif
+                                                </dl>
+                                            </td>
+                                        </tr>
+                                    @endif
+                                </tbody>
                             @endforeach
-                        </tbody>
                     </table>
                 </div>
             </section>
