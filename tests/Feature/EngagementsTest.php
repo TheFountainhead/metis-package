@@ -159,14 +159,16 @@ it('stigen kan foldes ud: oplyst rente og udløb vises, variabel uden sats forkl
     $e['properties'][0]['ladder'][1] += ['interest_rate' => null, 'interest_rate_type' => 'variabel', 'maturity_date' => null];
     Http::fake(['*/v1/engagements/*' => Http::response(['data' => $e, 'meta' => cockpitMeta()])]);
 
-    Livewire::test(Engagement::class, ['key' => 'c22222222'])
+    $html = Livewire::test(Engagement::class, ['key' => 'c22222222'])
         ->assertSee('2,68 %')
         ->assertSee('01.03.2046')
         ->assertSee('variabel, sats ikke oplyst')
         // Række 3 mangler alle tre felter: ingen foldud, ingen falsk 0,00 %
         ->assertDontSee('0,00 %')
-        ->assertDontSee('ikke oplyst')
-        ->assertSeeHtmlInOrder(['role="button"', 'role="button"']);
+        ->html();
+
+    // Præcis to klikbare rækker (række 3 har ingen data), ikke tre.
+    expect(substr_count($html, 'role="button"'))->toBe(2);
 });
 
 it('engagementssiden uden ændringer siger det med dato, ikke en tom boks', function () {
