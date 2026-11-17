@@ -152,23 +152,26 @@ it('engagementssiden viser stigen med långiverens navn, foranstående pant og �
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/v1/engagements/c22222222'));
 });
 
-it('stigen kan foldes ud: oplyst rente og udløb vises, variabel uden sats forklares, og række uden data er ikke klikbar', function () {
+it('stigen kan foldes ud: oplyst rente og udløb vises, variabel uden sats forklares, og rækker uden data har ingen foldud', function () {
     session(['metis_user_token' => '19|abc']);
     $e = cockpitEngagement();
-    $e['properties'][0]['ladder'][0] += ['interest_rate' => 2.68, 'interest_rate_type' => 'fast', 'maturity_date' => '2046-03-01'];
+    $e['properties'][0]['ladder'][0] += ['interest_rate' => '2.68', 'interest_rate_type' => 'fast', 'maturity_date' => '2046-03-01'];
     $e['properties'][0]['ladder'][1] += ['interest_rate' => null, 'interest_rate_type' => 'variabel', 'maturity_date' => null];
+    // 'fast' uden sats og uden udløb, og en tom streng: ingenting at folde ud, og aldrig 0,00 %
+    $e['properties'][0]['ladder'][2] += ['interest_rate' => '', 'interest_rate_type' => 'fast', 'maturity_date' => null];
     Http::fake(['*/v1/engagements/*' => Http::response(['data' => $e, 'meta' => cockpitMeta()])]);
 
     $html = Livewire::test(Engagement::class, ['key' => 'c22222222'])
         ->assertSee('2,68 %')
         ->assertSee('01.03.2046')
         ->assertSee('variabel, sats ikke oplyst')
-        // Række 3 mangler alle tre felter: ingen foldud, ingen falsk 0,00 %
         ->assertDontSee('0,00 %')
         ->html();
 
-    // Præcis to klikbare rækker (række 3 har ingen data), ikke tre.
-    expect(substr_count($html, 'role="button"'))->toBe(2);
+    // Præcis to foldud-rækker, begge skjulte fra start, hver med en knap der styrer dem.
+    expect(substr_count($html, 'data-lien-detalje'))->toBe(2)
+        ->and(substr_count($html, 'x-show="aaben" style="display:none"'))->toBe(2)
+        ->and(substr_count($html, 'aria-controls="lien-detalje-1-'))->toBe(2);
 });
 
 it('engagementssiden uden ændringer siger det med dato, ikke en tom boks', function () {
