@@ -6,6 +6,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class RegistryApi
 {
@@ -150,13 +151,30 @@ class RegistryApi
      */
     protected function transportOptions(): array
     {
+        // Constant for instansen: beregnes (og eventuelt advares om) én gang.
+        return $this->transportOptions ??= $this->beregnTransportOptions();
+    }
+
+    /** @var array<string, mixed>|null */
+    private ?array $transportOptions = null;
+
+    private function beregnTransportOptions(): array
+    {
         $ip = trim((string) config('metis.registry_api.resolve_ip'));
         $url = (string) config('metis.registry_api.url');
         $host = parse_url($url, PHP_URL_HOST);
 
         // Kun IPv4: en IPv6-adresse skal staa i [klammer] i RESOLVE-linjen, og det
         // er ikke noedvendigt her (registry-api ligger paa samme server).
-        if ($ip === '' || ! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || ! $host) {
+        if ($ip === '') {
+            return [];
+        }
+
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || ! $host) {
+            // En sat, men afvist vaerdi maa ikke blive til en tavs "virker ikke":
+            // kaldene gaar bare stadig via det offentlige domaene.
+            Log::warning('metis.registry_api.resolve_ip ignoreret: kraever en gyldig IPv4-adresse og en URL med vaertsnavn.', ['resolve_ip' => $ip]);
+
             return [];
         }
 

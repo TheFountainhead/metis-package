@@ -4,6 +4,7 @@ use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use TheFountainhead\Metis\Services\RegistryApi;
 
 it('fetches company by CVR', function () {
@@ -1096,4 +1097,26 @@ it('resolve_ip: IPv6 ignoreres (kræver klammer i RESOLVE-linjen), IPv4 virker',
 
     config(['metis.registry_api.resolve_ip' => '10.1.2.3']);
     expect(resolveOptionsSeenBy(fn ($api) => $api->fetchRolesByCvr(['12345678'])))->toBe([['registry-api.test:443:10.1.2.3']]);
+});
+
+it('resolve_ip: en sat men afvist værdi giver én advarsel i loggen, ikke tavshed', function () {
+    Log::spy();
+    config(['metis.registry_api.resolve_ip' => 'ikke-en-ip', 'metis.registry_api.url' => 'https://registry-api.test/api']);
+    Http::fake(['*' => Http::response(['data' => ['companies' => [['cvr' => '1', 'roles' => []]]]])]);
+
+    $api = new RegistryApi;
+    $api->fetchRolesByCvr(['11111111']);
+    $api->fetchRolesByCvr(['22222222']);
+
+    Log::shouldHaveReceived('warning')->withArgs(fn ($m) => str_contains($m, 'resolve_ip ignoreret'))->once();
+});
+
+it('resolve_ip: tom værdi giver ingen advarsel', function () {
+    Log::spy();
+    config(['metis.registry_api.resolve_ip' => null]);
+    Http::fake(['*' => Http::response(['data' => ['companies' => [['cvr' => '1', 'roles' => []]]]])]);
+
+    (new RegistryApi)->fetchRolesByCvr(['11111111']);
+
+    Log::shouldNotHaveReceived('warning');
 });
