@@ -188,7 +188,13 @@ it('kortets kontrol til fri udforskning er med for piloter og kan parses som Jav
     expect($kode)->toBe(0, implode("\n", $ud))
         ->and($js)->toContain('kanUdforske: true')->toContain('Udforsk kortet frit')->toContain('hentUdsnit')
         ->toContain('minZoom: '.MapPanel::UDSNIT_MIN_ZOOM)
-        // Oprydning: lytter, timere og forsinkede svar maa ikke overleve kortet.
-        ->toContain("this.map.off('moveend', this.udsnitLytter)")->toContain('clearTimeout(this.udsnitRetry)')
         ->toContain('if (this.udsnitLytter) this.slaaUdsnitFra(this.udsnitStatusEl)');
+
+    // Oprydning: lytter, timere og forsinkede svar maa ikke overleve kortet. Kun destroy() tælles med
+    // (samme linjer findes også i slaaUdsnitFra, så en søgning i hele teksten beviser intet).
+    $start = strpos($js, 'destroy() {');
+    $destroy = substr($js, $start, strpos($js, "},\n", $start) - $start);
+    expect($destroy)->toContain("this.map.off('moveend', this.udsnitLytter)")
+        ->toContain('clearTimeout(this.udsnitTid)')->toContain('clearTimeout(this.udsnitRetry)')
+        ->toContain('this.udsnitSerie++')->toContain('this.naboSerie++');
 });
