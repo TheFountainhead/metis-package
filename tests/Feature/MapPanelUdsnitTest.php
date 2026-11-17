@@ -144,6 +144,13 @@ it('en fejl på side to giver fejl for hele udsnittet og cacher intet', function
         ->and(udsnit())->toHaveKey('naboer'); // ikke cachet fejl: næste forsøg henter igen
 });
 
+it('hentUdsnit og hentNaboer er Renderless (ingen server-rendering pr. panorering)', function () {
+    foreach (['hentUdsnit', 'hentNaboer'] as $metode) {
+        $attr = (new ReflectionMethod(MapPanel::class, $metode))->getAttributes(\Livewire\Attributes\Renderless::class);
+        expect($attr)->toHaveCount(1);
+    }
+});
+
 it('oversætter 429 til for_mange', function () {
     Http::fake(['*/v1/property-explore' => Http::response(['message' => 'x'], 429)]);
 
@@ -170,12 +177,18 @@ it('kortets kontrol til fri udforskning er med for piloter og kan parses som Jav
 
     preg_match('/x-data="(.*?)"\s+x-ref=/s', $html, $m);
     $js = html_entity_decode($m[1], ENT_QUOTES);
-    $fil = tempnam(sys_get_temp_dir(), 'xdata').'.js';
+    // tempnam() opretter filen; omdøbes til .js (node --check kræver endelsen), og den omdøbte slettes.
+    $tmp = tempnam(sys_get_temp_dir(), 'xdata');
+    $fil = $tmp.'.js';
+    rename($tmp, $fil);
     file_put_contents($fil, '('.$js.')');
     exec('node --check '.escapeshellarg($fil).' 2>&1', $ud, $kode);
     @unlink($fil);
 
     expect($kode)->toBe(0, implode("\n", $ud))
         ->and($js)->toContain('kanUdforske: true')->toContain('Udforsk kortet frit')->toContain('hentUdsnit')
-        ->toContain('minZoom: '.MapPanel::UDSNIT_MIN_ZOOM);
+        ->toContain('minZoom: '.MapPanel::UDSNIT_MIN_ZOOM)
+        // Oprydning: lytter, timere og forsinkede svar maa ikke overleve kortet.
+        ->toContain("this.map.off('moveend', this.udsnitLytter)")->toContain('clearTimeout(this.udsnitRetry)')
+        ->toContain('if (this.udsnitLytter) this.slaaUdsnitFra(this.udsnitStatusEl)');
 });

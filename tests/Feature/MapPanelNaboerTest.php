@@ -191,10 +191,25 @@ it('melder flere, når der er mere end de viste', function () {
     expect((new MapPanel)->hentNaboer(ADRESSE, 500)['flere'])->toBeTrue();
 });
 
-it('oversætter 429 fra registry-api til kvote', function () {
+it('oversætter 429 fra registry-api til for_mange (deres throttle, ikke vores dagskvote)', function () {
     fakeNaboer(['svar' => Http::response(['message' => 'Too Many'], 429)]);
 
-    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'kvote']);
+    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'for_mange']);
+});
+
+it('🚨 falder tilbage til standardsortering, hvis registry-api endnu ikke kender distance_asc (422)', function () {
+    Http::fake([
+        '*/v1/map/layers' => Http::response(['data' => []]),
+        '*/v1/property/analysis' => Http::response(['data' => ['property' => ['coordinates' => ['lat' => 55.6761, 'lng' => 12.5683]]]]),
+        '*/v1/property-explore' => Http::sequence()
+            ->push(['message' => 'The selected sort is invalid.'], 422)
+            ->push(naboSvar([naboRaekke()])),
+    ]);
+
+    $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
+
+    expect($svar)->toHaveKey('naboer')->and($svar['naboer'])->toHaveCount(1);
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore') && ! isset($r['sort']));
 });
 
 it('oversætter andre fejl fra registry-api til fejl', function () {
@@ -225,7 +240,10 @@ it('🚨 kortets x-data kan parses som JavaScript med naboejendomme', function (
     expect($m)->toHaveCount(2);
 
     $js = html_entity_decode($m[1], ENT_QUOTES);
-    $fil = tempnam(sys_get_temp_dir(), 'xdata').'.js';
+    // tempnam() opretter filen; omdøbes til .js (node --check kræver endelsen), og den omdøbte slettes.
+    $tmp = tempnam(sys_get_temp_dir(), 'xdata');
+    $fil = $tmp.'.js';
+    rename($tmp, $fil);
     file_put_contents($fil, '('.$js.')');
     exec('node --check '.escapeshellarg($fil).' 2>&1', $ud, $kode);
     @unlink($fil);

@@ -6,6 +6,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Renderless;
 use Livewire\Component;
 use TheFountainhead\Metis\Services\LookupAccess;
 use TheFountainhead\Metis\Services\QuotaExceededException;
@@ -100,6 +101,7 @@ class MapPanel extends Component
      *
      * @return array{error: string}|array{naboer: list<array<string, mixed>>, flere: bool, radius: int}
      */
+    #[Renderless]
     public function hentNaboer(string $query, int $radius = self::NABO_STANDARD_RADIUS): array
     {
         $radius = in_array($radius, self::NABO_RADIER, true) ? $radius : self::NABO_STANDARD_RADIUS;
@@ -123,7 +125,7 @@ class MapPanel extends Component
         }
 
         // Cachen læses FØRST nu, bag godkendelsen, så den ikke kan springe gaten over.
-        $cacheNoegle = 'metis:naboer:'.md5(mb_strtolower(trim($query))).':'.$radius;
+        $cacheNoegle = 'metis:naboer:v2:'.md5(mb_strtolower(trim($query))).':'.$radius;
         if (is_array($cached = Cache::get($cacheNoegle))) {
             return $cached;
         }
@@ -134,20 +136,21 @@ class MapPanel extends Component
             return ['error' => 'for_mange'];
         }
 
+        $vilkaar = ['lat' => $lat, 'lng' => $lng, 'radius' => $radius, 'limit' => self::NABO_MAKS];
         try {
-            $svar = $api->propertyExplore([
-                'lat' => $lat,
-                'lng' => $lng,
-                'radius' => $radius,
-                'sort' => 'distance_asc',
-                'limit' => self::NABO_MAKS,
-            ], source: 'map_neighbours');
+            $svar = $api->propertyExplore($vilkaar + ['sort' => 'distance_asc'], source: 'map_neighbours');
+            // Et ældre registry-api kender ikke distance_asc og svarer 422. Så falder vi tilbage til
+            // standardsorteringen i stedet for at slå hele funktionen fra, mens de to deployes.
+            if (($svar['status'] ?? null) === 422) {
+                $svar = $api->propertyExplore($vilkaar, source: 'map_neighbours');
+            }
         } catch (QuotaExceededException) {
             return ['error' => 'kvote'];
         }
 
         if (isset($svar['error'])) {
-            return ['error' => ($svar['status'] ?? null) === 429 ? 'kvote' : 'fejl'];
+            // 429 fra registry-api er dets throttle pr. bruger, ikke Metis' dagskvote.
+            return ['error' => ($svar['status'] ?? null) === 429 ? 'for_mange' : 'fejl'];
         }
 
         // Selve ejendommen har allerede sin markør. Den kendes på matrikel_id fra analysen; findes
@@ -220,6 +223,7 @@ class MapPanel extends Component
      *
      * @return array{error: string}|array{naboer: list<array<string, mixed>>, flere: bool}
      */
+    #[Renderless]
     public function hentUdsnit(float $syd, float $vest, float $nord, float $oest): array
     {
         if (! app(LookupAccess::class)->harPilotAdgang()) {

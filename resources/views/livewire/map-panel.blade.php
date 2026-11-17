@@ -22,12 +22,21 @@
             udsnitSerie: 0,
             udsnitTid: null,
             udsnitLytter: null,
+            udsnitStatusEl: null,
+            udsnitRetry: null,
             naboNulstil: null,
             naboKontrol: null,
             layersUnavailable: @js($layersUnavailable),
 
             destroy() {
                 this.$refs.map?._metisResize?.disconnect();
+                // Ingen lyttere, timere eller svar der kommer efter nedtagningen maa roere et fjernet kort.
+                if (this.udsnitLytter && this.map) this.map.off('moveend', this.udsnitLytter);
+                this.udsnitLytter = null;
+                clearTimeout(this.udsnitTid);
+                clearTimeout(this.udsnitRetry);
+                this.udsnitSerie++;
+                this.naboSerie++;
             },
 
             async init() {
@@ -51,6 +60,8 @@
                     if (this.naboNulstil) this.naboNulstil();
                     // Flyttet af en soegning uden adresse: der er ingen adresse at hente naboer til.
                     if (!$wire.query && this.naboKontrol) {
+                        // Afkrydsningen forsvinder med kontrollen, saa udforskningen slaas fra først.
+                        if (this.udsnitLytter) this.slaaUdsnitFra(this.udsnitStatusEl);
                         this.naboKontrol.remove();
                         this.naboKontrol = null;
                     }
@@ -254,6 +265,7 @@
             },
 
             slaaUdsnitTil(udsnitStatus) {
+                this.udsnitStatusEl = udsnitStatus;
                 this.udsnitLytter = () => {
                     clearTimeout(this.udsnitTid);
                     this.udsnitTid = setTimeout(() => this.hentUdsnit(udsnitStatus), 400);
@@ -266,9 +278,10 @@
                 if (this.udsnitLytter) this.map.off('moveend', this.udsnitLytter);
                 this.udsnitLytter = null;
                 clearTimeout(this.udsnitTid);
+                clearTimeout(this.udsnitRetry);
                 this.udsnitSerie++;
                 this.skjulUdsnit();
-                udsnitStatus.textContent = '';
+                if (udsnitStatus) udsnitStatus.textContent = '';
             },
 
             skjulUdsnit() {
@@ -297,7 +310,10 @@
                 // Et nyere flyt eller en afkrydsning der er slaaet fra har overtaget.
                 if (serie !== this.udsnitSerie) return;
                 if (!svar || svar.error) {
-                    this.skjulUdsnit();
+                    // Kun et ugyldigt udsnit skjuler markørerne. Ved en forbigaaende fejl bliver de
+                    // gamle staaende, og der proeves igen om lidt (ellers staar kortet tomt, indtil
+                    // man panorerer igen).
+                    if (svar && ['zoom_ind', 'kraever_pilot'].includes(svar.error)) this.skjulUdsnit();
                     const tekster = {
                         zoom_ind: 'Zoom ind for at se ejendomme.',
                         for_mange: 'For mange opslag lige nu. Flyt kortet igen om lidt.',
@@ -305,6 +321,12 @@
                         kraever_pilot: 'Fri udforskning er kun for pilotbrugere.',
                     };
                     udsnitStatus.textContent = tekster[svar && svar.error] || 'Ejendomme kunne ikke hentes.';
+                    if (!svar || ['for_mange', 'fejl'].includes(svar.error)) {
+                        clearTimeout(this.udsnitRetry);
+                        this.udsnitRetry = setTimeout(() => {
+                            if (this.udsnitLytter && serie === this.udsnitSerie) this.hentUdsnit(udsnitStatus);
+                        }, 15000);
+                    }
                     return;
                 }
                 this.skjulUdsnit();
