@@ -153,7 +153,7 @@
                         const i = (this.faner.indexOf(this.fane) + retning + this.faner.length) % this.faner.length;
                         this.vaelg(this.faner[i], true);
                     },
-                }" @hashchange.window="fraHash()" class="space-y-6">
+                }" @hashchange.window="fraHash()" wire:ignore.self class="space-y-6">
                 <div role="tablist" aria-label="{{ __('Ejendomsoplysninger') }}"
                      class="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-700"
                      @keydown.arrow-right.prevent="flyt(1)" @keydown.arrow-left.prevent="flyt(-1)"
@@ -172,33 +172,33 @@
                 </div>
 
                 <div role="tabpanel" id="panel-overblik" aria-labelledby="fane-overblik"
-                     x-show="fane === 'overblik'" tabindex="0" class="space-y-6">
+                     x-show="fane === 'overblik'" tabindex="0" wire:ignore.self class="space-y-6">
                     <livewire:metis-map-panel :query="$query" lazy="on-load" />
                     <livewire:metis-address-valuation :query="$query" lazy="on-load" />
                     <livewire:metis-address-skraafoto :query="$query" lazy="on-load" />
                 </div>
                 <div role="tabpanel" id="panel-bbr" aria-labelledby="fane-bbr"
-                     x-show="fane === 'bbr'" style="display:none" tabindex="0" class="space-y-6">
+                     x-show="fane === 'bbr'" style="display:none" tabindex="0" wire:ignore.self class="space-y-6">
                     <livewire:metis-address-bbr :query="$query" lazy="on-load" />
                     <livewire:metis-address-energy :query="$query" lazy="on-load" />
                 </div>
                 <div role="tabpanel" id="panel-ejerforhold" aria-labelledby="fane-ejerforhold"
-                     x-show="fane === 'ejerforhold'" style="display:none" tabindex="0" class="space-y-6">
+                     x-show="fane === 'ejerforhold'" style="display:none" tabindex="0" wire:ignore.self class="space-y-6">
                     <livewire:metis-address-owners :query="$query" lazy="on-load" />
                     <livewire:metis-address-companies :query="$query" lazy="on-load" />
                 </div>
                 <div role="tabpanel" id="panel-tinglysning" aria-labelledby="fane-tinglysning"
-                     x-show="fane === 'tinglysning'" style="display:none" tabindex="0" class="space-y-6">
+                     x-show="fane === 'tinglysning'" style="display:none" tabindex="0" wire:ignore.self class="space-y-6">
                     <livewire:metis-address-mortgages :query="$query" lazy="on-load" />
                     <livewire:metis-address-transactions :query="$query" lazy="on-load" />
                 </div>
                 <div role="tabpanel" id="panel-handler" aria-labelledby="fane-handler"
-                     x-show="fane === 'handler'" style="display:none" tabindex="0" class="space-y-6">
+                     x-show="fane === 'handler'" style="display:none" tabindex="0" wire:ignore.self class="space-y-6">
                     <livewire:metis-address-similar-trades :query="$query" lazy="on-load" />
                     <livewire:metis-address-comparison :query="$query" lazy="on-load" />
                 </div>
                 <div role="tabpanel" id="panel-omraade" aria-labelledby="fane-omraade"
-                     x-show="fane === 'omraade'" style="display:none" tabindex="0" class="space-y-6">
+                     x-show="fane === 'omraade'" style="display:none" tabindex="0" wire:ignore.self class="space-y-6">
                     <livewire:metis-address-planning :query="$query" lazy="on-load" />
                     <livewire:metis-address-heritage :query="$query" lazy="on-load" />
                 </div>

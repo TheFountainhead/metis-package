@@ -16,6 +16,10 @@
             markers: @js($markers),
             layersUnavailable: @js($layersUnavailable),
 
+            destroy() {
+                this.$refs.map?._metisResize?.disconnect();
+            },
+
             async init() {
                 await this.loadLeaflet();
                 this.initMap();
@@ -84,7 +88,10 @@
                 if (this.$refs.map._metisResize) {
                     this.$refs.map._metisResize.disconnect();
                 }
-                this.$refs.map._metisResize = new ResizeObserver(() => this.map.invalidateSize());
+                this.$refs.map._metisResize = new ResizeObserver((poster) => {
+                    const r = poster[0].contentRect;
+                    if (r.width > 0 && r.height > 0) this.map.invalidateSize();
+                });
                 this.$refs.map._metisResize.observe(this.$refs.map);
 
                 const baseLayers = {

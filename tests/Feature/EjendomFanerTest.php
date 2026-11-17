@@ -33,7 +33,8 @@ it('viser seks faner med tilhoerende paneler paa en adresse', function () {
         ->and(substr_count($html, 'role="tab"'))->toBe(6)
         ->and(preg_match_all('/<div role="tabpanel"[^>]*x-show="fane === \'\w+\'" style="display:none"/', $html))->toBe(5)
         ->and($html)->toMatch('/id="panel-overblik"[^>]*x-show="fane === \'overblik\'" tabindex="0"/')
-        ->and($html)->not->toMatch('/id="panel-overblik"[^>]*display:none/');
+        ->and($html)->not->toMatch('/id="panel-overblik"[^>]*display:none/')
+        ->and(substr_count($html, 'wire:ignore.self'))->toBeGreaterThanOrEqual(7);
 });
 
 it('har alle tretten sektioner med, hver i sit panel', function () {
@@ -70,7 +71,9 @@ it('kan betjenes med tastaturet, og kortet maaler sig igen naar det vises', func
 
     // Kortet maaler sig selv igen naar dets panel vises (Leaflet i en skjult container = 0x0).
     expect(file_get_contents(__DIR__.'/../../resources/views/livewire/map-panel.blade.php'))
-        ->toContain('new ResizeObserver(() => this.map.invalidateSize())');
+        ->toContain('new ResizeObserver((poster) =>')
+        ->toContain('if (r.width > 0 && r.height > 0) this.map.invalidateSize();')
+        ->toContain('destroy() {');
 });
 
 it('har ingen faner paa et selskab', function () {
