@@ -27,36 +27,50 @@ it('viser seks faner med tilhoerende paneler paa en adresse', function () {
             ->toContain('id="panel-'.$fane.'"');
     }
 
-    // Hvert panel er skjult med x-show + display:none (x-cloak virker ikke uden vaertens CSS).
+    // De fem skjulte paneler har x-show + display:none (x-cloak virker ikke uden vaertens CSS).
+    // Overblik er IKKE skjult server-side, saa et Alpine-nedbrud stadig viser den.
     expect(substr_count($html, 'role="tabpanel"'))->toBe(6)
         ->and(substr_count($html, 'role="tab"'))->toBe(6)
-        ->and(preg_match_all('/<div role="tabpanel"[^>]*x-show="fane === \'\w+\'" style="display:none"/', $html))->toBe(6);
+        ->and(preg_match_all('/<div role="tabpanel"[^>]*x-show="fane === \'\w+\'" style="display:none"/', $html))->toBe(5)
+        ->and($html)->toMatch('/id="panel-overblik"[^>]*x-show="fane === \'overblik\'" tabindex="0"/')
+        ->and($html)->not->toMatch('/id="panel-overblik"[^>]*display:none/');
 });
 
-it('har alle tretten sektioner med, ogsaa dem paa skjulte faner', function () {
+it('har alle tretten sektioner med, hver i sit panel', function () {
     $html = $this->get('/lookup/address/Roskildevej%2010%2C%202000%20Frederiksberg')->assertOk()->getContent();
 
-    foreach ([
-        'map-panel', 'address-valuation', 'address-skraafoto', 'address-bbr', 'address-energy',
-        'address-owners', 'address-companies', 'address-mortgages', 'address-transactions',
-        'address-similar-trades', 'address-comparison', 'address-planning', 'address-heritage',
-    ] as $sektion) {
-        expect($html)->toContain('metis-'.$sektion);
+    $paneler = [
+        'overblik' => ['map-panel', 'address-valuation', 'address-skraafoto'],
+        'bbr' => ['address-bbr', 'address-energy'],
+        'ejerforhold' => ['address-owners', 'address-companies'],
+        'tinglysning' => ['address-mortgages', 'address-transactions'],
+        'handler' => ['address-similar-trades', 'address-comparison'],
+        'omraade' => ['address-planning', 'address-heritage'],
+    ];
+
+    foreach ($paneler as $panel => $sektioner) {
+        $start = strpos($html, 'id="panel-'.$panel.'"');
+        $slut = strpos($html, 'role="tabpanel"', $start + 1) ?: strlen($html);
+        $uddrag = substr($html, $start, $slut - $start);
+
+        foreach ($sektioner as $sektion) {
+            expect($uddrag)->toContain('metis-'.$sektion);
+        }
     }
 });
 
-it('kan betjenes med tastaturet og fortaeller kortet at fanen er skiftet', function () {
+it('kan betjenes med tastaturet, og kortet maaler sig igen naar det vises', function () {
     $html = $this->get('/lookup/address/Roskildevej%2010%2C%202000%20Frederiksberg')->assertOk()->getContent();
 
     expect($html)
         ->toContain('@keydown.arrow-right.prevent="flyt(1)"')
         ->toContain(':tabindex="fane === \'bbr\' ? 0 : -1"')
         ->toContain('@hashchange.window="fraHash()"')
-        ->toContain("new CustomEvent('metis-fane'");
+        ->toContain('@keydown.end.prevent="vaelg(faner[faner.length - 1], true)"');
 
-    // Kortet lytter paa samme begivenhed (Leaflet maa maale sig igen naar panelet vises).
+    // Kortet maaler sig selv igen naar dets panel vises (Leaflet i en skjult container = 0x0).
     expect(file_get_contents(__DIR__.'/../../resources/views/livewire/map-panel.blade.php'))
-        ->toContain('@metis-fane.window="map && map.invalidateSize()"');
+        ->toContain('new ResizeObserver(() => this.map.invalidateSize())');
 });
 
 it('har ingen faner paa et selskab', function () {

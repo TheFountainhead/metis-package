@@ -7,7 +7,6 @@
 
     <div
         wire:ignore
-        @metis-fane.window="map && map.invalidateSize()"
         x-data="{
             map: null,
             layers: @js($layers),
@@ -79,6 +78,14 @@
                     layers: [osm],
                 }).setView([lat, lng], zoom);
                 this.$refs.map._metisLeafletMap = this.map;
+
+                // Kortet kan blive bygget paa et skjult panel (en fane der ikke er aaben)
+                // og har da stoerrelse 0. ResizeObserver maaler det igen naar det vises.
+                if (this.$refs.map._metisResize) {
+                    this.$refs.map._metisResize.disconnect();
+                }
+                this.$refs.map._metisResize = new ResizeObserver(() => this.map.invalidateSize());
+                this.$refs.map._metisResize.observe(this.$refs.map);
 
                 const baseLayers = {
                     'OpenStreetMap': osm,
