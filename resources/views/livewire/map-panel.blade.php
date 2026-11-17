@@ -63,7 +63,7 @@
                     // Flyttet af en soegning uden adresse: der er ingen adresse at hente naboer til.
                     if (!$wire.query && this.naboKontrol) {
                         // Afkrydsningen forsvinder med kontrollen, saa udforskningen slaas fra først.
-                        if (this.udsnitLytter) this.slaaUdsnitFra(this.udsnitStatusEl);
+                        this.slaaUdsnitFra(this.udsnitStatusEl);
                         this.naboKontrol.remove();
                         this.naboKontrol = null;
                     }
@@ -270,6 +270,7 @@
                 this.udsnitStatusEl = udsnitStatus;
                 this.udsnitLytter = () => {
                     this.udsnitForsoeg = 0;
+                    clearTimeout(this.udsnitRetry);
                     clearTimeout(this.udsnitTid);
                     this.udsnitTid = setTimeout(() => this.hentUdsnit(udsnitStatus), 400);
                 };
@@ -400,9 +401,11 @@
                     return 'Ingen andre ejendomme inden for ' + svar.radius + ' m.';
                 }
                 const antal = svar.naboer.length + ' ejendomme inden for ' + svar.radius + ' m.';
-                return svar.flere
-                    ? antal + ' Der er flere; de nærmeste vises. Vælg en mindre radius, eller udforsk kortet.'
-                    : antal;
+                if (!svar.flere) return antal;
+                // Teksten siger de nærmeste kun, naar registry-api faktisk sorterede paa afstand.
+                return svar.sorteret === false
+                    ? antal + ' Der er flere. Vælg en mindre radius, eller udforsk kortet.'
+                    : antal + ' Der er flere; de nærmeste vises. Vælg en mindre radius, eller udforsk kortet.';
             },
 
             naboPopup(n) {

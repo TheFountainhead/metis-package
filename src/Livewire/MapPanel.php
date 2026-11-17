@@ -103,7 +103,7 @@ class MapPanel extends Component
      * Ejernavne og gæld er med vilje ikke med: registry-api leverer dem ikke i
      * udforsk-svaret, og gæld hører til bestilte analyser (som i Udforsk).
      *
-     * @return array{error: string}|array{naboer: list<array<string, mixed>>, flere: bool, radius: int}
+     * @return array{error: string}|array{naboer: list<array<string, mixed>>, flere: bool, radius: int, sorteret: bool}
      */
     #[Renderless]
     public function hentNaboer(string $query, int $radius = self::NABO_STANDARD_RADIUS): array
@@ -148,11 +148,13 @@ class MapPanel extends Component
         }
 
         $vilkaar = ['lat' => $lat, 'lng' => $lng, 'radius' => $radius, 'limit' => self::NABO_MAKS];
+        $sorteret = true;
         try {
             $svar = $api->propertyExplore($vilkaar + ['sort' => 'distance_asc'], source: 'map_neighbours');
             // Et ældre registry-api kender ikke distance_asc og svarer 422. Så falder vi tilbage til
             // standardsorteringen i stedet for at slå hele funktionen fra, mens de to deployes.
             if (($svar['status'] ?? null) === 422) {
+                $sorteret = false; // så kortet ikke påstår "de nærmeste" om et usorteret udsnit
                 $svar = $api->propertyExplore($vilkaar, source: 'map_neighbours');
             }
         } catch (QuotaExceededException) {
@@ -193,6 +195,7 @@ class MapPanel extends Component
             // Afstandssorteringen har ingen cursor og melder derfor `truncated`, ikke `has_more`.
             'flere' => (bool) (($svar['data']['has_more'] ?? false) || ($svar['data']['truncated'] ?? false)),
             'radius' => $radius,
+            'sorteret' => $sorteret,
         ];
         Cache::put($cacheNoegle, $resultat, now()->addMinutes(5));
 

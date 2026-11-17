@@ -212,7 +212,8 @@ it('kortets kontrol til fri udforskning er med for piloter og kan parses som Jav
     expect($kode)->toBe(0, implode("\n", $ud))
         ->and($js)->toContain('kanUdforske: true')->toContain('Udforsk kortet frit')->toContain('hentUdsnit')
         ->toContain('minZoom: '.MapPanel::UDSNIT_MIN_ZOOM)
-        ->toContain('if (this.udsnitLytter) this.slaaUdsnitFra(this.udsnitStatusEl)');
+        ->toContain('this.slaaUdsnitFra(this.udsnitStatusEl)')->not->toContain('if (this.udsnitLytter) this.slaaUdsnitFra')
+        ->toContain('svar.sorteret === false');
 
     // Oprydning: lytter, timere og forsinkede svar maa ikke overleve kortet. Kun destroy() tælles med
     // (samme linjer findes også i slaaUdsnitFra, så en søgning i hele teksten beviser intet).

@@ -66,7 +66,8 @@ it('henter ejendomme omkring adressen og sender kun hvidlistede felter ud', func
 
     $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
 
-    expect($svar['naboer'])->toHaveCount(1)
+    expect($svar['sorteret'])->toBeTrue()
+        ->and($svar['naboer'])->toHaveCount(1)
         ->and($svar['naboer'][0])->toEqual([
             'adresse' => 'Roskildevej 12', 'postnr' => '2000', 'by' => 'Frederiksberg',
             'byggeaar' => 1932, 'areal' => 180, 'vurdering' => 4500000,
@@ -205,7 +206,8 @@ it('🚨 falder tilbage til standardsortering, hvis registry-api endnu ikke kend
 
     $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
 
-    expect($svar)->toHaveKey('naboer')->and($svar['naboer'])->toHaveCount(1);
+    expect($svar)->toHaveKey('naboer')->and($svar['naboer'])->toHaveCount(1)
+        ->and($svar['sorteret'])->toBeFalse(); // kortet må ikke påstå "de nærmeste"
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore') && ! isset($r['sort']));
 });
 
