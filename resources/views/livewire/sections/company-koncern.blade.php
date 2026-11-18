@@ -28,8 +28,8 @@
                     {{ __('Selskabet står i toppen af en koncern med :antal.', ['antal' => $antalTekst]) }}
                 @else
                     {{ __('Selskabet indgår i koncernen under') }}
-                    <x-metis-link type="cvr" :query="$top['cvr'] ?? ''" :label="$topNavn" />:
-                    {{ $antalTekst }}.
+                    <x-metis-link type="cvr" :query="$top['cvr'] ?? ''" :label="$topNavn" />
+                    ({{ $antalTekst }}).
                 @endif
             </p>
 

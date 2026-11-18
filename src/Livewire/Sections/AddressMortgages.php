@@ -59,6 +59,17 @@ class AddressMortgages extends MetisSection
     }
 
     /**
+     * Er pantebrevets rente en ramme (et ejerpantebrevs juridiske maksimum) og ikke den faktiske rente?
+     * Bruges på rækken, i det udfoldede og i PDF'en, så en sats API'et kalder en ramme aldrig står umærket.
+     *
+     * @param  array<string, mixed>  $m
+     */
+    public static function erRammerente(array $m): bool
+    {
+        return is_array($m['detaljer'] ?? null) && ($m['detaljer']['rente_er_ramme'] ?? false) === true;
+    }
+
+    /**
      * Linjerne der vises, når et pantebrev foldes ud: det Tinglysningen oplyser om lånet selv
      * (registry-api `mortgages[].detaljer`). Kun linjer med indhold; tom liste = rækken er ikke klikbar.
      *
@@ -100,8 +111,10 @@ class AddressMortgages extends MetisSection
         }
 
         // Et ejerpantebrevs rente er en RAMME (juridisk maksimum), ikke den faktiske rente på et lån.
-        if (($d['rente_er_ramme'] ?? false) === true && isset($linjer[__('Rente')])) {
-            $linjer[__('Rente')] = __('rammerente').': '.$linjer[__('Rente')].' '.__('(juridisk maksimum, ikke den faktiske rente)');
+        // 🔑 Også uden en rentelinje (kun en nominel sats, ingen rentetype): rækken viser stadig satsen, så
+        // forbeholdet skal stå her.
+        if (self::erRammerente($m)) {
+            $linjer[__('Rente')] = __('rammerente').(isset($linjer[__('Rente')]) ? ': '.$linjer[__('Rente')] : '').' '.__('(juridisk maksimum, ikke den faktiske rente)');
         }
 
         $vilkaar = array_values(array_filter((array) ($d['saerlige_vilkaar'] ?? []), fn ($v) => is_string($v) && $v !== ''));

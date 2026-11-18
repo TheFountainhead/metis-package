@@ -34,7 +34,7 @@ it('viser toppen, tallene og selskaberne med link, og markerer det aktuelle sels
     $html = Livewire::test('metis-company-koncern', ['query' => '10000005'])->html();
 
     expect($html)->toContain('Selskabet indgår i koncernen under')->toContain('Top Holding ApS')
-        ->toContain('31 selskaber og 24 ejendomme.')->toContain('Datter Et A/S')
+        ->toContain('(31 selskaber og 24 ejendomme).')->toContain('Datter Et A/S')
         ->toContain('/lookup/cvr/10000001')->toContain('/lookup/cvr/10000002')
         ->toContain('28 flere selskaber')
         ->and(substr_count($html, 'data-koncern-raekke'))->toBe(3)
@@ -93,7 +93,7 @@ it('bøjer tallene: 2 selskaber og 1 ejendom', function () {
 
     $html = Livewire::test('metis-company-koncern', ['query' => '10000002'])->html();
 
-    expect($html)->toContain('2 selskaber og 1 ejendom.')->not->toContain('1 ejendomme');
+    expect($html)->toContain('(2 selskaber og 1 ejendom).')->not->toContain('1 ejendomme');
 });
 
 it('tåler et svar der mangler felter uden at vælte siden', function () {
@@ -138,4 +138,29 @@ it('står på selskabssiden, ikke på adressesiden', function () {
 
     expect($this->get('/lookup/cvr/10000005')->assertOk()->getContent())->toContain('metis-company-koncern')
         ->and($this->get('/lookup/address/Roskildevej%2010%2C%202000%20Frederiksberg')->getContent())->not->toContain('metis-company-koncern');
+});
+
+it('🚨 prøver kun én gang, når koncernen ikke svarer: siden må ikke vente på en retry', function () {
+    $kald = 0;
+    Http::fake(function () use (&$kald) {
+        $kald++;
+        throw new \Illuminate\Http\Client\ConnectionException('timeout');
+    });
+
+    expect(app(\TheFountainhead\Metis\Services\RegistryApi::class)->fetchCompanyKoncern('10000005'))->toBe(['error' => 0])
+        ->and($kald)->toBe(1);
+});
+
+it('prøver én gang til efter et 503 (deploy)', function () {
+    \Illuminate\Support\Sleep::fake();
+    Http::fake(['*' => Http::sequence()->push([], 503)->push(koncernSvar())]);
+    expect(app(\TheFountainhead\Metis\Services\RegistryApi::class)->fetchCompanyKoncern('10000005')['top']['cvr'] ?? null)->toBe('10000001');
+    Http::assertSentCount(2);
+});
+
+it('prøver ikke igen efter en almindelig serverfejl', function () {
+    \Illuminate\Support\Sleep::fake();
+    Http::fake(['*' => Http::sequence()->push([], 500)->push(koncernSvar())]);
+    expect(app(\TheFountainhead\Metis\Services\RegistryApi::class)->fetchCompanyKoncern('10000006'))->toBe(['error' => 500]);
+    Http::assertSentCount(1);
 });

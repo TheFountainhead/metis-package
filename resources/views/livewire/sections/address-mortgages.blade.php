@@ -48,7 +48,14 @@
                                     @endif
                                 </td>
                                 <td class="py-2 pr-4 text-right">{{ isset($m['principal']) ? number_format($m['principal'], 0, ',', '.') . ' kr.' : '-' }}</td>
-                                <td class="py-2 pr-4 text-right">{{ isset($m['interest_rate']) ? number_format($m['interest_rate'], 2, ',', '.') . '%' : '-' }}</td>
+                                <td class="py-2 pr-4 text-right">
+                                    @if(isset($m['interest_rate']) && $this->erRammerente($m))
+                                        {{-- Et ejerpantebrevs sats er et juridisk maksimum: den må ikke stå som lånets rente. --}}
+                                        <span class="text-zinc-500" data-rammerente title="{{ __('Juridisk maksimum, ikke den faktiske rente') }}">{{ number_format($m['interest_rate'], 2, ',', '.') }}% <span class="text-xs">({{ __('ramme') }})</span></span>
+                                    @else
+                                        {{ isset($m['interest_rate']) ? number_format($m['interest_rate'], 2, ',', '.') . '%' : '-' }}
+                                    @endif
+                                </td>
                                 {{-- 🪤 "ikke oplyst", ikke "-": i en gældstabel læses en
                                      bindestreg som "ingen udløbsdato" — altså et stående
                                      lån. Sandheden er at Tinglysningen ikke HAR feltet
