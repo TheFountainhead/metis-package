@@ -2142,8 +2142,8 @@ class RegistryApi
      * 🔑 Gaten er `kanFoelge()`, ikke `pilotFejl()`: uden brugerens EGET token ville client() falde tilbage til
      * tenantens fælles nøgle, og listerne ville blive delt mellem alle uden token (embedded uden gating).
      *
-     * En forventet afvisning (422 fra validering, 404 for noget der er slettet i en anden fane) rapporteres
-     * ikke: den vises for brugeren. Alt andet rapporteres.
+     * En forventet afvisning (4xx: validering, slettet i en anden fane, udløbet adgang, for mange kald)
+     * rapporteres ikke: den vises for brugeren. Serverfejl og netværksfejl rapporteres.
      *
      * @param  array<string, mixed>  $data
      * @return array<string, mixed> `['data' => ...]`, eller `['error' => ..., 'status' => int, 'message' => ?string]`
@@ -2166,7 +2166,9 @@ class RegistryApi
             return is_array($json) && array_key_exists('data', $json) ? $json : ['error' => 'invalid_response', 'status' => 502];
         } catch (RequestException $e) {
             $status = $e->response->status();
-            if (! in_array($status, [404, 422], true)) {
+            // 🔑 Rapporten sendes fra en Livewire-forespørgsel, hvis indhold rummer brugerens noter. Derfor
+            // rapporteres kun serverfejl hos API'et, ikke forventede afvisninger (udløbet adgang, for mange kald).
+            if ($status >= 500) {
                 report($e);
             }
             $fejl = $e->response->json('errors');

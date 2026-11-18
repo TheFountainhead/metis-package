@@ -21,9 +21,15 @@ class Lists extends Component
     public ?int $listeId = null;
 
     /** @var list<array{id: int, name: string, items_count: int}>|null */
+    #[Locked]
     public ?array $lister = null;
 
-    /** @var array{id: int, name: string, items: list<array<string, mixed>>}|null */
+    /**
+     * Låst: kun serveren skriver listen (også elementernes link), så et element her er et, brugeren har fået vist.
+     *
+     * @var array{id: int, name: string, items: list<array<string, mixed>>}|null
+     */
+    #[Locked]
     public ?array $liste = null;
 
     public string $nytNavn = '';
@@ -167,6 +173,14 @@ class Lists extends Component
         $svar = app(RegistryApi::class)->egneData('delete', "/v1/lists/{$this->listeId}");
         if (isset($svar['error']) && ($svar['status'] ?? null) !== 404) {
             $this->fejl = __('Kunne ikke slette listen. Prøv igen.');
+
+            return null;
+        }
+
+        // Ruten findes kun, hvor pakkens web-ruter er indlæst; ellers bliv på siden, som nu siger at listen er væk.
+        if (! \Illuminate\Support\Facades\Route::has('metis.lists')) {
+            $this->findesIkke = true;
+            $this->liste = null;
 
             return null;
         }

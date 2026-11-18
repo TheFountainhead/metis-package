@@ -24,21 +24,40 @@ class ListButton extends Component
     #[Locked]
     public string $query;
 
+    /**
+     * Låst: kun serveren skriver listerne, så `skift()` kan stole på at et id her er et, brugeren har fået vist.
+     *
+     * @var list<array{id: int, name: string, contains: bool}>|null null = ikke hentet, eller hentningen fejlede
+     */
     #[Locked]
-    public string $label = '';
-
-    /** @var list<array{id: int, name: string, contains: bool}>|null null = ikke hentet, eller hentningen fejlede */
     public ?array $lister = null;
 
     public string $nytNavn = '';
 
     public ?string $fejl = null;
 
-    public function mount(string $type, string $query, string $label = ''): void
+    public function mount(string $type, string $query): void
     {
         $this->type = $type;
         $this->query = $query;
-        $this->label = mb_substr($label !== '' ? $label : $query, 0, 200);
+    }
+
+    /**
+     * Etiketten et element gemmes med. Et selskab får sit navn fra det opslag siden selv har lavet (cachen,
+     * intet nyt kald), ellers CVR-nummeret: aldrig fri tekst fra adressen i browseren. En ejendom gemmes med
+     * adressen, som er det eneste Metis kan slå den op på igen.
+     *
+     * @param  array{item_type: string, item_value: string}  $element
+     */
+    private function etiket(array $element): string
+    {
+        if ($element['item_type'] === 'company') {
+            $navn = data_get(rescue(fn () => app(RegistryApi::class)->fetchCompanyInfosCached([$element['item_value']]), [], false), $element['item_value'].'.name');
+
+            return is_string($navn) && $navn !== '' ? mb_substr($navn, 0, 200) : $element['item_value'];
+        }
+
+        return mb_substr($this->query, 0, 200);
     }
 
     public function hent(): void
@@ -91,7 +110,7 @@ class ListButton extends Component
                 ->first(fn ($i) => is_array($i) && ($i['item_type'] ?? null) === $element['item_type'] && (string) ($i['item_value'] ?? '') === $element['item_value']);
             $svar = $fundet ? $api->egneData('delete', "/v1/lists/{$listeId}/items/".(int) $fundet['id']) : $detaljer;
         } else {
-            $svar = $api->egneData('post', "/v1/lists/{$listeId}/items", $element + ['display_label' => $this->label]);
+            $svar = $api->egneData('post', "/v1/lists/{$listeId}/items", $element + ['display_label' => $this->etiket($element)]);
         }
 
         // 404 = listen eller elementet er væk (fx fjernet i en anden fane): hent den rigtige tilstand.
@@ -122,7 +141,7 @@ class ListButton extends Component
             return;
         }
 
-        $tilfoej = $api->egneData('post', '/v1/lists/'.(int) $svar['data']['id'].'/items', $element + ['display_label' => $this->label]);
+        $tilfoej = $api->egneData('post', '/v1/lists/'.(int) $svar['data']['id'].'/items', $element + ['display_label' => $this->etiket($element)]);
         if (isset($tilfoej['error'])) {
             $this->fejl = __('Listen er oprettet, men kunne ikke få tilføjet denne side. Prøv igen.');
         }

@@ -33,7 +33,7 @@ it('🚨 uden eget token kalder hverken knap, noter eller siden API-et, heller i
     Http::fake();
 
     Livewire::test(ListButton::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent')->call('skift', 1)->set('nytNavn', 'X')->call('opret')->assertSet('lister', null);
-    Livewire::test(Notes::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent')->set('tekst', 'x')->call('gem')->call('slet', 1)->call('ret', 1)->set('retterId', null)->call('gemRettelse')->assertSet('noter', null);
+    Livewire::test(Notes::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent')->set('tekst', 'x')->call('gem')->call('slet', 1)->call('ret', 1)->call('gemRettelse')->assertSet('noter', null);
     Livewire::test(Lists::class)->call('hent')->set('nytNavn', 'X')->call('opret')->assertSee('Kun for pilotbrugere')->assertDontSee('Du har ingen lister');
     Livewire::test(Lists::class, ['id' => 5])->call('hent')->call('fjern', 1)->call('omdoeb')->call('sletListe')->assertSee('Kun for pilotbrugere');
 
@@ -67,15 +67,17 @@ it('viser brugerens lister med flueben og tæller dem, selskabet står på', fun
         ['id' => 2, 'name' => 'Selvskyldner check', 'items_count' => 0, 'contains' => false],
     ]))]);
 
-    Livewire::test(ListButton::class, ['type' => 'cvr', 'query' => '12345678', 'label' => 'Acme ApS'])->call('hent')
+    Livewire::test(ListButton::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent')
         ->assertSee('Ejendomme vi har pant i')->assertSee('Selvskyldner check')
         ->assertSeeHtml('data-liste-antal')->assertSee('(1)');
 
     Http::assertSent(fn (Request $r) => str_contains($r->url(), 'item_type=company') && str_contains($r->url(), 'item_value=12345678') && $r->hasHeader('Authorization', 'Bearer 19|abc'));
 });
 
-it('sætter selskabet på en liste med navnet som etiket', function () {
+it('sætter selskabet på en liste med navnet fra sidens eget opslag som etiket', function () {
     listePilot();
+    $api = app(\TheFountainhead\Metis\Services\RegistryApi::class);
+    \Illuminate\Support\Facades\Cache::put((fn () => $this->companyInfoCacheKey('12345678'))->call($api), ['name' => 'Acme ApS'], 60);
     Http::fake([
         '*/v1/lists/2/items' => Http::response(['data' => ['id' => 9]], 201),
         '*/v1/lists?*' => Http::sequence()
@@ -83,7 +85,7 @@ it('sætter selskabet på en liste med navnet som etiket', function () {
             ->push(listeSvar([['id' => 2, 'name' => 'Selvskyldner check', 'contains' => true]])),
     ]);
 
-    Livewire::test(ListButton::class, ['type' => 'cvr', 'query' => '12345678', 'label' => 'Acme ApS'])->call('hent')->call('skift', 2)
+    Livewire::test(ListButton::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent')->call('skift', 2)
         ->assertSet('fejl', null)->assertSet('lister.0.contains', true);
 
     Http::assertSent(fn (Request $r) => $r->method() === 'POST' && str_ends_with($r->url(), '/v1/lists/2/items')
@@ -111,9 +113,23 @@ it('🚨 klienten kan ikke pege på en liste, den ikke har fået vist', function
     listePilot();
     Http::fake(['*/v1/lists?*' => Http::response(listeSvar([['id' => 2, 'name' => 'A', 'contains' => false]]))]);
 
-    Livewire::test(ListButton::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent')->call('skift', 999)->assertSet('fejl', 'Listen findes ikke længere.');
+    $c = Livewire::test(ListButton::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent')->call('skift', 999)->assertSet('fejl', 'Listen findes ikke længere.');
+    // Heller ikke ved at skrive id'et ind i komponentens tilstand: listerne er låst.
+    expect(fn () => $c->set('lister', [['id' => 999, 'name' => 'x', 'contains' => false]]))->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
 
     Http::assertNotSent(fn (Request $r) => $r->method() !== 'GET');
+});
+
+it('🚨 uden et navn i sidens opslag gemmes CVR-nummeret, aldrig fri tekst fra adressen i browseren', function () {
+    listePilot();
+    Http::fake([
+        '*/v1/lists/2/items' => Http::response(['data' => ['id' => 9]], 201),
+        '*/v1/lists?*' => Http::response(listeSvar([['id' => 2, 'name' => 'A', 'contains' => false]])),
+    ]);
+
+    Livewire::test(ListButton::class, ['type' => 'cvr', 'query' => 'Jens Jensen 12 34 56 78'])->call('hent')->call('skift', 2);
+
+    Http::assertSent(fn (Request $r) => $r->method() === 'POST' && $r->data() === ['item_type' => 'company', 'item_value' => '12345678', 'display_label' => '12345678']);
 });
 
 it('opretter en ny liste og sætter siden på den, og viser API-ets besked når navnet er optaget', function () {
@@ -201,7 +217,11 @@ it('🚨 en note brugeren ikke har fået vist her, kan hverken rettes eller slet
 
     Livewire::test(Notes::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent')
         ->call('slet', 999)->call('ret', 999)->assertSet('retterId', null)
-        ->set('retterId', 999)->set('retterTekst', 'x')->call('gemRettelse');
+        ->set('retterTekst', 'x')->call('gemRettelse');
+    // Heller ikke ved at skrive id'et ind i komponentens tilstand: noterne og den note der rettes er låst.
+    $c = Livewire::test(Notes::class, ['type' => 'cvr', 'query' => '12345678'])->call('hent');
+    expect(fn () => $c->set('noter', [['id' => 999, 'body' => '', 'created_at' => null]]))->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
+    expect(fn () => $c->set('retterId', 999))->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
 
     Http::assertNotSent(fn (Request $r) => $r->method() !== 'GET');
 });
@@ -259,6 +279,7 @@ it('en liste viser sine elementer med link, og kan fjerne ét, omdøbes og slett
 
     $c->call('fjern', 999);
     Http::assertNotSent(fn (Request $r) => str_ends_with($r->url(), '/items/999'));
+    expect(fn () => $c->set('liste.items.0.url', 'javascript:alert(1)'))->toThrow(\Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException::class);
 
     $c->call('startOmdoeb')->assertSet('omdoebTil', 'Pant')->set('omdoebTil', 'Nyt navn')->call('omdoeb')->assertSet('omdoeber', false)->assertSee('Nyt navn');
     Http::assertSent(fn (Request $r) => $r->method() === 'PATCH' && $r->data() === ['name' => 'Nyt navn']);
@@ -309,3 +330,24 @@ it('🚨 komponenterne selv spørger aldrig API-laget uden adgang, heller ikke n
     $noter->call('slet', 4)->call('ret', 4)->assertSet('retterId', null)->set('tekst', 'x')->call('gem')->call('hent');
     $knap->call('skift', 2)->set('nytNavn', 'X')->call('opret')->call('hent');
 });
+
+it('🚨 siden Lister spørger heller ikke API-laget, når adgangen forsvinder efter indlæsning', function () {
+    listePilot();
+    Http::fake(['*/v1/lists/7' => Http::response(['data' => ['id' => 7, 'name' => 'Pant', 'items' => [['id' => 1, 'item_type' => 'company', 'item_value' => '12345678']]]])]);
+    $c = Livewire::test(Lists::class, ['id' => 7])->assertSet('liste.id', 7);
+
+    session()->forget(['metis_user_token', 'metis_pilot_verificeret']);
+    $this->mock(\TheFountainhead\Metis\Services\RegistryApi::class)->shouldNotReceive('egneData');
+
+    $c->call('fjern', 1)->set('omdoebTil', 'X')->call('omdoeb')->call('sletListe')->call('hent')->set('nytNavn', 'X')->call('opret');
+});
+
+it('rapporterer kun serverfejl: en afvisning (udløbet adgang, for mange kald) sender ikke brugerens noter med en fejlrapport', function (int $status, int $rapporter) {
+    listePilot();
+    \Illuminate\Support\Facades\Exceptions::fake();
+    Http::fake(['*' => Http::response([], $status)]);
+
+    app(\TheFountainhead\Metis\Services\RegistryApi::class)->egneData('get', '/v1/notes', ['item_type' => 'company', 'item_value' => '12345678']);
+
+    \Illuminate\Support\Facades\Exceptions::assertReportedCount($rapporter);
+})->with([[401, 0], [403, 0], [404, 0], [422, 0], [429, 0], [500, 1]]);

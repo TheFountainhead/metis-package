@@ -23,11 +23,17 @@ class Notes extends Component
     #[Locked]
     public string $query;
 
-    /** @var list<array{id: int, body: string, created_at: ?string}>|null null = ikke hentet, eller hentningen fejlede */
+    /**
+     * Låst (som `retterId`): kun serveren skriver noterne, så en note her er en, brugeren har fået vist.
+     *
+     * @var list<array{id: int, body: string, created_at: ?string}>|null null = ikke hentet, eller hentningen fejlede
+     */
+    #[Locked]
     public ?array $noter = null;
 
     public string $tekst = '';
 
+    #[Locked]
     public ?int $retterId = null;
 
     public string $retterTekst = '';
