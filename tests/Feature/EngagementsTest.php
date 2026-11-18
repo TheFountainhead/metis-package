@@ -322,7 +322,7 @@ it('nøglen må ikke indeholde skråstreg', function () {
     $this->get('/engagementer/a/b')->assertNotFound();
 });
 
-it('viser "(N ejendomme)" på en ændring der dækker samme pant på flere ejendomme, og intet ved én', function () {
+it('viser antal ejendomme på en ændring der dækker samme pant på flere ejendomme, og intet ved én', function () {
     $this->withSession(['metis_user_token' => 'TOK', 'metis_pilot_account_id' => 1, 'metis_verified_email' => 'a@b.dk']);
     $e = cockpitEngagement();
     $e['changes'] = [
@@ -333,6 +333,6 @@ it('viser "(N ejendomme)" på en ændring der dækker samme pant på flere ejend
 
     $html = Livewire::test(Engagement::class, ['key' => 'c22222222'])->html();
 
-    expect($html)->toContain('(4 ejendomme)')->toContain('Hovedgaden 506; Hovedgaden 508')
-        ->and(substr_count($html, ' ejendomme)'))->toBe(1);
+    expect($html)->toContain('(ændring på 4 ejendomme i engagementet)')->toContain('Hovedgaden 506; Hovedgaden 508')
+        ->and(substr_count($html, 'ejendomme i engagementet)'))->toBe(1);
 });

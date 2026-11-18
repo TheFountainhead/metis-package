@@ -75,7 +75,7 @@
                                     @if(! empty($change['address'])) · {{ $change['address'] }} @endif
                                     {{-- Samme pant lyst på flere ejendomme står som ÉN ændring (registry-api #480). --}}
                                     @if((int) ($change['property_count'] ?? 0) > 1)
-                                        <span title="{{ implode('; ', array_filter((array) ($change['addresses'] ?? []), 'is_string')) }}">({{ __(':n ejendomme', ['n' => (int) $change['property_count']]) }})</span>
+                                        <span title="{{ implode('; ', array_filter((array) ($change['addresses'] ?? []), 'is_string')) }}">({{ __('ændring på :n ejendomme i engagementet', ['n' => (int) $change['property_count']]) }})</span>
                                     @endif
                                     @if(! empty($change['owner']['label'])) · {{ $change['owner']['label'] }} @endif
                                 </div>
