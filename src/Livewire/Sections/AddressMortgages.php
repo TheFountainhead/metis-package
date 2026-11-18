@@ -91,10 +91,9 @@ class AddressMortgages extends MetisSection
         if ($ref && is_string($ref['navn'] ?? null) && $ref['navn'] !== '') {
             $tillaeg = is_numeric($ref['tillaeg'] ?? null) ? (float) $ref['tillaeg'] : 0.0;
             // Tinglysningens sats uden afrunding til to decimaler: 0,125 må ikke blive 0,13, og 0,004 ikke 0,00.
-            $sats = rtrim(rtrim(number_format(abs($tillaeg), 4, ',', '.'), '0'), ',');
-            if (str_contains($sats, ',') && strlen(substr($sats, strpos($sats, ',') + 1)) < 2) {
-                $sats .= '0';
-            }
+            // Mindst to decimaler, højst fire: 10 -> 10,00; 0,125 -> 0,125; 0,004 -> 0,004.
+            $sats = number_format(abs($tillaeg), 4, ',', '.');
+            $sats = preg_replace('/(,\d{2}\d*?)0+$/', '$1', $sats);
             $linjer[__('Rente')] = __('variabel').', '.$ref['navn'].($tillaeg != 0.0 ? ' '.($tillaeg < 0 ? '−' : '+').' '.$sats.' %' : '');
         } elseif (in_array($d['rentetype'] ?? null, ['fast', 'variabel'], true)) {
             $linjer[__('Rente')] = $d['rentetype'] === 'fast' ? __('fast') : __('variabel');
