@@ -100,6 +100,7 @@
             </div>
             <livewire:metis-company-structure :query="$query" lazy="on-load" />
             <div class="max-w-7xl space-y-6">
+                <livewire:metis-company-koncern :query="$query" lazy="on-load" />
                 <livewire:metis-company-relations :query="$query" lazy="on-load" />
                 <livewire:metis-company-properties :query="$query" lazy="on-load" />
                 <livewire:metis-company-tinglysning :query="$query" lazy="on-load" />

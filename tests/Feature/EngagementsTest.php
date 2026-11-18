@@ -321,3 +321,18 @@ it('nøglen må ikke indeholde skråstreg', function () {
     config()->set('metis.mode', 'standalone');
     $this->get('/engagementer/a/b')->assertNotFound();
 });
+
+it('viser "(N ejendomme)" på en ændring der dækker samme pant på flere ejendomme, og intet ved én', function () {
+    $this->withSession(['metis_user_token' => 'TOK', 'metis_pilot_account_id' => 1, 'metis_verified_email' => 'a@b.dk']);
+    $e = cockpitEngagement();
+    $e['changes'] = [
+        ['kind' => 'new_lien', 'date' => '2026-06-01', 'amount_kr' => 700_000, 'creditor' => 'Sampant A/S', 'severity' => 'low', 'address' => 'Hovedgaden 506', 'property_count' => 4, 'property_ids' => [1, 2, 3, 4], 'addresses' => ['Hovedgaden 506', 'Hovedgaden 508']],
+        ['kind' => 'new_lien', 'date' => '2026-06-02', 'amount_kr' => 100_000, 'creditor' => 'Enkelt A/S', 'severity' => 'low', 'address' => 'Prøvevej 1', 'property_count' => 1],
+    ];
+    Http::fake(['*/v1/engagements/*' => Http::response(['data' => $e, 'meta' => cockpitMeta()])]);
+
+    $html = Livewire::test(Engagement::class, ['key' => 'c22222222'])->html();
+
+    expect($html)->toContain('(4 ejendomme)')->toContain('Hovedgaden 506; Hovedgaden 508')
+        ->and(substr_count($html, ' ejendomme)'))->toBe(1);
+});

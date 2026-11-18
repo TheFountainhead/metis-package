@@ -1365,6 +1365,32 @@ class RegistryApi
         }
     }
 
+    /**
+     * Koncernen selskabet indgår i (registry-api GET /v1/company/{cvr}/koncern): top, antal og selskaberne.
+     * null ved fejl eller ældre API; caches 1 time (koncernen bygges om natten).
+     */
+    public function fetchCompanyKoncern(string $cvr): ?array
+    {
+        $key = 'metis:koncern:'.$cvr;
+        if (! is_null($cached = $this->fraCache($key))) {
+            return $cached;
+        }
+
+        try {
+            $data = $this->client()->get("/v1/company/{$cvr}/koncern")->throw()->json('data');
+        } catch (RequestException|ConnectionException $e) {
+            return null;
+        }
+
+        if (is_array($data) && isset($data['top']['cvr'])) {
+            Cache::put($key, $data, 3600);
+
+            return $data;
+        }
+
+        return null;
+    }
+
     public function fetchCompanyTaxRecords(string $cvr): ?array
     {
         try {
