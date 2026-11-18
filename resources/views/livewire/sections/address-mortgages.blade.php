@@ -28,10 +28,25 @@
                             <th class="text-left py-2 font-medium text-zinc-500">{{ __('Maturity') }}</th>
                         </tr>
                     </thead>
-                    <tbody>
                         @foreach($mortgages as $m)
-                            <tr class="border-b border-zinc-100 dark:border-zinc-800">
-                                <td class="py-2 pr-4">{{ $m['creditor'] ?? '-' }}</td>
+                            @php
+                                $linjer = $this->detaljelinjer($m);
+                                $noegle = filled($m['rettighed_identifikator'] ?? null) ? $m['rettighed_identifikator'] : 'r'.$loop->index;
+                                $detaljeId = 'pant-detalje-'.$loop->index;
+                            @endphp
+                            <tbody wire:key="pant-{{ $noegle }}" x-data="{ aaben: false }" class="border-b border-zinc-100 dark:border-zinc-800">
+                            <tr>
+                                <td class="py-2 pr-4">
+                                    @if($linjer)
+                                        <button type="button" @click="aaben = !aaben" aria-expanded="false" :aria-expanded="aaben ? 'true' : 'false'" aria-controls="{{ $detaljeId }}"
+                                                class="inline-flex items-center gap-1.5 text-left hover:underline">
+                                            <span class="text-zinc-400 text-xs" aria-hidden="true" x-text="aaben ? '▾' : '▸'">▸</span>
+                                            {{ $m['creditor'] ?? '-' }}
+                                        </button>
+                                    @else
+                                        {{ $m['creditor'] ?? '-' }}
+                                    @endif
+                                </td>
                                 <td class="py-2 pr-4 text-right">{{ isset($m['principal']) ? number_format($m['principal'], 0, ',', '.') . ' kr.' : '-' }}</td>
                                 <td class="py-2 pr-4 text-right">{{ isset($m['interest_rate']) ? number_format($m['interest_rate'], 2, ',', '.') . '%' : '-' }}</td>
                                 {{-- 🪤 "ikke oplyst", ikke "-": i en gældstabel læses en
@@ -51,8 +66,22 @@
                                     @endif
                                 </td>
                             </tr>
+                            @if($linjer)
+                                <tr id="{{ $detaljeId }}" data-pant-detalje x-show="aaben" style="display:none">
+                                    <td colspan="4" class="pb-3 pt-0">
+                                        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-sm bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-4 py-3">
+                                            @foreach($linjer as $navn => $vaerdi)
+                                                <div class="flex justify-between gap-4">
+                                                    <dt class="text-zinc-500">{{ $navn }}</dt>
+                                                    <dd class="text-right text-zinc-900 dark:text-white">{{ $vaerdi }}</dd>
+                                                </div>
+                                            @endforeach
+                                        </dl>
+                                    </td>
+                                </tr>
+                            @endif
+                            </tbody>
                         @endforeach
-                    </tbody>
                 </table>
             </div>
             <p class="text-xs text-zinc-400 mt-3">{{ __('Registered principal is not the same as current outstanding debt.') }}</p>
