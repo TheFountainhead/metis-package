@@ -53,6 +53,8 @@ Route::middleware([NoIndex::class, RestorePilotSession::class])->group(function 
     // Selskaber brugeren selv følger (fx låntagere uden tinglyst pant, som /engagementer ikke
     // kan se). Kun egne valg — ingen søgning på tværs af registret (§ 50 c).
     Route::get('/overvaagede-selskaber', WatchedCompanies::class)->name('metis.watched-companies')->middleware('throttle:20,1');
+    // Brugerens egne lister over ejendomme og selskaber. Kun egne valg, ingen søgning i registret.
+    Route::get('/lister/{id?}', \TheFountainhead\Metis\Livewire\Lists::class)->name('metis.lists')->middleware('throttle:60,1')->where('id', '\d{1,18}');
 
     // 🔑 Segmentering af selskabspopulationen: taellinger fordelt paa kommune,
     // branche eller selskabsform. TAELLINGER, ikke raekker — derfor ikke under
