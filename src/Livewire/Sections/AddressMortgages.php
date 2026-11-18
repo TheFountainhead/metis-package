@@ -155,7 +155,7 @@ class AddressMortgages extends MetisSection
     }
 
     /** En kode fra Tinglysningen (ASCII-translittereret) som læsbar dansk tekst: "rentetilpasning", "afdragsfri_periode". */
-    private static function dansk(string $kode): string
+    public static function dansk(string $kode): string
     {
         $tekst = str_replace(['_', 'aa', 'oe', 'ae'], [' ', 'å', 'ø', 'æ'], strtolower(preg_replace('/(?<=[a-z])(?=[A-Z])/', ' ', $kode)));
 

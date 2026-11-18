@@ -4,6 +4,7 @@ namespace TheFountainhead\Metis\Livewire;
 
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use TheFountainhead\Metis\Exports\SampantskemaExport;
 use TheFountainhead\Metis\Livewire\Concerns\HasPilotToken;
 use TheFountainhead\Metis\Services\QuotaExceededException;
 use TheFountainhead\Metis\Services\RegistryApi;
@@ -89,6 +90,59 @@ class Engagement extends Component
     public function getCompanyOwnersProperty(): array
     {
         return array_values(array_filter($this->engagement['owners'] ?? [], fn ($o) => ($o['type'] ?? null) === 'company'));
+    }
+
+    /**
+     * Pantebreve i engagementet der er lyst på mere end én ejendom, med alle ejendommene (også dem uden for
+     * engagementet). Samme funktion som regnearket bruger, så siden og filen aldrig er uenige.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getSampantProperty(): array
+    {
+        return SampantskemaExport::sampant($this->engagement ?? []);
+    }
+
+    /**
+     * Download sampantskema og samlet pantoversigt for engagementet som regneark.
+     *
+     * 🚨 Gaten sidder HER: metoden er offentlig over /livewire/update. Engagementet hentes FRISK med brugerens eget
+     * token (aldrig fra komponentens tilstand, som klienten kunne have sendt), så filen kun kan rumme brugerens
+     * egne engagementer.
+     */
+    public function exportSampantskema()
+    {
+        if (! $this->hasUserToken()) {
+            return null;
+        }
+
+        try {
+            $response = app(RegistryApi::class)->fetchEngagement($this->key);
+        } catch (QuotaExceededException) {
+            $this->errorMessage = __('Kvoten er brugt op. Prøv igen senere.');
+
+            return null;
+        }
+        if (! is_array($response['data'] ?? null) || isset($response['error']) || empty($response['data']['key'])) {
+            session()->flash('metis_sampant_export_error', __('Kunne ikke hente engagementet til regnearket. Prøv igen.'));
+
+            return null;
+        }
+
+        try {
+            $export = new SampantskemaExport($response['data'], is_array($response['meta'] ?? null) ? $response['meta'] : []);
+        } catch (\RuntimeException $e) {
+            // phpoffice/phpspreadsheet er en valgfri afhængighed: vis en besked i stedet for at vælte siden.
+            session()->flash('metis_sampant_export_error', __('Regneark kan ikke dannes på denne installation.'));
+
+            return null;
+        }
+
+        return response()->streamDownload(function () use ($export) {
+            $stream = fopen('php://output', 'wb');
+            $export->writeTo($stream);
+            fclose($stream);
+        }, 'sampantskema-'.now()->format('Y-m-d').'.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
     }
 
     public function getPersonOwnerCountProperty(): int

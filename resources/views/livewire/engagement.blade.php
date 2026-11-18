@@ -86,6 +86,55 @@
             @endif
         </section>
 
+        {{-- SAMPANT: pantebreve lyst på flere ejendomme, med alle ejendommene (også uden for engagementet). --}}
+        <section class="mb-8" data-sampant>
+            <div class="flex items-baseline justify-between mb-2">
+                <h2 class="text-base font-semibold">{{ __('Sampant') }}</h2>
+                <button type="button" wire:click="exportSampantskema" wire:loading.attr="disabled" wire:target="exportSampantskema"
+                        class="px-3 py-1.5 text-sm border rounded-lg hover:bg-zinc-50 transition disabled:opacity-50">
+                    {{ __('Hent sampantskema og pantoversigt (XLSX)') }}
+                </button>
+            </div>
+            @if(session('metis_sampant_export_error'))
+                <p class="mb-2 text-sm text-red-600">{{ session('metis_sampant_export_error') }}</p>
+            @endif
+
+            @if($this->sampant === [])
+                <p class="text-sm text-zinc-500">{{ __('Ingen pantebreve i engagementet er lyst på mere end én ejendom.') }}</p>
+            @else
+                <div class="space-y-3">
+                    @foreach($this->sampant as $pant)
+                        <div class="p-3 bg-white border rounded-lg text-sm" wire:key="sampant-{{ $pant['key'] }}" data-sampant-pantebrev>
+                            <div class="flex flex-wrap items-baseline justify-between gap-x-4">
+                                <div>
+                                    <span class="font-medium">{{ \TheFountainhead\Metis\Livewire\Sections\AddressMortgages::dansk($pant['type']) ?: __('Pantebrev') }}</span>
+                                    <span class="text-zinc-600">· {{ $pant['creditor'] !== '' ? $pant['creditor'] : '—' }}</span>
+                                    @if($pant['pledgees'])
+                                        <span class="text-zinc-500">· {{ __('Panthavere') }}: {{ implode(', ', $pant['pledgees']) }}</span>
+                                    @endif
+                                    @if($pant['is_own'])
+                                        <span class="ml-1 px-1.5 py-0.5 text-xs rounded bg-blue-50 text-blue-700">{{ __('eget pant') }}</span>
+                                    @endif
+                                </div>
+                                <div class="tabular-nums text-zinc-700">{{ $kr($pant['amount_kr']) }} · {{ __('tinglyst') }} {{ $dato($pant['registered_at']) }}</div>
+                            </div>
+                            <ul class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                                @foreach($pant['properties'] as $e)
+                                    <li class="flex justify-between gap-3 {{ $e['in_engagement'] ? '' : 'text-zinc-500' }}">
+                                        <span>
+                                            {{ $e['address'] ?? __('Adresse ikke kendt') }}@if($e['postal_code'] ?? null), {{ $e['postal_code'] }} {{ $e['city'] ?? '' }}@endif
+                                            @unless($e['in_engagement'])<span class="text-xs">({{ __('uden for engagementet') }})</span>@endunless
+                                        </span>
+                                        <span class="text-xs whitespace-nowrap">BFE {{ $e['bfe'] }}@if($e['matrikel']) · {{ $e['matrikel'] }}@endif</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+        </section>
+
         {{-- PRIORITETSSTIGE PR. EJENDOM --}}
         @foreach($engagement['properties'] ?? [] as $property)
             <section class="mb-8" wire:key="property-{{ $property['id'] ?? $loop->index }}">
