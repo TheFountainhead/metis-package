@@ -61,7 +61,7 @@ trait NormalisererAlerts
                 'display_label' => self::tekst($watchlist['display_label'] ?? null),
             ],
             'metadata' => self::normaliserMetadata($alert['metadata'] ?? null),
-            'via_netvaerk' => self::viaNetvaerk($alert['metadata'] ?? null),
+            'via_netvaerk' => self::viaNetvaerk($alert['metadata'] ?? null, $watchlist),
         ];
     }
 
@@ -75,22 +75,32 @@ trait NormalisererAlerts
      *
      * @return array{top_cvr: string, top_navn: string}|null
      */
-    protected static function viaNetvaerk(mixed $meta): ?array
+    protected static function viaNetvaerk(mixed $meta, array $watchlist = []): ?array
     {
         if (is_string($meta)) {
             $meta = json_decode($meta, true);
         }
-        $via = is_array($meta) ? ($meta['via_netvaerk'] ?? null) : null;
-        if (! is_array($via)) {
+        $via = is_array($meta) && is_array($meta['via_netvaerk'] ?? null) ? $meta['via_netvaerk'] : [];
+
+        // Uden oplysningen i beskeden selv (ældre beskeder) siger overvågningen det: en netværksovervågning
+        // står på koncerntoppens CVR og hedder "Netværk: <navn>".
+        if ($via === [] && ($watchlist['origin'] ?? null) === 'lender_network' && ($watchlist['watch_type'] ?? null) === 'company') {
+            $via = [
+                'top_cvr' => $watchlist['watch_value'] ?? null,
+                'top_navn' => is_string($watchlist['display_label'] ?? null) ? preg_replace('/^Netværk:\s*/u', '', $watchlist['display_label']) : null,
+            ];
+        }
+
+        $cvr = trim((string) (self::tekst($via['top_cvr'] ?? null) ?? ''));
+        if (! preg_match('/\A\d{8}\z/', $cvr)) {
             return null;
         }
 
-        $cvr = self::tekst($via['top_cvr'] ?? null);
-        if ($cvr === null || ! preg_match('/^\d{8}$/', $cvr)) {
-            return null;
-        }
+        // Navnet vises som tekst og som linkets tekst: uden et rigtigt navn (tomt, kun blanktegn, ikke en streng)
+        // vises CVR-nummeret, aldrig et tomt link.
+        $navn = is_string($via['top_navn'] ?? null) ? trim((string) preg_replace('/\s+/u', ' ', $via['top_navn'])) : '';
 
-        return ['top_cvr' => $cvr, 'top_navn' => self::tekst($via['top_navn'] ?? null) ?: $cvr];
+        return ['top_cvr' => $cvr, 'top_navn' => $navn !== '' ? $navn : $cvr];
     }
 
     /** @return list<array{id: int, watch_type: string, watch_value: ?string, display_label: ?string}> */
