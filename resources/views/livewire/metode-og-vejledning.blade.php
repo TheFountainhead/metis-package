@@ -472,6 +472,11 @@
                 Opfylder flere danske selskaber reglen (typisk fordi et gammelt ejerskab ikke er afsluttet i CVR), bruges det selskab, hvis ejerskab senest er begyndt.
                 Kan det ikke afgøres, får selskabet intet moderselskab.
             </p>
+            <p class="mb-3">
+                Et ophørt selskab regnes ikke som ejer, selv om det stadig står som ejer i CVR.
+                Det gælder selskaber, der er ophørt, slettet, opløst eller tvangsopløst. Et selskab under konkurs eller under tvangsopløsning er ikke ophørt og regnes med.
+                Et ophørt selskab kan derfor hverken være moderselskab eller koncernens top: koncernen ender ved det øverste selskab, der stadig findes.
+            </p>
             <h3 class="font-semibold mb-2">Koncernens top</h3>
             <ul class="list-disc pl-5 space-y-2 mb-3">
                 <li>Vi følger moderselskaberne opad, højst 10 led. Det øverste danske selskab er koncernens top.</li>
