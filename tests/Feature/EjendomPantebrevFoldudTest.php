@@ -50,8 +50,9 @@ it('viser fradrag med minus og ental ved én', function () {
 
 it('et pantebrev uden detaljer er ikke klikbart (ældre API eller intet oplyst)', function () {
     pantEjendom([
-        ['creditor' => 'Uden felt', 'principal' => 1000000],
-        ['creditor' => 'Tomme', 'principal' => 1000000, 'detaljer' => ['prioritet' => null, 'tinglyst' => null, 'laantype' => null, 'rentetype' => null, 'referencerente' => null, 'saerlige_vilkaar' => [], 'tinglysningsafgift_kr' => null, 'ogsaa_lyst_paa' => null, 'respekterer' => 0]],
+        // 🪤 `type` står ALTID på rækken i det rigtige API; den alene må ikke gøre rækken klikbar.
+        ['creditor' => 'Uden felt', 'type' => 'realkreditpantebrev', 'principal' => 1000000],
+        ['creditor' => 'Tomme', 'type' => 'realkreditpantebrev', 'principal' => 1000000, 'detaljer' => ['prioritet' => null, 'tinglyst' => null, 'laantype' => null, 'rentetype' => null, 'referencerente' => null, 'saerlige_vilkaar' => [], 'tinglysningsafgift_kr' => null, 'ogsaa_lyst_paa' => null, 'respekterer' => 0]],
     ]);
 
     $html = Livewire::test('metis-address-mortgages', ['query' => 'Testvej 1, 2100'])->html();
@@ -69,4 +70,41 @@ it('folder kun det ud, der er indhold til', function () {
 
     expect(substr_count($html, 'data-pant-detalje'))->toBe(1)
         ->and($html)->not->toContain('Tinglysningsafgift')->not->toContain('Også lyst på');
+});
+
+it('🚨 kalder et afgiftspantebrev for det, det er, og bruger danske betegnelser', function () {
+    pantEjendom([
+        ['creditor' => 'A', 'type' => 'ejerpantebrev', 'is_afgiftspantebrev' => true, 'principal' => 1, 'detaljer' => ['prioritet' => 1, 'saerlige_vilkaar' => []]],
+        ['creditor' => 'B', 'type' => 'skadesloesbrev', 'principal' => 1, 'detaljer' => ['prioritet' => 2, 'laantype' => 'serielaan', 'saerlige_vilkaar' => ['afdragsfri_periode']]],
+        ['creditor' => 'C', 'type' => 'udlaeg', 'principal' => 1, 'detaljer' => ['prioritet' => 3, 'saerlige_vilkaar' => []]],
+    ]);
+
+    $html = Livewire::test('metis-address-mortgages', ['query' => 'Testvej 1, 2100'])->html();
+
+    expect($html)->toContain('Afgiftspantebrev (ikke gæld)')->not->toContain('>Ejerpantebrev<')
+        ->toContain('Skadesløsbrev')->toContain('Udlæg')->toContain('Serielån')->toContain('Afdragsfri periode')
+        ->not->toContain('Skadesloesbrev')->not->toContain('Udlaeg');
+});
+
+it('afrunder ikke rentetillægget og tåler skæve værdier uden at vælte sektionen', function () {
+    pantEjendom([
+        ['creditor' => 'A', 'principal' => 1, 'detaljer' => ['referencerente' => ['navn' => 'CIBOR3', 'tillaeg' => 0.125], 'tinglyst' => 'ikke-en-dato', 'laantype' => ['x'], 'saerlige_vilkaar' => []]],
+        ['creditor' => 'B', 'principal' => 1, 'detaljer' => ['referencerente' => ['navn' => 'CIBOR6', 'tillaeg' => 0.004], 'tinglyst' => '0000-00-00', 'rentetype' => 'rentefri', 'saerlige_vilkaar' => []]],
+        ['creditor' => 'C', 'principal' => 1, 'detaljer' => ['rentetype' => 'rentefri', 'prioritet' => 1, 'saerlige_vilkaar' => []]],
+    ]);
+
+    $html = Livewire::test('metis-address-mortgages', ['query' => 'Testvej 1, 2100'])->html();
+
+    expect($html)->toContain('CIBOR3 + 0,125 %')->toContain('CIBOR6 + 0,004 %')
+        ->not->toContain('0,13 %')->not->toContain('0,00 %')->not->toContain('-0001')->not->toContain('Tinglyst');
+    // En ukendt rentetype giver ingen rentelinje (aldrig et falsk "variabel").
+    expect(substr_count($html, '>Rente<'))->toBe(2);
+});
+
+it('rækkerne har stabil nøgle og tilgængelig knap', function () {
+    pantEjendom([['creditor' => 'A', 'rettighed_identifikator' => 'abc-123', 'principal' => 1, 'detaljer' => ['prioritet' => 1, 'saerlige_vilkaar' => []]]]);
+
+    $html = Livewire::test('metis-address-mortgages', ['query' => 'Testvej 1, 2100'])->html();
+
+    expect($html)->toContain('wire:key="pant-abc-123"')->toContain('aria-expanded="false"')->toContain('aria-hidden="true"');
 });

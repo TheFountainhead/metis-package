@@ -30,40 +30,17 @@
                     </thead>
                         @foreach($mortgages as $m)
                             @php
-                                // Fold ud: det Tinglysningen oplyser om lånet selv (registry-api `detaljer`).
-                                // Kun linjer med indhold vises; en række uden nogen er ikke klikbar.
-                                $d = is_array($m['detaljer'] ?? null) ? $m['detaljer'] : [];
-                                $linjer = [];
-                                if (filled($d['prioritet'] ?? null)) { $linjer[__('Prioritet')] = (string) $d['prioritet']; }
-                                if (filled($d['tinglyst'] ?? null)) { $linjer[__('Tinglyst')] = \Illuminate\Support\Carbon::parse($d['tinglyst'])->format('d.m.Y'); }
-                                if (filled($m['type'] ?? null)) { $linjer[__('Type')] = ucfirst((string) $m['type']); }
-                                if (filled($d['laantype'] ?? null)) {
-                                    $linjer[__('Lånetype')] = ['kontantlaan' => __('Kontantlån'), 'obligationslaan' => __('Obligationslån'), 'indekslaan' => __('Indekslån')][$d['laantype']] ?? ucfirst((string) $d['laantype']);
-                                }
-                                $ref = is_array($d['referencerente'] ?? null) ? $d['referencerente'] : null;
-                                if ($ref && filled($ref['navn'] ?? null)) {
-                                    $tillaeg = $ref['tillaeg'] ?? null;
-                                    $linjer[__('Rente')] = __('variabel') . ', ' . $ref['navn']
-                                        . (is_numeric($tillaeg) && (float) $tillaeg != 0.0 ? ' ' . ($tillaeg < 0 ? '−' : '+') . ' ' . number_format(abs((float) $tillaeg), 2, ',', '.') . ' %' : '');
-                                } elseif (filled($d['rentetype'] ?? null)) {
-                                    $linjer[__('Rente')] = $d['rentetype'] === 'fast' ? __('fast') : __('variabel');
-                                }
-                                $vilkaar = array_filter((array) ($d['saerlige_vilkaar'] ?? []), 'is_string');
-                                if ($vilkaar) { $linjer[__('Særlige lånevilkår')] = implode(', ', array_map(fn ($v) => ucfirst(str_replace('_', ' ', $v)), $vilkaar)); }
-                                if (is_numeric($d['tinglysningsafgift_kr'] ?? null)) { $linjer[__('Tinglysningsafgift')] = number_format((float) $d['tinglysningsafgift_kr'], 0, ',', '.') . ' kr.'; }
-                                if (is_numeric($d['ogsaa_lyst_paa'] ?? null) && (int) $d['ogsaa_lyst_paa'] > 0) {
-                                    $linjer[__('Også lyst på')] = trans_choice('{1} :n anden ejendom|[2,*] :n andre ejendomme', (int) $d['ogsaa_lyst_paa'], ['n' => (int) $d['ogsaa_lyst_paa']]);
-                                }
-                                if ((int) ($d['respekterer'] ?? 0) > 0) { $linjer[__('Respekterer')] = trans_choice('{1} :n foranstående rettighed|[2,*] :n foranstående rettigheder', (int) $d['respekterer'], ['n' => (int) $d['respekterer']]); }
-                                $detaljeId = 'pant-detalje-' . $loop->index;
+                                $linjer = $this->detaljelinjer($m);
+                                $noegle = filled($m['rettighed_identifikator'] ?? null) ? $m['rettighed_identifikator'] : 'r'.$loop->index;
+                                $detaljeId = 'pant-detalje-'.$loop->index;
                             @endphp
-                            <tbody x-data="{ aaben: false }" class="border-b border-zinc-100 dark:border-zinc-800">
+                            <tbody wire:key="pant-{{ $noegle }}" x-data="{ aaben: false }" class="border-b border-zinc-100 dark:border-zinc-800">
                             <tr>
                                 <td class="py-2 pr-4">
                                     @if($linjer)
-                                        <button type="button" @click="aaben = !aaben" :aria-expanded="aaben ? 'true' : 'false'" aria-controls="{{ $detaljeId }}"
+                                        <button type="button" @click="aaben = !aaben" aria-expanded="false" :aria-expanded="aaben ? 'true' : 'false'" aria-controls="{{ $detaljeId }}"
                                                 class="inline-flex items-center gap-1.5 text-left hover:underline">
-                                            <span class="text-zinc-400 text-xs" x-text="aaben ? '▾' : '▸'">▸</span>
+                                            <span class="text-zinc-400 text-xs" aria-hidden="true" x-text="aaben ? '▾' : '▸'">▸</span>
                                             {{ $m['creditor'] ?? '-' }}
                                         </button>
                                     @else
