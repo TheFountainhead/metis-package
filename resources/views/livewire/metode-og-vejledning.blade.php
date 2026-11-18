@@ -474,7 +474,9 @@
             </p>
             <p class="mb-3">
                 Et ophørt selskab regnes ikke som ejer, selv om det stadig står som ejer i CVR.
-                Det gælder selskaber, der er ophørt, slettet, opløst eller tvangsopløst. Et selskab under konkurs eller under tvangsopløsning er ikke ophørt og regnes med.
+                Det gælder selskaber, der er ophørt, slettet, tvangsopløst eller opløst efter konkurs, erklæring eller likvidation.
+                Et selskab, der er opløst ved fusion eller spaltning, er gået op i et andet selskab og regnes stadig med som ejer, indtil ejerregistret er opdateret.
+                Et selskab under konkurs eller under tvangsopløsning er ikke ophørt og regnes med.
                 Et ophørt selskab kan derfor hverken være moderselskab eller koncernens top: koncernen ender ved det øverste selskab, der stadig findes.
             </p>
             <h3 class="font-semibold mb-2">Koncernens top</h3>
