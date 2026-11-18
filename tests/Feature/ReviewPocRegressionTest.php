@@ -313,7 +313,7 @@ it('🚨 et CVR-lazy-payload genbrugt i en frisk session henter intet', function
 })->with([
     'metis-company-info', 'metis-company-overview', 'metis-company-funding', 'metis-company-roles',
     'metis-company-structure', 'metis-company-relations', 'metis-company-properties', 'metis-company-tinglysning',
-    'metis-lookup-title',
+    'metis-company-koncern', 'metis-lookup-title',
 ]);
 
 it('🚨 et adresse-lazy-payload genbrugt i en frisk session henter intet', function () {

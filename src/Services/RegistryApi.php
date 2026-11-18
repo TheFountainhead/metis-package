@@ -1365,6 +1365,46 @@ class RegistryApi
         }
     }
 
+    /**
+     * Koncernen selskabet indgår i (registry-api GET /v1/company/{cvr}/koncern): top, antal og selskaberne.
+     *
+     * Tre udfald, som kalderen SKAL skelne: et gyldigt svar (caches 1 time; koncernen bygges om natten),
+     * `null` = ukendt selskab eller et ældre API uden endpointet (404), og `['error' => status]` = kaldet
+     * fejlede. En fejl må aldrig ligne "selskabet står alene". Kort timeout: sektionerne deler ét request.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function fetchCompanyKoncern(string $cvr): ?array
+    {
+        $key = 'metis:koncern:'.$cvr;
+        if (! is_null($cached = $this->fraCache($key))) {
+            return $cached;
+        }
+
+        try {
+            $data = $this->client()->timeout(10)->get("/v1/company/{$cvr}/koncern")->throw()->json('data');
+        } catch (RequestException $e) {
+            if ($e->response->status() === 404) {
+                return null;
+            }
+            report($e);
+
+            return ['error' => $e->response->status()];
+        } catch (ConnectionException $e) {
+            report($e);
+
+            return ['error' => 0];
+        }
+
+        if (is_array($data) && isset($data['top']['cvr'])) {
+            Cache::put($key, $data, 3600);
+
+            return $data;
+        }
+
+        return ['error' => 200]; // 200 uden gyldigt indhold: heller ikke "ingen koncern"
+    }
+
     public function fetchCompanyTaxRecords(string $cvr): ?array
     {
         try {
