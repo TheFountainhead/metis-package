@@ -207,9 +207,28 @@ trait ResolvesGraphEnrichment
             ($latest['source'] ?? '') === 'pdf' ? (int) round($value * 1000) : (int) $value
         );
 
+        // Sammenligningsåret: helst rapportens egne sammenligningstal (`prior`, samme regnskab og derfor samme
+        // afgrænsning), ellers selskabets forrige regnskabsår, hvis det har samme afgrænsning (koncern/selskab).
+        // Et år længere tilbage eller med en anden afgrænsning sammenlignes der ikke med: en ændring mod et
+        // forkert år er værre end ingen.
+        $forrige = is_array($latest['prior'] ?? null) ? $latest['prior'] : null;
+        if ($forrige === null && is_numeric($latest['year'] ?? null)) {
+            $forrige = collect($company['financials'] ?? [])->first(fn ($aar) => is_array($aar)
+                && (string) ($aar['year'] ?? '') === (string) ((int) $latest['year'] - 1)
+                && ($aar['scope'] ?? null) === ($latest['scope'] ?? null)
+                && ($aar['source'] ?? '') === ($latest['source'] ?? ''));
+        }
+        $tal = fn (?array $aar, string $felt) => is_array($aar) && is_numeric($aar[$felt] ?? null) ? $toKroner($aar[$felt]) : null;
+        $aendring = fn (string $felt) => ($nu = $tal($latest, $felt)) !== null && ($foer = $tal($forrige, $felt)) !== null ? $nu - $foer : null;
+
         return [
             'equity' => $toKroner($latest['equity'] ?? null),
             'result' => $toKroner($latest['profit_loss'] ?? null),
+            // Balancesum og ændring mod forrige år (hele kroner). Null = tallet eller sammenligningsåret mangler.
+            'assets' => $tal($latest, 'assets'),
+            'equity_change' => $aendring('equity'),
+            'result_change' => $aendring('profit_loss'),
+            'assets_change' => $aendring('assets'),
             'fiscal_year' => $latest['year'] ?? null,
             // employees er en serie ({latest: {count}, history}), ikke et tal: som CompanyOverview.
             // Kortet viste ellers "[object Object]" (JS String() paa et objekt).

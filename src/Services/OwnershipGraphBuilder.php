@@ -726,6 +726,10 @@ class OwnershipGraphBuilder
         return array_filter([
             'equity' => $company['equity'] ?? null,
             'result' => $company['result'] ?? null,
+            'assets' => $company['assets'] ?? null,
+            'equity_change' => $company['equity_change'] ?? null,
+            'result_change' => $company['result_change'] ?? null,
+            'assets_change' => $company['assets_change'] ?? null,
             'fiscal_year' => $company['fiscal_year'] ?? null,
             'employees' => $company['employees'] ?? null,
             'website' => $company['website'] ?? null,

@@ -2323,3 +2323,105 @@ it('never persists the trial-build memo across requests — a rebuild on new inp
     // Property nodes only appear if the post-loadProperties rebuild was NOT
     // served from the mount-time memo (which held a property-less graph).
 });
+
+// ---- Regnskabstal på noderne (19/11-2026): balance og ændring mod forrige år ----
+
+it('fører balance og ændring mod forrige år med ud på noden, i hele kroner', function () {
+    fakeRegistryCompanyInfo('44507781', [
+        'financials' => [
+            ['year' => '2024', 'equity' => 92_438_600, 'assets' => 120_000_000, 'profit_loss' => 2_527_000],
+            ['year' => '2023', 'equity' => 90_000_000, 'assets' => 125_000_000, 'profit_loss' => 3_000_000],
+        ],
+    ]);
+    fakeRegistryStructure();
+    fakeRegistryPortfolio();
+
+    $node = collect(Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+
+    expect($node['card'])->toMatchArray([
+        'equity' => 92_438_600, 'result' => 2_527_000, 'assets' => 120_000_000,
+        'equity_change' => 2_438_600, 'result_change' => -473_000, 'assets_change' => -5_000_000,
+        'fiscal_year' => '2024',
+    ]);
+});
+
+it('🚨 bruger rapportens egne sammenligningstal før forrige års række, og sammenligner aldrig på tværs af afgrænsning eller et sprunget år', function (array $financials, array $forventet) {
+    fakeRegistryCompanyInfo('44507781', ['financials' => $financials]);
+    fakeRegistryStructure();
+    fakeRegistryPortfolio();
+
+    $card = collect(Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->get('graphModel')['nodes'])->firstWhere('id', '44507781')['card'];
+
+    expect(array_intersect_key($card, array_flip(['equity_change', 'result_change', 'assets_change'])))->toBe($forventet);
+})->with([
+    'prior vinder over forrige række' => [[
+        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10, 'assets' => 500, 'prior' => ['equity' => 70, 'profit_loss' => 25]],
+        ['year' => '2023', 'equity' => 1, 'profit_loss' => 1, 'assets' => 1],
+    ], ['equity_change' => 30, 'result_change' => -15]],
+    'forrige år mangler' => [[
+        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10, 'assets' => 500],
+    ], []],
+    'et år er sprunget over' => [[
+        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10],
+        ['year' => '2022', 'equity' => 50, 'profit_loss' => 5],
+    ], []],
+    'koncern mod selskab sammenlignes ikke' => [[
+        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10, 'scope' => 'consolidated'],
+        ['year' => '2023', 'equity' => 50, 'profit_loss' => 5],
+    ], []],
+    'et tal der mangler i forrige år giver ingen ændring for det tal' => [[
+        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10, 'assets' => 500],
+        ['year' => '2023', 'equity' => 80],
+    ], ['equity_change' => 20]],
+    'uændret er nul, ikke manglende' => [[
+        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10],
+        ['year' => '2023', 'equity' => 100, 'profit_loss' => 10],
+    ], ['equity_change' => 0, 'result_change' => 0]],
+    'pdf-kilde omregnes fra tusinder i begge år' => [[
+        ['year' => '2024', 'equity' => 2527, 'profit_loss' => 316, 'source' => 'pdf'],
+        ['year' => '2023', 'equity' => 2000, 'profit_loss' => 400, 'source' => 'pdf'],
+    ], ['equity_change' => 527_000, 'result_change' => -84_000]],
+    'pdf mod xbrl sammenlignes ikke' => [[
+        ['year' => '2024', 'equity' => 2_527_000, 'profit_loss' => 316_000],
+        ['year' => '2023', 'equity' => 2000, 'profit_loss' => 400, 'source' => 'pdf'],
+    ], []],
+]);
+
+it('🚨 et selskab der først tegnes, når en node foldes ud, får også sine regnskabstal', function () {
+    // Fire led, så det nederste ligger bag dybdegrænsen og ikke tegnes automatisk (flere end tre skjulte).
+    // 🪤 Selskabsopslagene fakes FØR strukturen: fakeRegistryStructure() har en fang-alt for cvr/company/*.
+    foreach (['44507781', '44018942', '44027992', '55000001', '55000002', '55000003', '55000004'] as $cvr) {
+        fakeRegistryCompanyInfo($cvr);
+    }
+    $barn = fn (string $cvr, array $children = []) => ['cvr' => $cvr, 'name' => "Selskab {$cvr}", 'ownership_share' => 100.0, 'children' => $children];
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => ['name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [
+            $barn('44507781', [$barn('44018942', [$barn('44027992'), $barn('55000001'), $barn('55000002'), $barn('55000003'), $barn('55000004')])]),
+        ]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties');
+    expect($c->get('enrichmentStatus'))->toBe('loaded')
+        ->and(collect($c->get('graphModel')['nodes'])->pluck('id'))->toContain('44018942')->not->toContain('44027992');
+
+    $udfoldet = collect($c->call('expandNode', 'sub:44018942')->get('graphModel')['nodes'])->firstWhere('id', '44027992');
+
+    expect($udfoldet)->not->toBeNull()->and($udfoldet['card']['result'] ?? null)->toBe(100_000)
+        ->and($udfoldet['card']['equity_change'] ?? null)->toBe(100_000);
+});
+
+it('nodens regnskabsrække findes i skabelonen og tåler noder uden kort', function () {
+    fakeRegistryStructure();
+    fakeRegistryPortfolio();
+    fakeRegistryCompanyInfo('44507781');
+
+    $html = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->html();
+
+    expect($html)->toContain('mgraph-node__fin')
+        ->toContain('node.card?.result != null || node.card?.equity != null')
+        ->toContain('node.card?.result_change > 0')
+        // Ingen dobbelte anførselstegn inde i udtrykket: de ville lukke attributten.
+        ->and(preg_match('/x-text="\[\s*node\.card\?\.result != null[^"]*\]\.filter\(Boolean\)\.join\(\' · \'\)"/s', $html))->toBe(1);
+});

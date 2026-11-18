@@ -195,6 +195,13 @@
        owner node) + signal icons (negative equity / newly founded / no
        financials yet). Same mono/ink-3 treatment as the other meta rows —
        enrichment reads as data, not decoration. */
+    /* Regnskabstal på noden (resultat og egenkapital): samme mono-behandling som de øvrige metarækker, én linje. */
+    .mgraph-node__fin {
+        font-family: var(--fm); font-size: 10.5px; color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        min-width: 0;
+    }
     .mgraph-node__agg {
         font-family: var(--fm); font-size: 10.5px; color: var(--ink-3);
         font-variant-numeric: tabular-nums;
