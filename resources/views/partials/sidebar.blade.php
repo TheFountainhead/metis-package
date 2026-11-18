@@ -14,6 +14,7 @@
                 ['route' => 'metis.alerts', 'label' => __('Alerts'), 'icon' => 'bell', 'requires_token' => true],
                 ['route' => 'metis.engagements', 'label' => __('Engagementer'), 'icon' => 'bell', 'requires_token' => true],
                 ['route' => 'metis.watched-companies', 'label' => __('Overvågede selskaber'), 'icon' => 'bell', 'requires_token' => true],
+                ['route' => 'metis.lists', 'label' => __('Lister'), 'icon' => 'book', 'requires_token' => true],
             ],
         ],
     ];

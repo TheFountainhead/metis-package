@@ -2141,6 +2141,50 @@ class RegistryApi
         return null;
     }
 
+    /**
+     * Brugerens egne lister og noter (registry-api /v1/lists og /v1/notes).
+     *
+     * 🔑 Gaten er `kanFoelge()`, ikke `pilotFejl()`: uden brugerens EGET token ville client() falde tilbage til
+     * tenantens fælles nøgle, og listerne ville blive delt mellem alle uden token (embedded uden gating).
+     *
+     * En forventet afvisning (4xx: validering, slettet i en anden fane, udløbet adgang, for mange kald)
+     * rapporteres ikke: den vises for brugeren. Serverfejl og netværksfejl rapporteres.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed> `['data' => ...]`, eller `['error' => ..., 'status' => int, 'message' => ?string]`
+     */
+    public function egneData(string $metode, string $sti, array $data = []): array
+    {
+        if (! app(LookupAccess::class)->kanFoelge()) {
+            return ['error' => 'pilot_required', 'status' => 403];
+        }
+
+        try {
+            $svar = $this->client()->send(strtoupper($metode), $sti, strtoupper($metode) === 'GET' ? ['query' => $data] : ['json' => $data])->throw();
+
+            if ($svar->status() === 204) {
+                return ['data' => null];
+            }
+            // json() er null ved tom eller ikke-JSON 2xx (fx under et deploy): det er en fejl, ikke en tom liste.
+            $json = $svar->json();
+
+            return is_array($json) && array_key_exists('data', $json) ? $json : ['error' => 'invalid_response', 'status' => 502];
+        } catch (RequestException $e) {
+            $status = $e->response->status();
+            // 🔑 Rapporten sendes fra en Livewire-forespørgsel, hvis indhold rummer brugerens noter. Derfor
+            // rapporteres kun serverfejl hos API'et, ikke forventede afvisninger (udløbet adgang, for mange kald).
+            if ($status >= 500) {
+                report($e);
+            }
+            $fejl = $e->response->json('errors');
+            $besked = is_array($fejl) && is_array(reset($fejl)) && is_string(reset($fejl)[0] ?? null) ? reset($fejl)[0] : null;
+
+            return ['error' => 'upstream_error', 'status' => $status, 'message' => $status === 422 ? $besked : null];
+        } catch (ConnectionException $e) {
+            return $this->transportErrorFrom($e);
+        }
+    }
+
     public function createWatchlist(string $type, string $value, ?string $label, array $alertTypes): array
     {
         if ($blocked = $this->pilotFejl()) {

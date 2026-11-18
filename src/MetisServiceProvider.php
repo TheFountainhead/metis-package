@@ -214,6 +214,11 @@ class MetisServiceProvider extends ServiceProvider
         Livewire::component('metis-debt-search', \TheFountainhead\Metis\Livewire\DebtSearch::class);
         Livewire::component('metis-property-explore', \TheFountainhead\Metis\Livewire\PropertyExplore::class);
         Livewire::component('metis-follow-button', \TheFountainhead\Metis\Livewire\FollowButton::class);
+        // Brugerens egne lister og noter. Alle offentlige metoder er gated på brugerens eget token
+        // (HarEgetElement::maaBruge + RegistryApi::egneData), så navnene åbner ingen ny vej ind.
+        Livewire::component('metis-list-button', \TheFountainhead\Metis\Livewire\ListButton::class);
+        Livewire::component('metis-notes', \TheFountainhead\Metis\Livewire\Notes::class);
+        Livewire::component('metis-lists', \TheFountainhead\Metis\Livewire\Lists::class);
         Livewire::component('metis-person-follow-button', \TheFountainhead\Metis\Livewire\PersonFollowButton::class);
         Livewire::component('metis-alerts-inbox', \TheFountainhead\Metis\Livewire\AlertsInbox::class);
         // 🐛 Uden et navn kunne `/livewire/update` ikke finde komponenten

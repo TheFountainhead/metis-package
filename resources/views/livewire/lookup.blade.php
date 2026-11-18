@@ -80,8 +80,17 @@
     @endphp
     <div class="flex items-start justify-between gap-4">
         <livewire:metis-lookup-title :type="$type" :query="$query" lazy :key="'title-'.$type.'-'.$query" />
-        @if($visFoelg)
-            <livewire:metis-follow-button watch-type="company" :watch-value="$foelgCvr" :key="'follow-company-'.$foelgCvr" />
+        {{-- Liste-knappen: samme adgangsregel som Følg (brugerens eget token). Selskaber og ejendomme, ikke personer. --}}
+        @php $visListe = in_array($type, ['cvr', 'address'], true) && ($type !== 'cvr' || strlen($foelgCvr) === 8) && app(\TheFountainhead\Metis\Services\LookupAccess::class)->kanFoelge(); @endphp
+        @if($visFoelg || $visListe)
+            <div class="flex items-start gap-2 shrink-0">
+                @if($visListe)
+                    <livewire:metis-list-button :type="$type" :query="$query" :key="'liste-'.$type.'-'.$query" />
+                @endif
+                @if($visFoelg)
+                    <livewire:metis-follow-button watch-type="company" :watch-value="$foelgCvr" :key="'follow-company-'.$foelgCvr" />
+                @endif
+            </div>
         @endif
     </div>
 
@@ -204,6 +213,11 @@
                     <livewire:metis-address-heritage :query="$query" lazy="on-load" />
                 </div>
             </div>
+        @endif
+        {{-- Brugerens egne noter på selskabet eller ejendommen. Ikke lazy: #[Locked] + lazy brækker rehydreringen;
+             noterne hentes efter indlæsning (wire:init), så siden ikke venter. --}}
+        @if($visListe ?? false)
+            <livewire:metis-notes :type="$type" :query="$query" :key="'noter-'.$type.'-'.$query" />
         @endif
     </div>
     @endif
