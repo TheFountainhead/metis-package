@@ -481,11 +481,12 @@
             }
         }"
         x-ref="map"
-        @php($adresseKort = filled($query) && $searchType === 'address')
+        @php($adresseKort = filled($query) && $searchType === 'address' && $lat && $lng)
         {{-- Et kort man skal kunne kigge rundt paa (naboer, fri udforskning) har brug for plads; 200 px
-             klippede kontrollens statustekst. Andre sider (forsiden) beholder den lille hoejde. --}}
-        class="{{ $adresseKort ? 'h-[440px]' : 'h-[200px] lg:h-full' }}"
-        style="min-height: {{ $adresseKort ? 440 : 200 }}px; z-index: 0;"
+             klippede kontrollens statustekst. 320 px paa mobil, 440 px fra lg. Kun naar adressen er loest
+             op (koordinater); ellers staar der et tomt kort. Andre sider beholder den lille hoejde. --}}
+        class="{{ $adresseKort ? 'h-[320px] lg:h-[440px]' : 'h-[200px] lg:h-full' }}"
+        style="min-height: {{ $adresseKort ? 320 : 200 }}px; z-index: 0;"
     ></div>
 
     @foreach($layers as $layer)

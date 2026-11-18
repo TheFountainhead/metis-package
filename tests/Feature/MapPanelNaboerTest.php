@@ -252,11 +252,15 @@ it('🚨 kortets x-data kan parses som JavaScript med naboejendomme', function (
 });
 
 it('kortet er højt nok til at kigge rundt på en adresse, men beholder den lille højde ellers', function () {
-    fakeNaboer([]);
+    // Adressen kunne ikke slås op (analysen fejler, ingen koordinater): ikke et 440 px tomt kort.
+    // Skal stå FØR de øvrige fakes: den første der matcher en URL vinder.
+    Http::fake(['*/v1/property/analysis' => Http::response([], 500), '*/v1/map/layers' => Http::response(['data' => []])]);
+    $utenKoordinater = Livewire::test(MapPanel::class, ['searchType' => 'address', 'query' => ADRESSE])->html();
 
     $adresse = Livewire::test(MapPanel::class, ['lat' => 55.6761, 'lng' => 12.5683, 'searchType' => 'address', 'query' => ADRESSE])->html();
     $forside = Livewire::test(MapPanel::class, ['lat' => 55.6761, 'lng' => 12.5683, 'searchType' => 'cvr'])->html();
 
-    expect($adresse)->toContain('min-height: 440px')->toContain('h-[440px]')
-        ->and($forside)->toContain('min-height: 200px')->toContain('h-[200px] lg:h-full')->not->toContain('440px');
+    expect($adresse)->toContain('min-height: 320px')->toContain('h-[320px] lg:h-[440px]')
+        ->and($forside)->toContain('min-height: 200px')->toContain('h-[200px] lg:h-full')->not->toContain('440px')
+        ->and($utenKoordinater)->toContain('min-height: 200px')->not->toContain('440px');
 });
