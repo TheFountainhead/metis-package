@@ -108,3 +108,15 @@ it('rækkerne har stabil nøgle og tilgængelig knap', function () {
 
     expect($html)->toContain('wire:key="pant-abc-123"')->toContain('aria-expanded="false"')->toContain('aria-hidden="true"');
 });
+
+it('🚨 viser et ejerpantebrevs rente som rammerente, ikke som faktisk rente', function () {
+    pantEjendom([
+        ['creditor' => 'Ejer', 'type' => 'ejerpantebrev', 'principal' => 1, 'detaljer' => ['rente_er_ramme' => true, 'rentetype' => 'variabel', 'referencerente' => ['navn' => 'nationalbankensDiskonto', 'tillaeg' => 10], 'saerlige_vilkaar' => []]],
+        ['creditor' => 'Real', 'type' => 'realkreditpantebrev', 'principal' => 1, 'detaljer' => ['rente_er_ramme' => false, 'referencerente' => ['navn' => 'CIBOR3', 'tillaeg' => 0.04], 'saerlige_vilkaar' => []]],
+    ]);
+
+    $html = Livewire::test('metis-address-mortgages', ['query' => 'Testvej 1, 2100'])->html();
+
+    expect($html)->toContain('rammerente: variabel, nationalbankensDiskonto + 10,00 % (juridisk maksimum, ikke den faktiske rente)')
+        ->and(substr_count($html, 'juridisk maksimum'))->toBe(1);
+});

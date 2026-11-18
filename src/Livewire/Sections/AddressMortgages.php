@@ -100,6 +100,11 @@ class AddressMortgages extends MetisSection
             $linjer[__('Rente')] = $d['rentetype'] === 'fast' ? __('fast') : __('variabel');
         }
 
+        // Et ejerpantebrevs rente er en RAMME (juridisk maksimum), ikke den faktiske rente på et lån.
+        if (($d['rente_er_ramme'] ?? false) === true && isset($linjer[__('Rente')])) {
+            $linjer[__('Rente')] = __('rammerente').': '.$linjer[__('Rente')].' '.__('(juridisk maksimum, ikke den faktiske rente)');
+        }
+
         $vilkaar = array_values(array_filter((array) ($d['saerlige_vilkaar'] ?? []), fn ($v) => is_string($v) && $v !== ''));
         if ($vilkaar) {
             $linjer[__('Særlige lånevilkår')] = implode(', ', array_map(fn ($v) => self::dansk($v), $vilkaar));
