@@ -66,7 +66,8 @@ it('henter ejendomme omkring adressen og sender kun hvidlistede felter ud', func
 
     $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
 
-    expect($svar['naboer'])->toHaveCount(1)
+    expect($svar['sorteret'])->toBeTrue()
+        ->and($svar['naboer'])->toHaveCount(1)
         ->and($svar['naboer'][0])->toEqual([
             'adresse' => 'Roskildevej 12', 'postnr' => '2000', 'by' => 'Frederiksberg',
             'byggeaar' => 1932, 'areal' => 180, 'vurdering' => 4500000,
@@ -81,7 +82,7 @@ it('henter ejendomme omkring adressen og sender kun hvidlistede felter ud', func
         ->not->toContain('"Roskildevej 10"')->not->toContain('Uden koordinater');
 
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore')
-        && $r['lat'] === 55.6761 && $r['lng'] === 12.5683 && $r['radius'] === 250 && $r['limit'] === 50
+        && $r['lat'] === 55.6761 && $r['lng'] === 12.5683 && $r['radius'] === 250 && $r['limit'] === 50 && $r['sort'] === 'distance_asc'
         && $r->header('X-Search-Source')[0] === 'map_neighbours');
 });
 
@@ -107,26 +108,23 @@ it('🚨 bruger ikke klientens lat/lng, men adressens koordinater', function () 
     Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore') && $r['lat'] === 10.0);
 });
 
-it('🚨 henter intet for en adresse sessionen ikke har fået godkendt', function () {
+it('🚨 afviser en anonym gratis-prøve: naboernes vurderinger hører ikke til det ene godkendte opslag', function () {
     config()->set('metis.gating.enabled', true);
     fakeNaboer([]);
 
-    $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
+    $panel = new MapPanel;
+    $panel->kanNaboer = true; // klienten kan sætte egenskaben selv; gaten ligger i hentNaboer()
 
-    expect($svar)->toBe(['error' => 'ikke_godkendt']);
-    Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore'));
+    expect($panel->hentNaboer(ADRESSE, 250))->toBe(['error' => 'kraever_login']);
+    Http::assertNothingSent();
 });
 
-it('henter, når sessionen har godkendt netop den adresse', function () {
+it('henter for en verificeret bruger (kvote-fritaget)', function () {
     config()->set('metis.gating.enabled', true);
-    config()->set('metis.gating.free_lookups', 5);
     fakeNaboer(['svar' => Http::response(naboSvar([naboRaekke()]))]);
-    $this->withSession(['metis_session_started' => true]);
-    app(LookupAccess::class)->godkendOpslag('address', ADRESSE);
+    $this->withSession(['metis_verified_email' => 'bruger@firma.dk']);
 
-    $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
-
-    expect($svar)->toHaveKey('naboer');
+    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toHaveKey('naboer');
 });
 
 it('beholder andre lejligheder i samme bygning, men ikke selve adressen', function () {
@@ -155,16 +153,16 @@ it('kender selve ejendommen på matrikel_id, også når adressen ikke kan deles'
     expect($adresser)->toBe(['Strandvejen 100 B']);
 });
 
-it('cacher et svar kort, men aldrig uden godkendelse', function () {
+it('cacher et svar kort, men aldrig til en anonym', function () {
     fakeNaboer(['svar' => Http::response(naboSvar([naboRaekke()]))]);
 
     (new MapPanel)->hentNaboer(ADRESSE, 250);
     (new MapPanel)->hentNaboer(ADRESSE, 250);
     Http::assertSentCount(2); // analyse + udforsk; andet opslag kommer fra cachen
 
-    // 🚨 Samme adresse og radius, men nu uden godkendelse: cachen må ikke udlevere noget.
+    // 🚨 Samme adresse og radius, men nu som anonym: cachen må ikke udlevere noget.
     config()->set('metis.gating.enabled', true);
-    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'ikke_godkendt']);
+    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'kraever_login']);
 });
 
 it('viser kvotefejl som kvote og lader andre fejl rapportere', function () {
@@ -179,16 +177,38 @@ it('viser kvotefejl som kvote og lader andre fejl rapportere', function () {
     expect(fn () => (new MapPanel)->hentNaboer(ADRESSE, 250))->toThrow(\TypeError::class);
 });
 
+it('melder flere, når registry-api siger truncated (afstandssortering har ingen cursor)', function () {
+    fakeNaboer(['svar' => Http::response(['data' => ['results' => [naboRaekke()], 'cursor' => null, 'has_more' => false, 'truncated' => true]])]);
+
+    expect((new MapPanel)->hentNaboer(ADRESSE, 500)['flere'])->toBeTrue();
+});
+
 it('melder flere, når der er mere end de viste', function () {
     fakeNaboer(['svar' => Http::response(naboSvar([naboRaekke()], flere: true))]);
 
     expect((new MapPanel)->hentNaboer(ADRESSE, 500)['flere'])->toBeTrue();
 });
 
-it('oversætter 429 fra registry-api til kvote', function () {
+it('oversætter 429 fra registry-api til for_mange (deres throttle, ikke vores dagskvote)', function () {
     fakeNaboer(['svar' => Http::response(['message' => 'Too Many'], 429)]);
 
-    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'kvote']);
+    expect((new MapPanel)->hentNaboer(ADRESSE, 250))->toBe(['error' => 'for_mange']);
+});
+
+it('🚨 falder tilbage til standardsortering, hvis registry-api endnu ikke kender distance_asc (422)', function () {
+    Http::fake([
+        '*/v1/map/layers' => Http::response(['data' => []]),
+        '*/v1/property/analysis' => Http::response(['data' => ['property' => ['coordinates' => ['lat' => 55.6761, 'lng' => 12.5683]]]]),
+        '*/v1/property-explore' => Http::sequence()
+            ->push(['message' => 'The selected sort is invalid.'], 422)
+            ->push(naboSvar([naboRaekke()])),
+    ]);
+
+    $svar = (new MapPanel)->hentNaboer(ADRESSE, 250);
+
+    expect($svar)->toHaveKey('naboer')->and($svar['naboer'])->toHaveCount(1)
+        ->and($svar['sorteret'])->toBeFalse(); // kortet må ikke påstå "de nærmeste"
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/v1/property-explore') && ! isset($r['sort']));
 });
 
 it('oversætter andre fejl fra registry-api til fejl', function () {
@@ -219,7 +239,10 @@ it('🚨 kortets x-data kan parses som JavaScript med naboejendomme', function (
     expect($m)->toHaveCount(2);
 
     $js = html_entity_decode($m[1], ENT_QUOTES);
-    $fil = tempnam(sys_get_temp_dir(), 'xdata').'.js';
+    // tempnam() opretter filen; omdøbes til .js (node --check kræver endelsen), og den omdøbte slettes.
+    $tmp = tempnam(sys_get_temp_dir(), 'xdata');
+    $fil = $tmp.'.js';
+    rename($tmp, $fil);
     file_put_contents($fil, '('.$js.')');
     exec('node --check '.escapeshellarg($fil).' 2>&1', $ud, $kode);
     @unlink($fil);
