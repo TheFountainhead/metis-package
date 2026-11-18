@@ -150,3 +150,17 @@ it('🚨 prøver kun én gang, når koncernen ikke svarer: siden må ikke vente 
     expect(app(\TheFountainhead\Metis\Services\RegistryApi::class)->fetchCompanyKoncern('10000005'))->toBe(['error' => 0])
         ->and($kald)->toBe(1);
 });
+
+it('prøver én gang til efter et 503 (deploy)', function () {
+    \Illuminate\Support\Sleep::fake();
+    Http::fake(['*' => Http::sequence()->push([], 503)->push(koncernSvar())]);
+    expect(app(\TheFountainhead\Metis\Services\RegistryApi::class)->fetchCompanyKoncern('10000005')['top']['cvr'] ?? null)->toBe('10000001');
+    Http::assertSentCount(2);
+});
+
+it('prøver ikke igen efter en almindelig serverfejl', function () {
+    \Illuminate\Support\Sleep::fake();
+    Http::fake(['*' => Http::sequence()->push([], 500)->push(koncernSvar())]);
+    expect(app(\TheFountainhead\Metis\Services\RegistryApi::class)->fetchCompanyKoncern('10000006'))->toBe(['error' => 500]);
+    Http::assertSentCount(1);
+});

@@ -235,7 +235,8 @@
                         <tr>
                             <td>{{ $m['creditor'] ?? '-' }}</td>
                             <td class="text-right">{{ isset($m['principal']) ? number_format($m['principal'], 0, ',', '.') . ' kr.' : '-' }}</td>
-                            <td class="text-right">{{ isset($m['interest_rate']) ? number_format($m['interest_rate'], 2, ',', '.') . '%' : '-' }}</td>
+                            {{-- Et ejerpantebrevs sats er et juridisk maksimum: en PDF forlader huset og må ikke vise den som lånets rente. --}}
+                            <td class="text-right">{{ isset($m['interest_rate']) ? number_format($m['interest_rate'], 2, ',', '.') . '%' . (\TheFountainhead\Metis\Livewire\Sections\AddressMortgages::erRammerente($m) ? ' ('.__('ramme').')' : '') : '-' }}</td>
                             {{-- Samme begrundelse som i pantesektionen: Tinglysningen HAR
                                  ikke feltet, saa en bindestreg ville laeses som "staaende
                                  laan". Vigtigere her end paa skaermen — en PDF forlader

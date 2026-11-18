@@ -1382,9 +1382,12 @@ class RegistryApi
         }
 
         try {
-            // 🔑 Ét forsøg: klientens transport-retry ville ellers gøre 10 s til ca. 22 s, og sektionerne deler én
-            // forespørgsel (#[Lazy(isolate: false)]), så hele selskabssiden ville vente på en hængende koncern.
-            $data = $this->client()->retry(1, 0)->timeout(10)->get("/v1/company/{$cvr}/koncern")->throw()->json('data');
+            // 🔑 Ingen transport-retry: den ville gøre 10 s til ca. 22 s, og sektionerne deler én forespørgsel
+            // (#[Lazy(isolate: false)]), så hele selskabssiden ville vente på en hængende koncern. Et 503 under
+            // et deploy svarer med det samme og prøves én gang til, så et kort deploy ikke viser en fejl.
+            $data = $this->client()
+                ->retry(2, 2000, fn (\Throwable $e) => $e instanceof RequestException && $e->response->status() === 503)
+                ->timeout(10)->get("/v1/company/{$cvr}/koncern")->throw()->json('data');
         } catch (RequestException $e) {
             if ($e->response->status() === 404) {
                 return null;

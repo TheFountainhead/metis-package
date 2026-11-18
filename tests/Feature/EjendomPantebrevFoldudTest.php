@@ -144,3 +144,15 @@ it('🚨 viser forbeholdet om rammerente, også når der ikke er en rentelinje a
         ->toContain('data-pant-detalje') // rækken kan foldes ud, selv om forbeholdet er det eneste indhold
         ->toContain('data-rammerente');
 });
+
+it('🚨 PDF-en mærker også rammerenten: den forlader huset uden vores øvrige forklaring', function () {
+    $html = view('metis::livewire.pdf', [
+        'type' => 'address', 'query' => 'Testvej 1, 2100',
+        'data' => ['analysis' => ['property' => ['mortgages' => [
+            ['creditor' => 'Ejer', 'principal' => 1, 'interest_rate' => 10.0, 'detaljer' => ['rente_er_ramme' => true]],
+            ['creditor' => 'Real', 'principal' => 1, 'interest_rate' => 4.0, 'detaljer' => ['rente_er_ramme' => false]],
+        ]]]],
+    ])->render();
+
+    expect($html)->toContain('10,00% (ramme)')->toContain('4,00%')->not->toContain('4,00% (ramme)');
+});
