@@ -2326,66 +2326,83 @@ it('never persists the trial-build memo across requests — a rebuild on new inp
 
 // ---- Regnskabstal på noderne (19/11-2026): balance og ændring mod forrige år ----
 
-it('fører balance og ændring mod forrige år med ud på noden, i hele kroner', function () {
-    fakeRegistryCompanyInfo('44507781', [
-        'financials' => [
-            ['year' => '2024', 'equity' => 92_438_600, 'assets' => 120_000_000, 'profit_loss' => 2_527_000],
-            ['year' => '2023', 'equity' => 90_000_000, 'assets' => 125_000_000, 'profit_loss' => 3_000_000],
-        ],
-    ]);
+/** Et år i `financial_history`, som registry-api's FinancialHistory leverer det. */
+function grafAar(string $aar, array $tal, array $o = []): array
+{
+    return $o + $tal + ['year' => $aar, 'period_start' => "{$aar}-01-01", 'period_end' => "{$aar}-12-31", 'months' => 12.0, 'currency' => 'DKK'];
+}
+
+function grafKort(array $financials, array $historik): array
+{
+    fakeRegistryCompanyInfo('44507781', ['financials' => $financials, 'financial_history' => $historik]);
     fakeRegistryStructure();
     fakeRegistryPortfolio();
 
-    $node = collect(Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->get('graphModel')['nodes'])->firstWhere('id', '44507781');
+    return collect(Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->get('graphModel')['nodes'])->firstWhere('id', '44507781')['card'];
+}
 
-    expect($node['card'])->toMatchArray([
+it('fører balance og ændring mod forrige år med ud på noden, i hele kroner', function () {
+    $nu = ['equity' => 92_438_600, 'assets' => 120_000_000, 'profit_loss' => 2_527_000];
+    $foer = ['equity' => 90_000_000, 'assets' => 125_000_000, 'profit_loss' => 3_000_000];
+
+    expect(grafKort([['year' => '2024'] + $nu, ['year' => '2023'] + $foer], [grafAar('2024', $nu), grafAar('2023', $foer)]))->toMatchArray([
         'equity' => 92_438_600, 'result' => 2_527_000, 'assets' => 120_000_000,
         'equity_change' => 2_438_600, 'result_change' => -473_000, 'assets_change' => -5_000_000,
         'fiscal_year' => '2024',
     ]);
 });
 
-it('🚨 bruger rapportens egne sammenligningstal før forrige års række, og sammenligner aldrig på tværs af afgrænsning eller et sprunget år', function (array $financials, array $forventet) {
-    fakeRegistryCompanyInfo('44507781', ['financials' => $financials]);
+it('🚨 viser kun en ændring, når de to år kan sammenlignes', function (array $nuO, array $foerO, array $forventet) {
+    $nu = ['equity' => 100, 'assets' => 500, 'profit_loss' => 10];
+    $foer = ['equity' => 70, 'assets' => 400, 'profit_loss' => 25];
+
+    $kort = grafKort([['year' => '2024'] + $nu], [grafAar('2024', $nu, $nuO), grafAar('2023', $foer, $foerO)]);
+
+    expect(array_intersect_key($kort, array_flip(['equity_change', 'result_change', 'assets_change'])))->toBe($forventet);
+})->with([
+    'sammenlignelige år' => [[], [], ['equity_change' => 30, 'result_change' => -15, 'assets_change' => 100]],
+    'koncern mod selskab' => [['scope' => 'consolidated'], [], []],
+    'begge koncern' => [['scope' => 'consolidated'], ['scope' => 'consolidated'], ['equity_change' => 30, 'result_change' => -15, 'assets_change' => 100]],
+    'omregnet fra fremmed valuta' => [['reported_currency' => 'USD'], [], []],
+    'forrige år omregnet fra fremmed valuta' => [[], ['reported_currency' => 'EUR'], []],
+    'et år er sprunget over' => [[], ['year' => '2022', 'period_start' => '2022-01-01', 'period_end' => '2022-12-31'], []],
+    'kort første år: balancen sammenlignes, resultatet ikke' => [[], ['period_start' => '2023-11-01', 'months' => 2.0], ['equity_change' => 30, 'assets_change' => 100]],
+    'langt omlægningsår: resultatet sammenlignes ikke' => [['period_start' => '2023-07-01', 'months' => 18.0], ['period_end' => '2023-06-30', 'period_start' => '2022-07-01'], ['equity_change' => 30, 'assets_change' => 100]],
+    'perioderne overlapper' => [['period_start' => '2023-06-01'], [], []],
+    'periode mangler' => [['period_start' => null], [], []],
+    'måneder mangler: kun balancen' => [['months' => null], [], ['equity_change' => 30, 'assets_change' => 100]],
+    'pdf-kilde sammenlignes ikke' => [[], ['source' => 'pdf'], []],
+    'historikkens nyeste år er ikke kortets år' => [['year' => '2025', 'period_start' => '2025-01-01', 'period_end' => '2025-12-31'], ['year' => '2024', 'period_start' => '2024-01-01', 'period_end' => '2024-12-31'], []],
+]);
+
+it('uden regnskabshistorik, eller med kun ét år, vises ingen ændring', function (array $historik) {
+    $nu = ['equity' => 100, 'assets' => 500, 'profit_loss' => 10];
+
+    // 🪤 Ét opslag pr. test: flere Http::fake for samme adresse i én test giver det FØRSTE svar hver gang.
+    expect(grafKort([['year' => '2024'] + $nu, ['year' => '2023', 'equity' => 1]], $historik))
+        ->not->toHaveKeys(['equity_change', 'result_change', 'assets_change'])->toMatchArray(['assets' => 500]);
+})->with([
+    'ingen historik' => [[]],
+    'kun ét år' => [[grafAar('2024', ['equity' => 100, 'assets' => 500, 'profit_loss' => 10])]],
+]);
+
+it('uændret er nul, ikke manglende, og et tal der mangler året før giver ingen ændring for det tal', function () {
+    $nu = ['equity' => 100, 'assets' => 500, 'profit_loss' => 10];
+
+    expect(array_intersect_key(grafKort([['year' => '2024'] + $nu], [grafAar('2024', $nu), grafAar('2023', ['equity' => 100])]), array_flip(['equity_change', 'result_change', 'assets_change'])))
+        ->toBe(['equity_change' => 0]);
+});
+
+it('🚨 tåler `financials` som ét objekt i stedet for en liste (ældre svar) uden at vælte grafens berigelse', function () {
+    fakeRegistryCompanyInfo('44507781', ['financials' => ['year' => '2024', 'equity' => 100], 'financial_history' => 'skrot']);
     fakeRegistryStructure();
     fakeRegistryPortfolio();
 
-    $card = collect(Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->get('graphModel')['nodes'])->firstWhere('id', '44507781')['card'];
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties');
 
-    expect(array_intersect_key($card, array_flip(['equity_change', 'result_change', 'assets_change'])))->toBe($forventet);
-})->with([
-    'prior vinder over forrige række' => [[
-        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10, 'assets' => 500, 'prior' => ['equity' => 70, 'profit_loss' => 25]],
-        ['year' => '2023', 'equity' => 1, 'profit_loss' => 1, 'assets' => 1],
-    ], ['equity_change' => 30, 'result_change' => -15]],
-    'forrige år mangler' => [[
-        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10, 'assets' => 500],
-    ], []],
-    'et år er sprunget over' => [[
-        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10],
-        ['year' => '2022', 'equity' => 50, 'profit_loss' => 5],
-    ], []],
-    'koncern mod selskab sammenlignes ikke' => [[
-        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10, 'scope' => 'consolidated'],
-        ['year' => '2023', 'equity' => 50, 'profit_loss' => 5],
-    ], []],
-    'et tal der mangler i forrige år giver ingen ændring for det tal' => [[
-        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10, 'assets' => 500],
-        ['year' => '2023', 'equity' => 80],
-    ], ['equity_change' => 20]],
-    'uændret er nul, ikke manglende' => [[
-        ['year' => '2024', 'equity' => 100, 'profit_loss' => 10],
-        ['year' => '2023', 'equity' => 100, 'profit_loss' => 10],
-    ], ['equity_change' => 0, 'result_change' => 0]],
-    'pdf-kilde omregnes fra tusinder i begge år' => [[
-        ['year' => '2024', 'equity' => 2527, 'profit_loss' => 316, 'source' => 'pdf'],
-        ['year' => '2023', 'equity' => 2000, 'profit_loss' => 400, 'source' => 'pdf'],
-    ], ['equity_change' => 527_000, 'result_change' => -84_000]],
-    'pdf mod xbrl sammenlignes ikke' => [[
-        ['year' => '2024', 'equity' => 2_527_000, 'profit_loss' => 316_000],
-        ['year' => '2023', 'equity' => 2000, 'profit_loss' => 400, 'source' => 'pdf'],
-    ], []],
-]);
+    expect($c->get('enrichmentStatus'))->toBe('loaded')
+        ->and(collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781'))->toHaveKey('card');
+});
 
 it('🚨 et selskab der først tegnes, når en node foldes ud, får også sine regnskabstal', function () {
     // Fire led, så det nederste ligger bag dybdegrænsen og ikke tegnes automatisk (flere end tre skjulte).
@@ -2409,7 +2426,7 @@ it('🚨 et selskab der først tegnes, når en node foldes ud, får også sine r
     $udfoldet = collect($c->call('expandNode', 'sub:44018942')->get('graphModel')['nodes'])->firstWhere('id', '44027992');
 
     expect($udfoldet)->not->toBeNull()->and($udfoldet['card']['result'] ?? null)->toBe(100_000)
-        ->and($udfoldet['card']['equity_change'] ?? null)->toBe(100_000);
+        ->and($udfoldet['card']['equity'] ?? null)->toBe(1_000_000)->and($udfoldet['card']['assets'] ?? null)->toBe(5_000_000);
 });
 
 it('nodens regnskabsrække findes i skabelonen og tåler noder uden kort', function () {
@@ -2420,8 +2437,10 @@ it('nodens regnskabsrække findes i skabelonen og tåler noder uden kort', funct
     $html = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->html();
 
     expect($html)->toContain('mgraph-node__fin')
-        ->toContain('node.card?.result != null || node.card?.equity != null')
+        ->toContain("!(node.signals ?? []).includes('no_financials')")
         ->toContain('node.card?.result_change > 0')
-        // Ingen dobbelte anførselstegn inde i udtrykket: de ville lukke attributten.
-        ->and(preg_match('/x-text="\[\s*node\.card\?\.result != null[^"]*\]\.filter\(Boolean\)\.join\(\' · \'\)"/s', $html))->toBe(1);
+        // Ingen dobbelte anførselstegn inde i udtrykkene: de ville lukke attributten. Hele x-text og :title
+        // skal kunne findes som én attribut der slutter med det forventede.
+        ->and(preg_match('/x-text="\\(\\(node\\.card\\?\\.result != null[^"]*\\.join\\(\' · \'\\) : \'\'"/s', $html))->toBe(1)
+        ->and(preg_match('/:title="\\(\\(node\\.card\\?\\.result != null[^"]*: \'\'"/s', $html))->toBe(1);
 });
