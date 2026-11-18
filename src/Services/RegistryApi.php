@@ -1382,7 +1382,9 @@ class RegistryApi
         }
 
         try {
-            $data = $this->client()->timeout(10)->get("/v1/company/{$cvr}/koncern")->throw()->json('data');
+            // 🔑 Ét forsøg: klientens transport-retry ville ellers gøre 10 s til ca. 22 s, og sektionerne deler én
+            // forespørgsel (#[Lazy(isolate: false)]), så hele selskabssiden ville vente på en hængende koncern.
+            $data = $this->client()->retry(1, 0)->timeout(10)->get("/v1/company/{$cvr}/koncern")->throw()->json('data');
         } catch (RequestException $e) {
             if ($e->response->status() === 404) {
                 return null;

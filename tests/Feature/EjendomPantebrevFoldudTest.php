@@ -120,3 +120,27 @@ it('🚨 viser et ejerpantebrevs rente som rammerente, ikke som faktisk rente', 
     expect($html)->toContain('rammerente: variabel, nationalbankensDiskonto + 10,00 % (juridisk maksimum, ikke den faktiske rente)')
         ->and(substr_count($html, 'juridisk maksimum'))->toBe(1);
 });
+
+it('🚨 mærker rammerenten på selve rækken, ikke kun i det udfoldede', function () {
+    pantEjendom([
+        ['creditor' => 'Ejer', 'type' => 'ejerpantebrev', 'principal' => 1, 'interest_rate' => 10.0, 'detaljer' => ['rente_er_ramme' => true, 'rentetype' => 'fast', 'saerlige_vilkaar' => []]],
+        ['creditor' => 'Real', 'type' => 'realkreditpantebrev', 'principal' => 1, 'interest_rate' => 4.0, 'detaljer' => ['rente_er_ramme' => false, 'rentetype' => 'fast', 'saerlige_vilkaar' => []]],
+    ]);
+
+    $html = Livewire::test('metis-address-mortgages', ['query' => 'Testvej 1, 2100'])->html();
+
+    expect(substr_count($html, 'data-rammerente'))->toBe(1)
+        ->and($html)->toContain('10,00%')->toContain('(ramme)')->toContain('4,00%');
+});
+
+it('🚨 viser forbeholdet om rammerente, også når der ikke er en rentelinje at sætte det på', function () {
+    pantEjendom([
+        ['creditor' => 'Ejer', 'type' => 'ejerpantebrev', 'principal' => 1, 'interest_rate' => 10.0, 'detaljer' => ['rente_er_ramme' => true, 'rentetype' => null, 'referencerente' => null, 'saerlige_vilkaar' => []]],
+    ]);
+
+    $html = Livewire::test('metis-address-mortgages', ['query' => 'Testvej 1, 2100'])->html();
+
+    expect($html)->toContain('rammerente (juridisk maksimum, ikke den faktiske rente)')
+        ->toContain('data-pant-detalje') // rækken kan foldes ud, selv om forbeholdet er det eneste indhold
+        ->toContain('data-rammerente');
+});
