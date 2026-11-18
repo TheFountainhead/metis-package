@@ -61,7 +61,36 @@ trait NormalisererAlerts
                 'display_label' => self::tekst($watchlist['display_label'] ?? null),
             ],
             'metadata' => self::normaliserMetadata($alert['metadata'] ?? null),
+            'via_netvaerk' => self::viaNetvaerk($alert['metadata'] ?? null),
         ];
+    }
+
+    /**
+     * Kom beskeden gennem netværksovervågningen? Så ligger ejendommen i koncernen under en af brugerens
+     * låntageres koncerntop (registry-api `metadata.via_netvaerk`), og brugeren har typisk ikke selv pant der.
+     * Det skal siges i visningen, ellers undrer beskeden.
+     *
+     * `normaliserMetadata()` beholder kun skalarer, så denne struktur hentes ud for sig. Kun et gyldigt CVR-nummer
+     * giver et svar: toppen bliver til et link.
+     *
+     * @return array{top_cvr: string, top_navn: string}|null
+     */
+    protected static function viaNetvaerk(mixed $meta): ?array
+    {
+        if (is_string($meta)) {
+            $meta = json_decode($meta, true);
+        }
+        $via = is_array($meta) ? ($meta['via_netvaerk'] ?? null) : null;
+        if (! is_array($via)) {
+            return null;
+        }
+
+        $cvr = self::tekst($via['top_cvr'] ?? null);
+        if ($cvr === null || ! preg_match('/^\d{8}$/', $cvr)) {
+            return null;
+        }
+
+        return ['top_cvr' => $cvr, 'top_navn' => self::tekst($via['top_navn'] ?? null) ?: $cvr];
     }
 
     /** @return list<array{id: int, watch_type: string, watch_value: ?string, display_label: ?string}> */
