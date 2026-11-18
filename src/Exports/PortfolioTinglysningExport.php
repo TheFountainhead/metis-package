@@ -209,17 +209,20 @@ class PortfolioTinglysningExport
 
         $row = 2;
         foreach ($this->mortgages as $m) {
-            $sheet->setCellValue('A' . $row, $m['address'] ?? '');
-            $sheet->setCellValue('B' . $row, $m['bfe'] ?? '');
-            $sheet->setCellValue('C' . $row, $m['mortgage_type'] ?? '');
-            $sheet->setCellValue('D' . $row, $m['priority'] ?? '');
-            $sheet->setCellValue('E' . $row, $m['debitor'] ?? '');
-            $sheet->setCellValue('F' . $row, $m['creditor'] ?? '');
+            // 🚨 Tekst fra Tinglysningen skrives som TEKST-celler: et navn der begynder med "=" må ikke blive til
+            // en formel i modtagerens regneark.
+            $tekst = fn (string $celle, mixed $v) => $sheet->setCellValueExplicit($celle, is_scalar($v) ? (string) $v : '', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $tekst('A' . $row, $m['address'] ?? '');
+            $tekst('B' . $row, $m['bfe'] ?? '');
+            $tekst('C' . $row, $m['mortgage_type'] ?? '');
+            $sheet->setCellValue('D' . $row, is_numeric($m['priority'] ?? null) ? (int) $m['priority'] : '');
+            $tekst('E' . $row, $m['debitor'] ?? '');
+            $tekst('F' . $row, $m['creditor'] ?? '');
             $sheet->setCellValue('G' . $row, (int) ($m['principal_amount'] ?? 0) / 100);
             $sheet->setCellValue('H' . $row, $m['registration_date'] ?? '');
             $sheet->setCellValue('I' . $row, isset($m['ltv']['value']) ? (float) $m['ltv']['value'] : '');
             $sheet->setCellValue('J' . $row, ! empty($m['is_sampant']) ? 'Ja' : 'Nej');
-            $sheet->setCellValue('K' . $row, $m['owner_company']['name'] ?? ($m['owner_company']['cvr'] ?? ''));
+            $tekst('K' . $row, $m['owner_company']['name'] ?? ($m['owner_company']['cvr'] ?? ''));
             $sheet->setCellValue('L' . $row, $m['tier_depth'] ?? '');
 
             $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0');

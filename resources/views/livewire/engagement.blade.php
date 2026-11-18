@@ -95,8 +95,8 @@
                     {{ __('Hent sampantskema og pantoversigt (XLSX)') }}
                 </button>
             </div>
-            @if(session('metis_sampant_export_error'))
-                <p class="mb-2 text-sm text-red-600">{{ session('metis_sampant_export_error') }}</p>
+            @if($exportFejl)
+                <p class="mb-2 text-sm text-red-600">{{ $exportFejl }}</p>
             @endif
 
             @if($this->sampant === [])
@@ -107,7 +107,7 @@
                         <div class="p-3 bg-white border rounded-lg text-sm" wire:key="sampant-{{ $pant['key'] }}" data-sampant-pantebrev>
                             <div class="flex flex-wrap items-baseline justify-between gap-x-4">
                                 <div>
-                                    <span class="font-medium">{{ \TheFountainhead\Metis\Livewire\Sections\AddressMortgages::dansk($pant['type']) ?: __('Pantebrev') }}</span>
+                                    <span class="font-medium">{{ $pant['type'] !== '' ? $pant['type'] : __('Pantebrev') }}</span>
                                     <span class="text-zinc-600">· {{ $pant['creditor'] !== '' ? $pant['creditor'] : '—' }}</span>
                                     @if($pant['pledgees'])
                                         <span class="text-zinc-500">· {{ __('Panthavere') }}: {{ implode(', ', $pant['pledgees']) }}</span>
@@ -129,6 +129,15 @@
                                     </li>
                                 @endforeach
                             </ul>
+                            @if($pant['truncated'])
+                                <p class="mt-2 text-xs text-zinc-500">{{ __('Listen over ejendomme er afkortet.') }}</p>
+                            @elseif($pant['unlisted'] > 0)
+                                {{-- En anden kreditors pantebrev: kun antallet kendes, ikke hvilke ejendomme. --}}
+                                <p class="mt-2 text-xs text-zinc-500" data-sampant-uoplyst>
+                                    {{ __('Lyst på :n ejendomme i alt.', ['n' => $pant['properties_total']]) }}
+                                    {{ $pant['is_own'] ? __(':n øvrige er ikke oplyst af Tinglysningen.', ['n' => $pant['unlisted']]) : __('De :n øvrige vises ikke for andre kreditorers pantebreve.', ['n' => $pant['unlisted']]) }}
+                                </p>
+                            @endif
                         </div>
                     @endforeach
                 </div>

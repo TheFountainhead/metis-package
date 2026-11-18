@@ -35,6 +35,9 @@ class Engagement extends Component
 
     public bool $notFound = false;
 
+    /** Fejl ved dannelse af regnearket. Nulstilles ved hvert forsøg, så en gammel fejl ikke bliver hængende. */
+    public ?string $exportFejl = null;
+
     public function mount(string $key): void
     {
         $this->key = $key;
@@ -112,6 +115,8 @@ class Engagement extends Component
      */
     public function exportSampantskema()
     {
+        $this->exportFejl = null;
+
         if (! $this->hasUserToken()) {
             return null;
         }
@@ -119,12 +124,13 @@ class Engagement extends Component
         try {
             $response = app(RegistryApi::class)->fetchEngagement($this->key);
         } catch (QuotaExceededException) {
-            $this->errorMessage = __('Kvoten er brugt op. Prøv igen senere.');
+            // Egen fejltekst: $errorMessage ville erstatte hele det indlæste engagement med en fejlboks.
+            $this->exportFejl = __('Kvoten er brugt op. Prøv igen senere.');
 
             return null;
         }
         if (! is_array($response['data'] ?? null) || isset($response['error']) || empty($response['data']['key'])) {
-            session()->flash('metis_sampant_export_error', __('Kunne ikke hente engagementet til regnearket. Prøv igen.'));
+            $this->exportFejl = __('Kunne ikke hente engagementet til regnearket. Prøv igen.');
 
             return null;
         }
@@ -133,7 +139,7 @@ class Engagement extends Component
             $export = new SampantskemaExport($response['data'], is_array($response['meta'] ?? null) ? $response['meta'] : []);
         } catch (\RuntimeException $e) {
             // phpoffice/phpspreadsheet er en valgfri afhængighed: vis en besked i stedet for at vælte siden.
-            session()->flash('metis_sampant_export_error', __('Regneark kan ikke dannes på denne installation.'));
+            $this->exportFejl = __('Regneark kan ikke dannes på denne installation.');
 
             return null;
         }
