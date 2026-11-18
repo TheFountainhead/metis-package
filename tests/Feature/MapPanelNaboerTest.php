@@ -250,3 +250,13 @@ it('🚨 kortets x-data kan parses som JavaScript med naboejendomme', function (
     expect($kode)->toBe(0, implode("\n", $ud))
         ->and($js)->toContain('hentNaboer')->toContain('n.url')->not->toContain('route(');
 });
+
+it('kortet er højt nok til at kigge rundt på en adresse, men beholder den lille højde ellers', function () {
+    fakeNaboer([]);
+
+    $adresse = Livewire::test(MapPanel::class, ['lat' => 55.6761, 'lng' => 12.5683, 'searchType' => 'address', 'query' => ADRESSE])->html();
+    $forside = Livewire::test(MapPanel::class, ['lat' => 55.6761, 'lng' => 12.5683, 'searchType' => 'cvr'])->html();
+
+    expect($adresse)->toContain('min-height: 440px')->toContain('h-[440px]')
+        ->and($forside)->toContain('min-height: 200px')->toContain('h-[200px] lg:h-full')->not->toContain('440px');
+});

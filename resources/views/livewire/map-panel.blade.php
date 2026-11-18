@@ -481,8 +481,11 @@
             }
         }"
         x-ref="map"
-        class="h-[200px] lg:h-full"
-        style="min-height: 200px; z-index: 0;"
+        @php($adresseKort = filled($query) && $searchType === 'address')
+        {{-- Et kort man skal kunne kigge rundt paa (naboer, fri udforskning) har brug for plads; 200 px
+             klippede kontrollens statustekst. Andre sider (forsiden) beholder den lille hoejde. --}}
+        class="{{ $adresseKort ? 'h-[440px]' : 'h-[200px] lg:h-full' }}"
+        style="min-height: {{ $adresseKort ? 440 : 200 }}px; z-index: 0;"
     ></div>
 
     @foreach($layers as $layer)
