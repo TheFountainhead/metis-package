@@ -305,7 +305,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach($mortgages as $m)
+                            @foreach($this->sorteredeMortgages as $m)
                                 <tr class="border-b border-zinc-100 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition"
                                     wire:key="mortgage-{{ $m['id'] ?? $loop->index }}"
                                     wire:click="$set('openMortgageId', {{ (int) ($m['id'] ?? 0) }})">

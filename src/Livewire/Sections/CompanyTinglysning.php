@@ -187,7 +187,7 @@ class CompanyTinglysning extends MetisSection
 
         $ids = array_values(array_map(
             fn (array $m) => (int) ($m['id'] ?? 0),
-            $this->mortgages,
+            $this->sorteredeMortgages,
         ));
 
         $currentIndex = array_search($this->openMortgageId, $ids, true);
@@ -213,6 +213,45 @@ class CompanyTinglysning extends MetisSection
      * Returns null if drawer is closed or mortgage is no longer in list
      * (filter changed since drawer opened).
      */
+    /**
+     * Listen i den valgte sortering. Registry-api leverer rækkerne i id-orden (stabil cursor ved hentning i
+     * portioner), så sorteringen SKAL ske her; før blev "Sortér" sendt med, men listen og eksporten stod i id-orden.
+     * Samme rækkefølge bruges af tabellen, pilene i detaljevinduet og XLSX-eksporten. Ukendte værdier sidst, id til
+     * sidst for en stabil rækkefølge.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getSorteredeMortgagesProperty(): array
+    {
+        $tal = fn ($v) => is_numeric($v) ? (float) $v : null;
+        $tekst = fn ($v) => is_string($v) && trim($v) !== '' ? trim($v) : null;
+        $collator = class_exists(\Collator::class) ? new \Collator('da_DK') : null;
+        $sammenlignTekst = fn (string $a, string $b) => $collator ? $collator->compare($a, $b) : strcmp(mb_strtolower($a), mb_strtolower($b));
+
+        [$noegle, $faldende, $erTekst] = match ($this->sortBy) {
+            'tinglysning_date_desc' => [fn ($m) => $tekst($m['registration_date'] ?? null), true, true],
+            'ltv_desc' => [fn ($m) => $tal($m['ltv']['value'] ?? null), true, false],
+            'address_asc' => [fn ($m) => $tekst($m['address'] ?? null), false, true],
+            default => [fn ($m) => $tal($m['principal_amount'] ?? null), true, false],
+        };
+
+        $raekker = array_values($this->mortgages);
+        usort($raekker, function ($a, $b) use ($noegle, $faldende, $erTekst, $sammenlignTekst) {
+            $va = $noegle($a);
+            $vb = $noegle($b);
+            if ($va === null || $vb === null) {
+                $r = ($va === null) <=> ($vb === null); // ukendt sidst
+            } else {
+                $r = $erTekst && ! is_float($va) ? $sammenlignTekst($va, $vb) : $va <=> $vb;
+                $r = $faldende ? -$r : $r;
+            }
+
+            return $r !== 0 ? $r : ((int) ($a['id'] ?? 0) <=> (int) ($b['id'] ?? 0));
+        });
+
+        return $raekker;
+    }
+
     public function getOpenMortgageProperty(): ?array
     {
         if ($this->openMortgageId === null) {
@@ -426,7 +465,7 @@ class CompanyTinglysning extends MetisSection
                 company: $this->company ?? [],
                 treeMeta: $this->treeMeta ?? [],
                 tierBreakdown: $this->tierBreakdown,
-                mortgages: $this->mortgages,
+                mortgages: $this->sorteredeMortgages,
                 filters: $this->filters(),
             );
         } catch (\RuntimeException $e) {
