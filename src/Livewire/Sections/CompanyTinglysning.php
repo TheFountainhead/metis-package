@@ -412,9 +412,10 @@ class CompanyTinglysning extends MetisSection
      */
     public function exportXlsx()
     {
-        // Knappen er slået fra under hentningen, men et kald kan stadig komme (to faner, langsom klient).
-        // En halv liste giver for lav hovedstol og for få pantebreve i Oversigt uden at sige det.
-        if ($this->streaming) {
+        // Knappen er slået fra under hentningen, men et kald kan stadig komme: et klik der står i kø bag et
+        // filterskift, kører på en snapshot hvor hentningen er startet forfra. Efter en fejlet hentning er listen
+        // også ufuldstændig. En halv liste giver for lav hovedstol og for få pantebreve i Oversigt uden at sige det.
+        if ($this->streaming || $this->hasError) {
             session()->flash('metis_tinglysning_export_error', __('Vent til alle pantebreve er hentet, og prøv igen.'));
 
             return null;
