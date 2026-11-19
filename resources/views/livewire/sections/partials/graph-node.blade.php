@@ -74,7 +74,7 @@
         {{-- Regnskabstal på selve noden: seneste resultat og egenkapital med retning mod forrige år.
              Hele kroner fra kortet (aldrig /100). Vises kun når mindst ét af tallene findes, og aldrig sammen
              med signalet 'ingen regnskabsdata' (kortet siger da det samme). Teksten er forkortet, så begge tal
-             kan stå på nodens 210 px; de fulde tal står i title. Samme ?.-regel som ovenfor: x-text evalueres på
+             kan stå på nodens 210 px; title viser de samme tal med enhed (også afrundet). Samme ?.-regel som ovenfor: x-text evalueres på
              ALLE noder, også dem uden kort. Ingen dobbelte anførselstegn i udtrykkene.
              Rækken har plads til 29 tegn (184 px, 6,3 px pr. tegn). Tallene skrives derfor med højst tre
              betydende cifre ("-9,9 mio", "-103 mio", "1,2 mia"), så den længste række er 28 tegn. Pilen har
