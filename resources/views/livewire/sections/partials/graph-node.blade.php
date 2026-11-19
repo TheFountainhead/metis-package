@@ -71,6 +71,19 @@
         <span class="mgraph-node__agg" x-show="node.agg" x-cloak
               x-text="node.agg ? (node.agg.count + ' ejendomme · ' + fmtDKK(node.agg.value) + (node.agg.valued < node.agg.count ? ' (' + node.agg.valued + ' vurderet)' : '')) : ''"
               :title="node.agg && node.agg.valued < node.agg.count ? ('Minimum — sum af foreliggende vurderinger (' + node.agg.valued + ' af ' + node.agg.count + ')') : ''"></span>
+        {{-- Regnskabstal på selve noden: seneste resultat og egenkapital med retning mod forrige år.
+             Hele kroner fra kortet (aldrig /100). Vises kun når mindst ét af tallene findes, og aldrig sammen
+             med signalet 'ingen regnskabsdata' (kortet siger da det samme). Teksten er forkortet, så begge tal
+             kan stå på nodens 210 px; de fulde tal står i title. Samme ?.-regel som ovenfor: x-text evalueres på
+             ALLE noder, også dem uden kort. Ingen dobbelte anførselstegn i udtrykkene.
+             Værtens JS lægger højde til for rækken (layout()); uden den nye værts-JS klippes rækken af
+             noderammen, men intet går i stykker. --}}
+        <span class="mgraph-node__fin" x-show="(node.card?.result != null || node.card?.equity != null) && !(node.signals ?? []).includes('no_financials')" x-cloak
+              :title="((node.card?.result != null || node.card?.equity != null) && !(node.signals ?? []).includes('no_financials')) ? ((node.card?.fiscal_year ? ('Regnskab ' + node.card.fiscal_year + ': ') : '') + [node.card?.result != null ? ('resultat ' + fmtDKK(node.card.result)) : null, node.card?.equity != null ? ('egenkapital ' + fmtDKK(node.card.equity)) : null].filter(Boolean).join(', ') + '. Pilen viser, om tallet er højere eller lavere end året før.') : ''"
+              x-text="((node.card?.result != null || node.card?.equity != null) && !(node.signals ?? []).includes('no_financials')) ? [
+                  node.card?.result != null ? ('Res ' + fmtDKK(node.card.result).replace(' kr.', '').replace('mio.', 'mio').replace('tkr.', 'tkr') + (node.card?.result_change > 0 ? ' ▲' : (node.card?.result_change < 0 ? ' ▼' : ''))) : null,
+                  node.card?.equity != null ? ('EK ' + fmtDKK(node.card.equity).replace(' kr.', '').replace('mio.', 'mio').replace('tkr.', 'tkr') + (node.card?.equity_change > 0 ? ' ▲' : (node.card?.equity_change < 0 ? ' ▼' : ''))) : null,
+              ].filter(Boolean).join(' · ') : ''"></span>
         <span class="mgraph-node__signals" x-show="node.signals?.length" x-cloak>
             <template x-for="s in (node.signals ?? [])" :key="s">
                 <span class="mgraph-signal" :class="'mgraph-signal--' + s" :title="signalTitle(s)" x-text="signalGlyph(s)"></span>

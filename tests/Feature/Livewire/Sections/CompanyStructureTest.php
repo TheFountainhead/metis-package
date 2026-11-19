@@ -2323,3 +2323,124 @@ it('never persists the trial-build memo across requests — a rebuild on new inp
     // Property nodes only appear if the post-loadProperties rebuild was NOT
     // served from the mount-time memo (which held a property-less graph).
 });
+
+// ---- Regnskabstal på noderne (19/11-2026): balance og ændring mod forrige år ----
+
+/** Et år i `financial_history`, som registry-api's FinancialHistory leverer det. */
+function grafAar(string $aar, array $tal, array $o = []): array
+{
+    return $o + $tal + ['year' => $aar, 'period_start' => "{$aar}-01-01", 'period_end' => "{$aar}-12-31", 'months' => 12.0, 'currency' => 'DKK'];
+}
+
+function grafKort(array $financials, array $historik): array
+{
+    fakeRegistryCompanyInfo('44507781', ['financials' => $financials, 'financial_history' => $historik]);
+    fakeRegistryStructure();
+    fakeRegistryPortfolio();
+
+    return collect(Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->get('graphModel')['nodes'])->firstWhere('id', '44507781')['card'];
+}
+
+it('fører balance og ændring mod forrige år med ud på noden, i hele kroner', function () {
+    $nu = ['equity' => 92_438_600, 'assets' => 120_000_000, 'profit_loss' => 2_527_000];
+    $foer = ['equity' => 90_000_000, 'assets' => 125_000_000, 'profit_loss' => 3_000_000];
+
+    expect(grafKort([['year' => '2024'] + $nu, ['year' => '2023'] + $foer], [grafAar('2024', $nu), grafAar('2023', $foer)]))->toMatchArray([
+        'equity' => 92_438_600, 'result' => 2_527_000, 'assets' => 120_000_000,
+        'equity_change' => 2_438_600, 'result_change' => -473_000, 'assets_change' => -5_000_000,
+        'fiscal_year' => '2024',
+    ]);
+});
+
+it('🚨 viser kun en ændring, når de to år kan sammenlignes', function (array $nuO, array $foerO, array $forventet) {
+    $nu = ['equity' => 100, 'assets' => 500, 'profit_loss' => 10];
+    $foer = ['equity' => 70, 'assets' => 400, 'profit_loss' => 25];
+
+    $kort = grafKort([['year' => '2024'] + $nu], [grafAar('2024', $nu, $nuO), grafAar('2023', $foer, $foerO)]);
+
+    expect(array_intersect_key($kort, array_flip(['equity_change', 'result_change', 'assets_change'])))->toBe($forventet);
+})->with([
+    'sammenlignelige år' => [[], [], ['equity_change' => 30, 'result_change' => -15, 'assets_change' => 100]],
+    'koncern mod selskab' => [['scope' => 'consolidated'], [], []],
+    'begge koncern' => [['scope' => 'consolidated'], ['scope' => 'consolidated'], ['equity_change' => 30, 'result_change' => -15, 'assets_change' => 100]],
+    'omregnet fra fremmed valuta' => [['reported_currency' => 'USD'], [], []],
+    'forrige år omregnet fra fremmed valuta' => [[], ['reported_currency' => 'EUR'], []],
+    'et år er sprunget over' => [[], ['year' => '2022', 'period_start' => '2022-01-01', 'period_end' => '2022-12-31'], []],
+    'kort første år: balancen sammenlignes, resultatet ikke' => [[], ['period_start' => '2023-11-01', 'months' => 2.0], ['equity_change' => 30, 'assets_change' => 100]],
+    'langt omlægningsår: resultatet sammenlignes ikke' => [['period_start' => '2023-07-01', 'months' => 18.0], ['period_end' => '2023-06-30', 'period_start' => '2022-07-01'], ['equity_change' => 30, 'assets_change' => 100]],
+    'perioderne overlapper' => [['period_start' => '2023-06-01'], [], []],
+    'periode mangler' => [['period_start' => null], [], []],
+    'måneder mangler: kun balancen' => [['months' => null], [], ['equity_change' => 30, 'assets_change' => 100]],
+    'pdf-kilde sammenlignes ikke' => [[], ['source' => 'pdf'], []],
+    'historikkens nyeste år er ikke kortets år' => [['year' => '2025', 'period_start' => '2025-01-01', 'period_end' => '2025-12-31'], ['year' => '2024', 'period_start' => '2024-01-01', 'period_end' => '2024-12-31'], []],
+]);
+
+it('uden regnskabshistorik, eller med kun ét år, vises ingen ændring', function (array $historik) {
+    $nu = ['equity' => 100, 'assets' => 500, 'profit_loss' => 10];
+
+    // 🪤 Ét opslag pr. test: flere Http::fake for samme adresse i én test giver det FØRSTE svar hver gang.
+    expect(grafKort([['year' => '2024'] + $nu, ['year' => '2023', 'equity' => 1]], $historik))
+        ->not->toHaveKeys(['equity_change', 'result_change', 'assets_change'])->toMatchArray(['assets' => 500]);
+})->with([
+    'ingen historik' => [[]],
+    'kun ét år' => [[grafAar('2024', ['equity' => 100, 'assets' => 500, 'profit_loss' => 10])]],
+]);
+
+it('uændret er nul, ikke manglende, og et tal der mangler året før giver ingen ændring for det tal', function () {
+    $nu = ['equity' => 100, 'assets' => 500, 'profit_loss' => 10];
+
+    expect(array_intersect_key(grafKort([['year' => '2024'] + $nu], [grafAar('2024', $nu), grafAar('2023', ['equity' => 100])]), array_flip(['equity_change', 'result_change', 'assets_change'])))
+        ->toBe(['equity_change' => 0]);
+});
+
+it('🚨 tåler `financials` som ét objekt i stedet for en liste (ældre svar) uden at vælte grafens berigelse', function () {
+    fakeRegistryCompanyInfo('44507781', ['financials' => ['year' => '2024', 'equity' => 100], 'financial_history' => 'skrot']);
+    fakeRegistryStructure();
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties');
+
+    expect($c->get('enrichmentStatus'))->toBe('loaded')
+        ->and(collect($c->get('graphModel')['nodes'])->firstWhere('id', '44507781'))->toHaveKey('card');
+});
+
+it('🚨 et selskab der først tegnes, når en node foldes ud, får også sine regnskabstal', function () {
+    // Fire led, så det nederste ligger bag dybdegrænsen og ikke tegnes automatisk (flere end tre skjulte).
+    // 🪤 Selskabsopslagene fakes FØR strukturen: fakeRegistryStructure() har en fang-alt for cvr/company/*.
+    foreach (['44507781', '44018942', '44027992', '55000001', '55000002', '55000003', '55000004'] as $cvr) {
+        fakeRegistryCompanyInfo($cvr);
+    }
+    $barn = fn (string $cvr, array $children = []) => ['cvr' => $cvr, 'name' => "Selskab {$cvr}", 'ownership_share' => 100.0, 'children' => $children];
+    Http::fake([
+        '*cvr/company-structure*' => Http::response(['data' => ['name' => 'FDL-Invest ApS', 'owners' => [], 'ancestors' => [], 'subsidiaries' => [
+            $barn('44507781', [$barn('44018942', [$barn('44027992'), $barn('55000001'), $barn('55000002'), $barn('55000003'), $barn('55000004')])]),
+        ]]]),
+        '*enrichment*' => Http::response(['data' => ['status' => 'completed']]),
+    ]);
+    fakeRegistryPortfolio();
+
+    $c = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties');
+    expect($c->get('enrichmentStatus'))->toBe('loaded')
+        ->and(collect($c->get('graphModel')['nodes'])->pluck('id'))->toContain('44018942')->not->toContain('44027992');
+
+    $udfoldet = collect($c->call('expandNode', 'sub:44018942')->get('graphModel')['nodes'])->firstWhere('id', '44027992');
+
+    expect($udfoldet)->not->toBeNull()->and($udfoldet['card']['result'] ?? null)->toBe(100_000)
+        ->and($udfoldet['card']['equity'] ?? null)->toBe(1_000_000)->and($udfoldet['card']['assets'] ?? null)->toBe(5_000_000);
+});
+
+it('nodens regnskabsrække findes i skabelonen og tåler noder uden kort', function () {
+    fakeRegistryStructure();
+    fakeRegistryPortfolio();
+    fakeRegistryCompanyInfo('44507781');
+
+    $html = Livewire::test(CompanyStructure::class, ['query' => '38653806'])->call('loadProperties')->html();
+
+    expect($html)->toContain('mgraph-node__fin')
+        ->toContain("!(node.signals ?? []).includes('no_financials')")
+        ->toContain('node.card?.result_change > 0')
+        // Ingen dobbelte anførselstegn inde i udtrykkene: de ville lukke attributten. Hele x-text og :title
+        // skal kunne findes som én attribut der slutter med det forventede.
+        ->and(preg_match('/x-text="\\(\\(node\\.card\\?\\.result != null[^"]*\\.join\\(\' · \'\\) : \'\'"/s', $html))->toBe(1)
+        ->and(preg_match('/:title="\\(\\(node\\.card\\?\\.result != null[^"]*: \'\'"/s', $html))->toBe(1);
+});

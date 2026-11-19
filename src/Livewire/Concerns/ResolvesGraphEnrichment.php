@@ -202,14 +202,29 @@ trait ResolvesGraphEnrichment
     protected function companyEnrichmentFromInfo(array $company): array
     {
         $latest = collect($company['financials'] ?? [])->sortByDesc('year')->first();
+        // Ældre svar kunne have `financials` som ét objekt i stedet for en liste: så er "seneste år" en skalar.
+        $latest = is_array($latest) ? $latest : [];
 
         $toKroner = fn ($value) => $value === null ? null : (
             ($latest['source'] ?? '') === 'pdf' ? (int) round($value * 1000) : (int) $value
         );
 
+        // Ændring mod forrige år bygger på `financial_history`, samme kilde som "Udvikling i nøgletal" på
+        // selskabssiden, så graf og selskabsside aldrig viser to forskellige ændringer for samme selskab.
+        // En ændring vises kun, når de to perioder kan sammenlignes (se sammenligneligeAar()); ellers ingen pil:
+        // en pil mod et forkert år er værre end ingen.
+        [$nu, $foer, $resultatKanSammenlignes] = $this->sammenligneligeAar($company, $latest);
+        $tal = fn (?array $aar, string $felt) => is_array($aar) && is_numeric($aar[$felt] ?? null) ? (int) $aar[$felt] : null;
+        $aendring = fn (string $felt) => ($a = $tal($nu, $felt)) !== null && ($b = $tal($foer, $felt)) !== null ? $a - $b : null;
+
         return [
             'equity' => $toKroner($latest['equity'] ?? null),
             'result' => $toKroner($latest['profit_loss'] ?? null),
+            // Balancesum og ændring mod forrige år (hele kroner). Null = tallet eller sammenligningsåret mangler.
+            'assets' => is_numeric($latest['assets'] ?? null) ? $toKroner($latest['assets']) : null,
+            'equity_change' => $aendring('equity'),
+            'result_change' => $resultatKanSammenlignes ? $aendring('profit_loss') : null,
+            'assets_change' => $aendring('assets'),
             'fiscal_year' => $latest['year'] ?? null,
             // employees er en serie ({latest: {count}, history}), ikke et tal: som CompanyOverview.
             // Kortet viste ellers "[object Object]" (JS String() paa et objekt).
@@ -218,6 +233,40 @@ trait ResolvesGraphEnrichment
             'founded_date' => $company['founded_date'] ?? null,
             'industry' => $company['industry'] ?? null,
         ];
+    }
+
+    /**
+     * Seneste regnskabsår og året før, når de to kan sammenlignes. Reglerne:
+     *   - begge år findes i `financial_history`, og det nyeste er samme år som kortets tal;
+     *   - samme afgrænsning (koncern mod selskab ville vise et spring der ikke er der);
+     *   - begge i danske kroner fra kilden (en omregnet valuta ville vise kursudsving som en ændring);
+     *   - perioderne ligger i forlængelse af hinanden (intet sprunget år).
+     * Resultatet sammenlignes desuden kun, når begge perioder er omkring 12 måneder: et kort første år eller et
+     * omlægningsår giver et resultat der ikke kan sammenlignes, mens balancetal godt kan.
+     *
+     * @return array{0: ?array, 1: ?array, 2: bool} [nyeste, forrige, kan resultatet sammenlignes]
+     */
+    protected function sammenligneligeAar(array $company, array $latest): array
+    {
+        $historik = array_values(array_filter(is_array($company['financial_history'] ?? null) ? $company['financial_history'] : [], 'is_array'));
+        [$nu, $foer] = [$historik[0] ?? null, $historik[1] ?? null];
+
+        $dkk = fn (array $aar) => ($aar['reported_currency'] ?? 'DKK') === 'DKK' && ($aar['currency'] ?? 'DKK') === 'DKK';
+        $dag = fn (array $aar, string $felt) => is_string($aar[$felt] ?? null) ? strtotime($aar[$felt]) : false;
+
+        if ($nu === null || $foer === null
+            || (string) ($nu['year'] ?? '') !== (string) ($latest['year'] ?? '')
+            || ($nu['scope'] ?? null) !== ($foer['scope'] ?? null)
+            || ($nu['source'] ?? '') === 'pdf' || ($foer['source'] ?? '') === 'pdf'
+            || ! $dkk($nu) || ! $dkk($foer)
+            || ($start = $dag($nu, 'period_start')) === false || ($slut = $dag($foer, 'period_end')) === false
+            || $start <= $slut || $start - $slut > 45 * 86400) {
+            return [null, null, false];
+        }
+
+        $helaar = fn (array $aar) => is_numeric($aar['months'] ?? null) && $aar['months'] >= 11 && $aar['months'] <= 13;
+
+        return [$nu, $foer, $helaar($nu) && $helaar($foer)];
     }
 
     /**
