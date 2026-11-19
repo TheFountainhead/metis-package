@@ -247,7 +247,38 @@
             ];
         @endphp
 
+        @php
+            // Beskeder om et SELSKAB (ny årsrapport, ændret CVR-status) har ingen ejendom og intet pantebrev:
+            // de får deres egen kontekstboks og deres eget indhold i stedet for pantvisningen nedenfor.
+            $selskabsbesked = in_array($alert['alert_type'] ?? '', ['annual_report', 'company_status_change'], true);
+            $selskabCvr = preg_match('/\A\d{8}\z/', (string) ($meta['cvr'] ?? '')) ? (string) $meta['cvr'] : null;
+            $selskabNavn = is_string($meta['company_name'] ?? null) && trim($meta['company_name']) !== '' ? trim($meta['company_name']) : ($selskabCvr ?? __('Ukendt selskab'));
+            $selskabUrl = $selskabCvr ? \TheFountainhead\Metis\View\Components\MetisLink::urlFor('cvr', $selskabCvr) : null;
+            if ($selskabsbesked) {
+                $changeLabel = ($alert['alert_type'] ?? '') === 'annual_report' ? __('Ny årsrapport') : __('Ændret status');
+            }
+            $kroner = fn ($v) => is_numeric($v) ? number_format((float) $v, 0, ',', '.').' kr.' : null;
+            $dag = fn ($v) => is_string($v) && $v !== '' ? rescue(fn () => \Carbon\Carbon::parse($v)->timezone('Europe/Copenhagen')->format('d.m.Y'), null, false) : null;
+        @endphp
+
         <div class="space-y-4">
+            @if($selskabsbesked)
+            <!-- Company context box -->
+            <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-900/20 dark:border-blue-800" data-selskabsbesked>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-blue-700 dark:text-blue-300 uppercase tracking-wide font-medium">{{ __('Selskab') }}</p>
+                        <p class="text-base font-semibold text-blue-900 dark:text-blue-200 mt-1">{{ $selskabNavn }}</p>
+                        @if($selskabCvr)
+                            <p class="text-xs text-blue-700 dark:text-blue-300 font-mono mt-0.5">CVR {{ $selskabCvr }}</p>
+                        @endif
+                    </div>
+                    @if($selskabUrl)
+                        <a href="{{ $selskabUrl }}" class="text-sm text-blue-600 hover:underline whitespace-nowrap">{{ __('Se selskabet') }} →</a>
+                    @endif
+                </div>
+            </div>
+            @else
             <!-- Property context box -->
             <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-900/20 dark:border-blue-800">
                 <div class="flex items-center justify-between">
@@ -273,6 +304,8 @@
                 </div>
             </div>
 
+            @endif
+
             <!-- Title + change-type badge -->
             <div class="p-4 bg-white border rounded-lg">
                 <div class="flex items-start justify-between gap-3">
@@ -293,13 +326,74 @@
                     <div data-via-netvaerk class="mt-3 p-3 text-sm rounded-lg bg-blue-50 text-blue-900">
                         <span class="font-medium">{{ __('Via netværk') }}.</span>
                         {{-- Ingen tegnsætning lige efter linket: komponenten slutter med et linjeskift, som ville give et mellemrum før tegnet. --}}
+                        @if($selskabsbesked)
+                            {{-- En selskabsbesked handler om selskabet selv, ikke om en ejendom. --}}
+                            {{ __('Selskabet er koncerntop for en af dine låntagere. Du får beskeden, selv om du ikke selv følger selskabet.') }}
+                        @else
                         {{ __('Ejendommen ligger i koncernen under') }}
                         <x-metis-link type="cvr" :query="$alert['via_netvaerk']['top_cvr']" :label="$alert['via_netvaerk']['top_navn']" />
                         {{ __('(koncerntop for en af dine låntagere). Du får beskeden, selv om du ikke nødvendigvis har pant i ejendommen.') }}
+                        @endif
                     </div>
                 @endif
             </div>
 
+            @if($selskabsbesked)
+            <!-- Selskabsbesked: nøgletal fra årsrapporten, eller status før og nu -->
+            <div class="bg-white border rounded-lg overflow-hidden" data-selskabsbesked-indhold>
+                @if(($alert['alert_type'] ?? '') === 'annual_report')
+                    @php
+                        $noegletal = array_filter([
+                            __('Regnskabsår') => is_scalar($meta['year'] ?? null) && $meta['year'] !== '' ? (string) $meta['year'].(($meta['scope'] ?? null) === 'consolidated' ? ' ('.__('koncernregnskab').')' : '') : null,
+                            __('Periode') => ($dag($meta['period_start'] ?? null) && $dag($meta['period_end'] ?? null)) ? $dag($meta['period_start']).' – '.$dag($meta['period_end']) : null,
+                            __('Offentliggjort') => $dag($meta['published_at'] ?? null),
+                            __('Resultat') => $kroner($meta['profit_loss'] ?? null),
+                            __('Egenkapital') => $kroner($meta['equity'] ?? null),
+                            __('Balance') => $kroner($meta['assets'] ?? null),
+                            // Bruttofortjeneste er ikke omsætning: mindre selskaber offentliggør ikke deres omsætning.
+                            __('Bruttofortjeneste') => $kroner($meta['gross_profit'] ?? null),
+                        ], fn ($v) => $v !== null);
+                    @endphp
+                    <table class="w-full text-sm">
+                        <tbody>
+                            @forelse($noegletal as $etiket => $vaerdi)
+                                <tr class="border-b last:border-0">
+                                    <td class="px-4 py-2 text-zinc-500 w-1/3">{{ $etiket }}</td>
+                                    <td class="px-4 py-2 font-medium tabular-nums">{{ $vaerdi }}</td>
+                                </tr>
+                            @empty
+                                <tr><td class="px-4 py-3 text-zinc-500">{{ __('Regnskabet er offentliggjort. Nøgletallene kunne ikke læses.') }}</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                    <p class="px-4 py-2 text-xs text-zinc-500 border-t">{{ __('Tallene kommer fra den offentliggjorte årsrapport og er i hele kroner.') }}</p>
+                @else
+                    @php
+                        // CVR skriver status sammenskrevet med store bogstaver ("UNDERKONKURS"). Samme oversættelse som
+                        // registry-api bruger i beskedens tekst; en ukendt værdi vises som den er, med små bogstaver.
+                        $kendteStatusser = [
+                            'NORMAL' => 'normal', 'AKTIV' => 'aktiv', 'UNDERKONKURS' => 'under konkurs', 'UNDERTVANGSOPLØSNING' => 'under tvangsopløsning',
+                            'UNDERREKONSTRUKTION' => 'under rekonstruktion', 'UNDERFRIVILLIGLIKVIDATION' => 'under frivillig likvidation',
+                            'UNDERREASSUMERING' => 'under reassumering', 'TVANGSOPLØST' => 'tvangsopløst', 'OPHØRT' => 'ophørt', 'SLETTET' => 'slettet',
+                            'OPLØSTEFTERKONKURS' => 'opløst efter konkurs', 'OPLØSTEFTERFUSION' => 'opløst efter fusion', 'OPLØSTEFTERSPALTNING' => 'opløst efter spaltning',
+                            'OPLØSTEFTERERKLÆRING' => 'opløst efter erklæring', 'OPLØSTEFTERFRIVILLIGLIKVIDATION' => 'opløst efter frivillig likvidation',
+                        ];
+                        $statusTekst = fn ($v) => is_string($v) && trim($v) !== '' ? ($kendteStatusser[mb_strtoupper(preg_replace('/\s+/u', '', $v))] ?? mb_strtolower(trim($v))) : null;
+                    @endphp
+                    <div class="grid grid-cols-2 divide-x text-sm">
+                        <div class="p-4">
+                            <p class="text-xs uppercase tracking-wide text-zinc-500">{{ __('Før') }}</p>
+                            <p class="mt-1 font-medium">{{ $statusTekst($meta['status_from'] ?? null) ?? '—' }}</p>
+                        </div>
+                        <div class="p-4">
+                            <p class="text-xs uppercase tracking-wide text-zinc-500">{{ __('Nu') }}</p>
+                            <p class="mt-1 font-medium {{ ($alert['priority'] ?? 'low') === 'high' ? 'text-red-700' : '' }}">{{ $statusTekst($meta['status_to'] ?? null) ?? '—' }}</p>
+                        </div>
+                    </div>
+                    <p class="px-4 py-2 text-xs text-zinc-500 border-t">{{ __('Status kommer fra CVR.') }}</p>
+                @endif
+            </div>
+            @else
             <!-- Diff view -->
             <div class="bg-white border rounded-lg overflow-hidden">
                 @if($singleColumnHeading)
@@ -392,6 +486,8 @@
                     </div>
                 @endif
             </div>
+
+            @endif
 
             <!-- Metadata footer -->
             <div class="text-xs text-zinc-400 flex items-center gap-3 px-1">

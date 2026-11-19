@@ -231,7 +231,7 @@
                                 </span>
                                 @if($alert['via_netvaerk'] ?? null)
                                     {{-- Netværksovervågning: ejendommen ligger i en låntagers koncern. Sig det, så beskeden ikke undrer. --}}
-                                    <span data-via-netvaerk class="px-2 py-0.5 rounded bg-blue-50 text-blue-700" title="{{ __('Ejendommen ligger i koncernen under :top, som er koncerntop for en af dine låntagere.', ['top' => $alert['via_netvaerk']['top_navn']]) }}">
+                                    <span data-via-netvaerk class="px-2 py-0.5 rounded bg-blue-50 text-blue-700" title="{{ in_array($alert['alert_type'] ?? '', ['annual_report', 'company_status_change'], true) ? __(':top er koncerntop for en af dine låntagere.', ['top' => $alert['via_netvaerk']['top_navn']]) : __('Ejendommen ligger i koncernen under :top, som er koncerntop for en af dine låntagere.', ['top' => $alert['via_netvaerk']['top_navn']]) }}">
                                         {{ __('Via netværk') }}: {{ $alert['via_netvaerk']['top_navn'] }}
                                     </span>
                                 @else

@@ -50,6 +50,8 @@ trait NormalisererAlerts
 
         return [
             'id' => (int) $alert['id'],
+            // Typen afgør, hvad detaljesiden viser (pantændring, ny årsrapport, ændret status). Kun kendte tegn.
+            'alert_type' => preg_match('/\A[a-z_]{1,40}\z/', (string) (self::tekst($alert['alert_type'] ?? null) ?? '')) ? self::tekst($alert['alert_type']) : '',
             'title' => self::tekst($alert['title'] ?? null) ?? '',
             'description' => self::tekst($alert['description'] ?? null) ?? '',
             'is_read' => (bool) filter_var($alert['is_read'] ?? false, FILTER_VALIDATE_BOOLEAN),
