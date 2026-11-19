@@ -781,3 +781,47 @@ it('når listen er hentet færdig, er knappen aktiv og eksporten giver en fil', 
 
     $c->call('exportXlsx')->assertFileDownloaded('tinglysning-28963610-'.now()->format('Y-m-d').'.xlsx');
 });
+
+function sorteringsRaekke(int $id, string $adresse, ?int $hovedstol, ?string $dato, ?float $ltv): array
+{
+    return ['id' => $id, 'property_id' => $id, 'address' => $adresse, 'bfe' => (string) $id, 'owner_company' => null, 'tier_depth' => 0,
+        'mortgage_type' => 'realkreditpantebrev', 'creditor' => 'Bank', 'debitor' => null, 'priority' => 1, 'principal_amount' => $hovedstol,
+        'registration_date' => $dato, 'is_active' => true, 'is_sampant' => false, 'ltv' => ['value' => $ltv, 'method' => 'skoede_price']];
+}
+
+it('🚨 listen står i den valgte sortering, ikke i id-orden, og pilene i detaljevinduet følger den', function (string $sortering, array $forventet) {
+    $raekker = [
+        sorteringsRaekke(1, 'Østergade 1', 100, '2020-01-01', 0.5),
+        sorteringsRaekke(2, 'Åvej 2', 300, null, 0.9),
+        sorteringsRaekke(3, 'Ærøvej 3', null, '2024-06-01', null),
+        sorteringsRaekke(4, 'Algade 4', 200, '2022-03-01', 0.7),
+    ];
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'mortgages_added' => $raekker, 'streaming' => ['complete' => true, 'cursor' => null, 'total_expected' => 4, 'delivered_so_far' => 4],
+    ]))]);
+
+    $c = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->set('sortBy', $sortering);
+
+    expect(array_column($c->instance()->sorteredeMortgages, 'id'))->toBe($forventet);
+    $adresser = ['', 'Østergade 1', 'Åvej 2', 'Ærøvej 3', 'Algade 4'];
+    // Rækkefølgen i den viste tabel (assertSeeInOrder håndterer ikke Æ/Ø/Å her).
+    $html = $c->html();
+    $vist = collect(array_slice($adresser, 1))->sortBy(fn ($x) => mb_strpos($html, $x))->keys()->map(fn ($i) => $i + 1)->values()->all();
+    expect($vist)->toBe($forventet);
+
+    $c->set('openMortgageId', $forventet[0])->call('navigateDrawer', 'next')->assertSet('openMortgageId', $forventet[1]);
+})->with([
+    'hovedstol, ukendt sidst' => ['principal_amount_desc', [2, 4, 1, 3]],
+    'tinglyst nyest, ukendt sidst' => ['tinglysning_date_desc', [3, 4, 1, 2]],
+    'LTV højest, ukendt sidst' => ['ltv_desc', [2, 4, 1, 3]],
+    'adresse med æ, ø, å i dansk orden' => ['address_asc', [4, 3, 1, 2]],
+]);
+
+it('adresser med husnummer sorteres som tal: 9 før 10', function () {
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'mortgages_added' => [sorteringsRaekke(1, 'Algade 10', 1, null, null), sorteringsRaekke(2, 'Algade 9', 1, null, null)],
+        'streaming' => ['complete' => true, 'cursor' => null, 'total_expected' => 2, 'delivered_so_far' => 2],
+    ]))]);
+
+    expect(array_column(Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->set('sortBy', 'address_asc')->instance()->sorteredeMortgages, 'id'))->toBe([2, 1]);
+});

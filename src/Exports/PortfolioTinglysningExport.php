@@ -55,6 +55,11 @@ class PortfolioTinglysningExport
         $total = 0;
         $sampantCount = 0;
 
+        // Første række pr. dokument vinder, så rækkefølgen afgør hvilken. Arket Pantebreve følger brugerens sortering,
+        // men summen må ikke gøre det: to rækker af samme dokument kan have forskellig hovedstol (ejendommene er
+        // hentet på hver sin revision). Derfor altid laveste id først, som før listen kunne sorteres.
+        usort($mortgages, fn ($a, $b) => ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0)));
+
         foreach ($mortgages as $m) {
             // 🚨 dokument_identifikator FØRST — det er feltet API'et faktisk sender.
             //
