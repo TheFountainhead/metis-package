@@ -378,7 +378,20 @@
                     </table>
                 </div>
             @elseif(! $streaming)
-                @if($status !== 'active' || count($mortgageTypeFilter) > 0 || $minAmount !== null || $maxAmount !== null)
+                @if($treeDepthState !== 'full' && (int) ($treeMeta['total_mortgages'] ?? 0) > 0)
+                    {{-- Står FØR filtergrenen: totalen er allerede filtreret, så total > 0 med tom liste betyder dybden,
+                         også når et filter er valgt (og "Nulstil filtre" sætter dybden tilbage til ét niveau).
+                         Tallene øverst gælder hele koncernen, listen kun den valgte dybde. Ligger pantebrevene dybere
+                         nede, er listen tom, selv om koncernen har pantebreve: sig det, og giv vejen videre. --}}
+                    <div class="py-6 text-sm" data-tom-pga-dybde>
+                        <p class="text-zinc-500 mb-2">{{ __('Ingen pantebreve fundet i selskabet og dets direkte datterselskaber. Koncernens pantebreve ligger længere nede i træet.') }}</p>
+                        <button type="button"
+                                wire:click="$set('treeDepthState', 'full')"
+                                class="px-3 py-1.5 text-xs border rounded hover:bg-zinc-50 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+                            {{ __('Vis hele træet') }}
+                        </button>
+                    </div>
+                @elseif($status !== 'active' || count($mortgageTypeFilter) > 0 || $minAmount !== null || $maxAmount !== null)
                     <div class="py-6 text-sm">
                         <p class="text-zinc-500 mb-2">{{ __('Ingen pantebreve matcher dine filtre.') }}</p>
                         <button type="button"
