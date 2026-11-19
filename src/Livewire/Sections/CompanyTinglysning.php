@@ -31,6 +31,16 @@ class CompanyTinglysning extends MetisSection
 
     public int $pollFailures = 0;
 
+    /**
+     * Loft over automatisk hentning. Listen hentes 50 rækker hvert 5. sekund; for de største koncerner (op til ca.
+     * 30.000 pantebreve) ville én visning ellers holde registry-api i gang i omkring 50 minutter, i en PHP-pulje der
+     * deles med alle andre sites (målt 19/11-2026). Over loftet beder brugeren selv om resten.
+     */
+    public const AUTO_LOFT = 500;
+
+    /** Hentningen kører, indtil listen har så mange rækker (eller er komplet). Hæves af hentFlere(). */
+    public int $hentTil = self::AUTO_LOFT;
+
     // Filters (Q5 + Q8 per spec lines 460-465)
     public string $status = 'active'; // active | inactive | all
     public array $mortgageTypeFilter = [];
@@ -91,6 +101,26 @@ class CompanyTinglysning extends MetisSection
         $this->pollFailures = 0;
 
         $this->appendStreamedResponse($response);
+    }
+
+    /**
+     * Brugeren beder om resten: 500 rækker mere, eller det hele. Genstarter hentningen fra cursoren.
+     */
+    public function hentFlere(bool $alle = false): void
+    {
+        if ($this->cursor === null || $this->streaming) {
+            return;
+        }
+
+        $this->hentTil = $alle ? PHP_INT_MAX : count($this->mortgages) + self::AUTO_LOFT;
+        $this->pollFailures = 0;
+        $this->streaming = true;
+    }
+
+    /** Listen er stoppet ved loftet: der er flere pantebreve, end der er hentet. */
+    public function getUfuldstaendigProperty(): bool
+    {
+        return ! $this->streaming && $this->cursor !== null;
     }
 
     public function retry(): void
@@ -362,6 +392,7 @@ class CompanyTinglysning extends MetisSection
         $this->cursor = null;
         $this->streaming = false;
         $this->totalExpected = 0;
+        $this->hentTil = self::AUTO_LOFT;
         // Samme invariant som i retry(): et filterskift starter forfra, så
         // gamle fejl må ikke tælle med i det nye budget.
         $this->pollFailures = 0;
@@ -438,8 +469,9 @@ class CompanyTinglysning extends MetisSection
     {
         $streamingMeta = $response['streaming'] ?? [];
         $complete = $streamingMeta['complete'] ?? true;
-        $this->streaming = ! $complete;
-        $this->cursor = $streamingMeta['cursor'] ?? null;
+        $this->cursor = $complete ? null : ($streamingMeta['cursor'] ?? null);
+        // Hentningen stopper ved loftet; cursoren beholdes, så resten kan hentes, når brugeren beder om det.
+        $this->streaming = $this->cursor !== null && count($this->mortgages) < $this->hentTil;
         $this->totalExpected = (int) ($streamingMeta['total_expected'] ?? count($this->mortgages));
         $this->deliveredSoFar = (int) ($streamingMeta['delivered_so_far'] ?? count($this->mortgages));
     }
@@ -469,6 +501,7 @@ class CompanyTinglysning extends MetisSection
                 tierBreakdown: $this->tierBreakdown,
                 mortgages: $this->sorteredeMortgages,
                 filters: $this->filters(),
+                ialt: $this->ufuldstaendig ? $this->totalExpected : null,
             );
         } catch (\RuntimeException $e) {
             // phpoffice/phpspreadsheet not installed (suggested dep). Surface
