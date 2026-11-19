@@ -209,11 +209,6 @@ class CompanyTinglysning extends MetisSection
     }
 
     /**
-     * Find the currently-open mortgage in the loaded mortgages array.
-     * Returns null if drawer is closed or mortgage is no longer in list
-     * (filter changed since drawer opened).
-     */
-    /**
      * Listen i den valgte sortering. Registry-api leverer rækkerne i id-orden (stabil cursor ved hentning i
      * portioner), så sorteringen SKAL ske her; før blev "Sortér" sendt med, men listen og eksporten stod i id-orden.
      * Samme rækkefølge bruges af tabellen, pilene i detaljevinduet og XLSX-eksporten. Ukendte værdier sidst, id til
@@ -226,6 +221,8 @@ class CompanyTinglysning extends MetisSection
         $tal = fn ($v) => is_numeric($v) ? (float) $v : null;
         $tekst = fn ($v) => is_string($v) && trim($v) !== '' ? trim($v) : null;
         $collator = class_exists(\Collator::class) ? new \Collator('da_DK') : null;
+        // "Algade 9" før "Algade 10": tal i adressen sammenlignes som tal.
+        $collator?->setAttribute(\Collator::NUMERIC_COLLATION, \Collator::ON);
         $sammenlignTekst = fn (string $a, string $b) => $collator ? $collator->compare($a, $b) : strcmp(mb_strtolower($a), mb_strtolower($b));
 
         [$noegle, $faldende, $erTekst] = match ($this->sortBy) {
@@ -252,6 +249,11 @@ class CompanyTinglysning extends MetisSection
         return $raekker;
     }
 
+    /**
+     * Find the currently-open mortgage in the loaded mortgages array.
+     * Returns null if drawer is closed or mortgage is no longer in list
+     * (filter changed since drawer opened).
+     */
     public function getOpenMortgageProperty(): ?array
     {
         if ($this->openMortgageId === null) {

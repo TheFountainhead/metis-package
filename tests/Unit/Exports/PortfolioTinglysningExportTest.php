@@ -267,3 +267,16 @@ it('🚨 tekst fra kilden kan ikke blive til en formel på noget ark', function 
 
     expect($formler)->toBe([]);
 });
+
+it('🚨 summen afhænger ikke af rækkefølgen: samme dokument med to hovedstole tæller altid med laveste id', function () {
+    $raekker = [
+        ['id' => 7, 'dokument_identifikator' => 'doc-x', 'principal_amount' => 300_000_00, 'is_sampant' => true],
+        ['id' => 3, 'dokument_identifikator' => 'doc-x', 'principal_amount' => 100_000_00, 'is_sampant' => true],
+        ['id' => 5, 'dokument_identifikator' => 'doc-y', 'principal_amount' => 50_000_00, 'is_sampant' => false],
+    ];
+
+    $a = PortfolioTinglysningExport::computeTotalsFromMortgages($raekker);
+    $b = PortfolioTinglysningExport::computeTotalsFromMortgages(array_reverse($raekker));
+
+    expect($a)->toBe($b)->and($a['total_principal_amount_oere'])->toBe(150_000_00);
+});

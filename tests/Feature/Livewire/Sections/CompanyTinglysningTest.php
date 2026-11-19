@@ -816,3 +816,12 @@ it('🚨 listen står i den valgte sortering, ikke i id-orden, og pilene i detal
     'LTV højest, ukendt sidst' => ['ltv_desc', [2, 4, 1, 3]],
     'adresse med æ, ø, å i dansk orden' => ['address_asc', [4, 3, 1, 2]],
 ]);
+
+it('adresser med husnummer sorteres som tal: 9 før 10', function () {
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'mortgages_added' => [sorteringsRaekke(1, 'Algade 10', 1, null, null), sorteringsRaekke(2, 'Algade 9', 1, null, null)],
+        'streaming' => ['complete' => true, 'cursor' => null, 'total_expected' => 2, 'delivered_so_far' => 2],
+    ]))]);
+
+    expect(array_column(Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->set('sortBy', 'address_asc')->instance()->sorteredeMortgages, 'id'))->toBe([2, 1]);
+});
