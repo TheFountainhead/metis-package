@@ -696,3 +696,28 @@ it('names its property count so it cannot be read as contradicting the KPI', fun
 
     expect($html)->toContain('Ejendomme med tinglysningsopslag');
 });
+
+it('🚨 tom liste fordi pantebrevene ligger dybere i træet: siden siger det og kan vise hele træet', function () {
+    $tom = ['mortgages_added' => [], 'tier_breakdown' => [], 'streaming' => ['complete' => true, 'cursor' => null, 'total_expected' => 0, 'delivered_so_far' => 0]];
+    Http::fake(function ($request) use ($tom) {
+        return Http::response(fakeTinglysningOverview(($request->data()['tree_depth'] ?? '1') === 'full' ? [] : $tom));
+    });
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->assertCount('mortgages', 0)
+        ->assertSeeHtml('data-tom-pga-dybde')->assertSee('længere nede i træet')->assertSee('Vis hele træet')
+        ->assertDontSee('Ingen pantebreve fundet for denne koncern.')
+        ->set('treeDepthState', 'full')
+        ->assertCount('mortgages', 1)->assertSee('Roligedsvej 12-14')->assertDontSeeHtml('data-tom-pga-dybde');
+});
+
+it('en koncern helt uden pantebreve får den almindelige tomme tekst, også ved fuld dybde', function (string $dybde, int $total) {
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'mortgages_added' => [], 'tier_breakdown' => [],
+        'tree_meta' => ['total_mortgages' => $total, 'total_properties' => 0, 'total_descendant_companies' => 1, 'total_principal_amount' => 0, 'weighted_ltv' => 0, 'tree_depth' => 1, 'applied_tree_depth' => 1],
+        'streaming' => ['complete' => true, 'cursor' => null, 'total_expected' => 0, 'delivered_so_far' => 0],
+    ]))]);
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->set('treeDepthState', $dybde)
+        ->assertSee('Ingen pantebreve fundet for denne koncern.')->assertDontSeeHtml('data-tom-pga-dybde');
+})->with([['1', 0], ['full', 0], ['full', 24]]);
