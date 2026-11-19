@@ -704,6 +704,8 @@ it('🚨 tom liste fordi pantebrevene ligger dybere i træet: siden siger det og
     });
 
     Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->assertCount('mortgages', 1) // standarden er hele træet
+        ->set('treeDepthState', '1')
         ->assertCount('mortgages', 0)
         ->assertSeeHtml('data-tom-pga-dybde')->assertSee('længere nede i træet')->assertSee('Vis hele træet')
         ->assertSeeHtml('wire:click="$set(\'treeDepthState\', \'full\')"')
@@ -728,7 +730,7 @@ it('🚨 med et filter valgt er forklaringen stadig dybden, når den filtrerede 
         'mortgages_added' => [], 'tier_breakdown' => [], 'streaming' => ['complete' => true, 'cursor' => null, 'total_expected' => 0, 'delivered_so_far' => 0],
     ]))]);
 
-    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->set('status', 'inactive')
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->set('treeDepthState', '1')->set('status', 'inactive')
         ->assertSeeHtml('data-tom-pga-dybde')->assertDontSee('Ingen pantebreve matcher dine filtre.');
 });
 
@@ -740,4 +742,42 @@ it('med et filter valgt og ingen pantebreve i den filtrerede koncern er det filt
 
     Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->set('status', 'inactive')
         ->assertSee('Ingen pantebreve matcher dine filtre.')->assertDontSeeHtml('data-tom-pga-dybde');
+});
+
+it('🚨 standarden er hele træet: første opslag og "Nulstil filtre" beder begge om tree_depth=full', function () {
+    $dybder = [];
+    Http::fake(function ($request) use (&$dybder) {
+        $dybder[] = $request->data()['tree_depth'] ?? null;
+
+        return Http::response(fakeTinglysningOverview());
+    });
+
+    Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])
+        ->assertSet('treeDepthState', 'full')
+        ->set('treeDepthState', '1')
+        ->call('clearFilters')
+        ->assertSet('treeDepthState', 'full');
+
+    // Det tredje opslag (efter nulstilling) er det samme som det første og kommer fra cachen.
+    expect($dybder)->toBe(['full', '1']);
+});
+
+it('🚨 eksporten afvises og knappen er slået fra, mens listen stadig hentes', function () {
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'streaming' => ['complete' => false, 'cursor' => 'abc', 'total_expected' => 145, 'delivered_so_far' => 50],
+    ]))]);
+
+    $c = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->assertSet('streaming', true);
+    expect(preg_match('/wire:click="exportXlsx"[^>]*\\sdisabled[\\s>]/s', $c->html()))->toBe(1);
+
+    $c->call('exportXlsx')->assertNoFileDownloaded()->assertSee('Vent til alle pantebreve er hentet');
+});
+
+it('når listen er hentet færdig, er knappen aktiv og eksporten giver en fil', function () {
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview())]);
+
+    $c = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->assertSet('streaming', false);
+    expect(preg_match('/wire:click="exportXlsx"[^>]*\\sdisabled[\\s>]/s', $c->html()))->toBe(0);
+
+    $c->call('exportXlsx')->assertFileDownloaded('tinglysning-28963610-'.now()->format('Y-m-d').'.xlsx');
 });

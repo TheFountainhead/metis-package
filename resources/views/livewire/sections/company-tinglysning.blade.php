@@ -158,9 +158,10 @@
                             wire:click="exportXlsx"
                             wire:loading.attr="disabled"
                             wire:target="exportXlsx"
-                            @if(! $treeMeta) disabled @endif
+                            {{-- Under hentningen er listen ufuldstændig: en eksport ville give en halv fil uden at sige det. --}}
+                            @if(! $treeMeta || $streaming) disabled @endif
                             class="flex-1 px-3 py-1.5 text-xs border rounded bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 border-zinc-300 dark:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="{{ __('Eksportér til XLSX (Oversigt + Tier-breakdown + Pantebreve)') }}">
+                            title="{{ $streaming ? __('Venter på at alle pantebreve er hentet') : __('Eksportér til XLSX (Oversigt + Tier-breakdown + Pantebreve)') }}">
                         <span wire:loading.remove wire:target="exportXlsx">{{ __('Eksportér XLSX') }}</span>
                         <span wire:loading wire:target="exportXlsx">{{ __('Eksporterer...') }}</span>
                     </button>
@@ -380,7 +381,7 @@
             @elseif(! $streaming)
                 @if($treeDepthState !== 'full' && (int) ($treeMeta['total_mortgages'] ?? 0) > 0)
                     {{-- Står FØR filtergrenen: totalen er allerede filtreret, så total > 0 med tom liste betyder dybden,
-                         også når et filter er valgt (og "Nulstil filtre" sætter dybden tilbage til ét niveau).
+                         også når et filter er valgt.
                          Tallene øverst gælder hele koncernen, listen kun den valgte dybde. Ligger pantebrevene dybere
                          nede, er listen tom, selv om koncernen har pantebreve: sig det, og giv vejen videre. --}}
                     <div class="py-6 text-sm" data-tom-pga-dybde>

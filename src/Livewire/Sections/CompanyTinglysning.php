@@ -37,7 +37,10 @@ class CompanyTinglysning extends MetisSection
     public ?int $minAmount = null;
     public ?int $maxAmount = null;
     public string $sortBy = 'principal_amount_desc';
-    public string $treeDepthState = '1'; // '1' | 'full'
+    // Standard er hele træet: overskriftens tal gælder altid hele koncernen, og i en holdingstruktur ligger
+    // pantebrevene typisk flere niveauer nede. Med '1' som standard stod der "Pantebreve: 23" over en tom liste.
+    // Overblikket regnes på hele træet uanset valget, så standarden koster kun listens første side.
+    public string $treeDepthState = 'full'; // '1' | 'full'
 
     /**
      * Drawer state — URL-bound for shareable links. Namespaced (`ting_mortgage`)
@@ -145,7 +148,7 @@ class CompanyTinglysning extends MetisSection
         $this->minAmount = null;
         $this->maxAmount = null;
         $this->sortBy = 'principal_amount_desc';
-        $this->treeDepthState = '1';
+        $this->treeDepthState = 'full';
         $this->resetAndFetch();
     }
 
@@ -409,6 +412,15 @@ class CompanyTinglysning extends MetisSection
      */
     public function exportXlsx()
     {
+        // Knappen er slået fra under hentningen, men et kald kan stadig komme: et klik der står i kø bag et
+        // filterskift, kører på en snapshot hvor hentningen er startet forfra. Efter en fejlet hentning er listen
+        // også ufuldstændig. En halv liste giver for lav hovedstol og for få pantebreve i Oversigt uden at sige det.
+        if ($this->streaming || $this->hasError) {
+            session()->flash('metis_tinglysning_export_error', __('Vent til alle pantebreve er hentet, og prøv igen.'));
+
+            return null;
+        }
+
         try {
             $export = new PortfolioTinglysningExport(
                 company: $this->company ?? [],
