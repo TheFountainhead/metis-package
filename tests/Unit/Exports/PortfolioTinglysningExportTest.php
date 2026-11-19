@@ -245,3 +245,25 @@ it('raekker helt uden dokument-noegle taelles som unikke', function () {
     expect($totals['total_principal_amount_oere'])->toBe(3_000_000_00)
         ->and($totals['unique_mortgages'])->toBe(2);
 });
+
+it('🚨 tekst fra kilden kan ikke blive til en formel på noget ark', function () {
+    $defaults = makeExport();
+    $tier = ['cvr' => '=1+1', 'name' => '=HYPERLINK("http://x","klik")', 'depth' => 0, 'property_count' => 1, 'mortgage_count' => 1, 'principal_amount' => 100, 'weighted_ltv' => 0.5];
+    $spreadsheet = loadExportSpreadsheet(makeExport([
+        // Navnet skal ligne en gyldig formel: biblioteket gør kun en streng til formel, når den kan læses som en.
+        'company' => ['cvr' => '1', 'name' => '=HYPERLINK("http://x","klik")'],
+        'tierBreakdown' => [$tier],
+        'filters' => ['status' => '=1+1'],
+    ]));
+
+    $formler = [];
+    foreach ($spreadsheet->getAllSheets() as $ark) {
+        foreach ($ark->getCoordinates() as $celle) {
+            if ($ark->getCell($celle)->getDataType() === \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_FORMULA) {
+                $formler[] = $ark->getTitle().'!'.$celle;
+            }
+        }
+    }
+
+    expect($formler)->toBe([]);
+});

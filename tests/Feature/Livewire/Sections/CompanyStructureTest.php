@@ -2438,7 +2438,7 @@ it('nodens regnskabsrække findes i skabelonen og tåler noder uden kort', funct
 
     expect($html)->toContain('mgraph-node__fin')
         ->toContain("!(node.signals ?? []).includes('no_financials')")
-        ->toContain('node.card?.result_change > 0')
+        ->toContain('pil(node.card?.result_change)')->toContain("c >= 500 ? '▲'")
         // Ingen dobbelte anførselstegn inde i udtrykkene: de ville lukke attributten. Hele x-text og :title
         // skal kunne findes som én attribut der slutter med det forventede.
         ->and(preg_match('/x-text="\\(\\(node\\.card\\?\\.result != null[^"]*\\.join\\(\' · \'\\) : \'\'"/s', $html))->toBe(1)

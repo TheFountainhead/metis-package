@@ -134,7 +134,7 @@ class PortfolioTinglysningExport
         $companyName = $this->company['name'] ?? '';
         $cvr = $this->company['cvr'] ?? '';
 
-        $sheet->setCellValue('A1', trim("$companyName ($cvr)"));
+        $sheet->setCellValueExplicit('A1', trim("$companyName ($cvr)"), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
 
         $sheet->setCellValue('A3', 'Samlet hovedstol (DKK)');
@@ -152,7 +152,7 @@ class PortfolioTinglysningExport
         $sheet->getStyle('B6')->getNumberFormat()->setFormatCode('0.00%');
 
         $sheet->setCellValue('A7', 'Filtre anvendt');
-        $sheet->setCellValue('B7', $this->summarizeFilters());
+        $sheet->setCellValueExplicit('B7', (string) $this->summarizeFilters(), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
         $sheet->setCellValue('A8', 'Sampant-pantebreve i resultatet');
         $sheet->setCellValue('B8', $totals['sampant_pantebreve']);
@@ -179,8 +179,8 @@ class PortfolioTinglysningExport
 
         $row = 2;
         foreach ($this->tierBreakdown as $tier) {
-            $sheet->setCellValue('A' . $row, $tier['name'] ?? '');
-            $sheet->setCellValue('B' . $row, $tier['cvr'] ?? '');
+            $sheet->setCellValueExplicit('A' . $row, (string) ($tier['name'] ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('B' . $row, (string) ($tier['cvr'] ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             $sheet->setCellValue('C' . $row, (int) ($tier['depth'] ?? 0));
             $sheet->setCellValue('D' . $row, (int) ($tier['property_count'] ?? 0));
             $sheet->setCellValue('E' . $row, (int) ($tier['mortgage_count'] ?? 0));
@@ -219,7 +219,7 @@ class PortfolioTinglysningExport
             $tekst('E' . $row, $m['debitor'] ?? '');
             $tekst('F' . $row, $m['creditor'] ?? '');
             $sheet->setCellValue('G' . $row, (int) ($m['principal_amount'] ?? 0) / 100);
-            $sheet->setCellValue('H' . $row, $m['registration_date'] ?? '');
+            $sheet->setCellValueExplicit('H' . $row, (string) ($m['registration_date'] ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             $sheet->setCellValue('I' . $row, isset($m['ltv']['value']) ? (float) $m['ltv']['value'] : '');
             $sheet->setCellValue('J' . $row, ! empty($m['is_sampant']) ? 'Ja' : 'Nej');
             $tekst('K' . $row, $m['owner_company']['name'] ?? ($m['owner_company']['cvr'] ?? ''));
