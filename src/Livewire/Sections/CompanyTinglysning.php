@@ -412,6 +412,14 @@ class CompanyTinglysning extends MetisSection
      */
     public function exportXlsx()
     {
+        // Knappen er slået fra under hentningen, men et kald kan stadig komme (to faner, langsom klient).
+        // En halv liste giver for lav hovedstol og for få pantebreve i Oversigt uden at sige det.
+        if ($this->streaming) {
+            session()->flash('metis_tinglysning_export_error', __('Vent til alle pantebreve er hentet, og prøv igen.'));
+
+            return null;
+        }
+
         try {
             $export = new PortfolioTinglysningExport(
                 company: $this->company ?? [],

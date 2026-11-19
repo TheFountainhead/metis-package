@@ -761,3 +761,23 @@ it('🚨 standarden er hele træet: første opslag og "Nulstil filtre" beder beg
     // Det tredje opslag (efter nulstilling) er det samme som det første og kommer fra cachen.
     expect($dybder)->toBe(['full', '1']);
 });
+
+it('🚨 eksporten afvises og knappen er slået fra, mens listen stadig hentes', function () {
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview([
+        'streaming' => ['complete' => false, 'cursor' => 'abc', 'total_expected' => 145, 'delivered_so_far' => 50],
+    ]))]);
+
+    $c = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->assertSet('streaming', true);
+    expect(preg_match('/wire:click="exportXlsx"[^>]*\\sdisabled[\\s>]/s', $c->html()))->toBe(1);
+
+    $c->call('exportXlsx')->assertNoFileDownloaded()->assertSee('Vent til alle pantebreve er hentet');
+});
+
+it('når listen er hentet færdig, er knappen aktiv og eksporten giver en fil', function () {
+    Http::fake(['*tinglysning-overview*' => Http::response(fakeTinglysningOverview())]);
+
+    $c = Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->assertSet('streaming', false);
+    expect(preg_match('/wire:click="exportXlsx"[^>]*\\sdisabled[\\s>]/s', $c->html()))->toBe(0);
+
+    $c->call('exportXlsx')->assertFileDownloaded('tinglysning-28963610-'.now()->format('Y-m-d').'.xlsx');
+});
