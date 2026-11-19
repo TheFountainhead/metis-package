@@ -66,14 +66,29 @@ it('en statusændring viser status før og nu, og fremhæver en advarsel', funct
 });
 
 it('læser statusser som CVR skriver dem, sammenskrevet eller med mellemrum', function (string $status, string $forventet) {
-    selskabsDetalje(statusBesked(['status_from' => 'UNDERKONKURS', 'status_to' => $status], 'low'))
-        ->assertSee($forventet)->assertDontSeeHtml('text-red-700');
+    // Titel og beskrivelse er tomme, så teksten kun kan komme fra Før/Nu-boksen.
+    $besked = ['title' => 'Besked', 'description' => ''] + statusBesked(['status_from' => 'UNDERKONKURS', 'status_to' => $status], 'low');
+
+    selskabsDetalje($besked)->assertSeeInOrder(['Nu', $forventet])->assertDontSeeHtml('text-red-700');
 })->with([
     ['NORMAL', 'normal'],
     ['UNDERTVANGSOPLØSNING', 'under tvangsopløsning'],
     ['OPLØSTEFTERKONKURS', 'opløst efter konkurs'],
-    ['Under frivillig likvidation', 'under frivillig likvidation'],
+    ['Under  Frivillig Likvidation', 'under frivillig likvidation'],
 ]);
+
+it('🚨 en statusbesked via netværket forklares som en besked om selskabet, ikke om en ejendom', function () {
+    $besked = statusBesked();
+    $besked['watchlist'] = ['id' => 9, 'watch_type' => 'company', 'watch_value' => '12345678', 'display_label' => 'Borger Ejendomme ApS', 'origin' => 'lender_network'];
+
+    selskabsDetalje($besked)->assertSeeHtml('data-via-netvaerk')
+        ->assertSee('Selskabet er koncerntop for en af dine låntagere')
+        ->assertDontSee('Ejendommen ligger i koncernen')->assertDontSee('pant i ejendommen');
+
+    Http::fake(['*/v1/alerts*' => Http::response(['data' => [$besked]]), '*' => Http::response(['data' => []])]);
+    Livewire::test(AlertsInbox::class)->call('fetch')->assertSeeHtml('data-via-netvaerk')
+        ->assertSee('Borger Ejendomme ApS er koncerntop for en af dine låntagere.')->assertDontSee('Ejendommen ligger i koncernen');
+});
 
 it('🚨 tåler manglende og skæve data uden at vælte, og viser navne som tekst', function (array $besked) {
     $c = selskabsDetalje($besked);

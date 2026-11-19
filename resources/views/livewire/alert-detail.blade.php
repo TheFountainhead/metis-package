@@ -326,9 +326,14 @@
                     <div data-via-netvaerk class="mt-3 p-3 text-sm rounded-lg bg-blue-50 text-blue-900">
                         <span class="font-medium">{{ __('Via netværk') }}.</span>
                         {{-- Ingen tegnsætning lige efter linket: komponenten slutter med et linjeskift, som ville give et mellemrum før tegnet. --}}
+                        @if($selskabsbesked)
+                            {{-- En selskabsbesked handler om selskabet selv, ikke om en ejendom. --}}
+                            {{ __('Selskabet er koncerntop for en af dine låntagere. Du får beskeden, selv om du ikke selv følger selskabet.') }}
+                        @else
                         {{ __('Ejendommen ligger i koncernen under') }}
                         <x-metis-link type="cvr" :query="$alert['via_netvaerk']['top_cvr']" :label="$alert['via_netvaerk']['top_navn']" />
                         {{ __('(koncerntop for en af dine låntagere). Du får beskeden, selv om du ikke nødvendigvis har pant i ejendommen.') }}
+                        @endif
                     </div>
                 @endif
             </div>
