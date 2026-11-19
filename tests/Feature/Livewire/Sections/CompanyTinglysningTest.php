@@ -825,3 +825,123 @@ it('adresser med husnummer sorteres som tal: 9 før 10', function () {
 
     expect(array_column(Livewire::test(CompanyTinglysning::class, ['query' => '28963610'])->set('sortBy', 'address_asc')->instance()->sorteredeMortgages, 'id'))->toBe([2, 1]);
 });
+
+/** Falsk registry-api med $ialt pantebreve i sider á 50; cursor = "c<antal leveret>". */
+function storListe(int $ialt): void
+{
+    Http::fake(function ($request) use ($ialt) {
+        $fra = (int) ltrim((string) ($request->data()['cursor'] ?? 'c0'), 'c');
+        $til = min($ialt, $fra + 50);
+        $raekker = array_map(fn ($i) => sorteringsRaekke($i, "Vej {$i}", 1000 + $i, '2024-01-01', 0.5) + ['underpant' => [['name' => 'Bank A/S', 'cvr' => '11111111', 'amount' => 1]], 'dokument_identifikator' => "doc-{$i}"], range($fra + 1, $til));
+
+        return Http::response(fakeTinglysningOverview([
+            'mortgages_added' => $raekker,
+            'streaming' => ['complete' => $til >= $ialt, 'cursor' => $til >= $ialt ? null : "c{$til}", 'total_expected' => $ialt, 'delivered_so_far' => $til],
+        ]));
+    });
+}
+
+function koerHentning($c, int $maks = 100)
+{
+    for ($i = 0; $i < $maks && $c->get('streaming'); $i++) {
+        $c->call('pollForUpdates');
+    }
+
+    return $c;
+}
+
+it('🚨 hentningen stopper ved loftet, og siden siger tydeligt at resten ikke er hentet', function () {
+    storListe(1200);
+
+    $c = koerHentning(Livewire::test(CompanyTinglysning::class, ['query' => '28963610']));
+
+    expect($c->get('mortgages'))->toHaveCount(500)->and($c->get('streaming'))->toBeFalse();
+    $c->assertSeeHtml('data-ufuldstaendig')->assertSee('Viser 500 af 1.200 pantebreve.')
+        ->assertSee('Resten hentes ikke automatisk')->assertSee('Hent 500 mere')->assertSee('Hent alle (ca. 2 min.)')
+        ->assertDontSee('Panthavere');
+});
+
+it('"Hent 500 mere" henter præcis 500 til, og "Hent alle" henter resten, hvorefter beskeden forsvinder', function () {
+    storListe(2000);
+    $c = koerHentning(Livewire::test(CompanyTinglysning::class, ['query' => '28963610']));
+
+    koerHentning($c->call('hentFlere'));
+    expect($c->get('mortgages'))->toHaveCount(1000);
+    $c->assertSee('Viser 1.000 af 2.000 pantebreve.')->assertSee('Hent 500 mere');
+
+    koerHentning($c->call('hentFlere', true));
+    expect($c->get('mortgages'))->toHaveCount(2000)->and($c->get('cursor'))->toBeNull();
+    $c->assertDontSeeHtml('data-ufuldstaendig');
+});
+
+it('en liste under loftet hentes helt uden besked', function () {
+    storListe(320);
+
+    $c = koerHentning(Livewire::test(CompanyTinglysning::class, ['query' => '28963610']));
+
+    expect($c->get('mortgages'))->toHaveCount(320);
+    $c->assertDontSeeHtml('data-ufuldstaendig');
+});
+
+it('et filterskift starter forfra med loftet igen', function () {
+    storListe(1200);
+    $c = koerHentning(Livewire::test(CompanyTinglysning::class, ['query' => '28963610']));
+    koerHentning($c->call('hentFlere', true));
+
+    koerHentning($c->set('status', 'all'));
+
+    expect($c->get('mortgages'))->toHaveCount(500)->and($c->get('hentTil'))->toBe(CompanyTinglysning::AUTO_LOFT);
+});
+
+it('🚨 en delvis eksport mærkes ufuldstændig i regnearket', function () {
+    $tmp = tempnam(sys_get_temp_dir(), 'pte-');
+    $s = fopen($tmp, 'wb');
+    (new \TheFountainhead\Metis\Exports\PortfolioTinglysningExport(company: ['cvr' => '1', 'name' => 'X'], treeMeta: [], tierBreakdown: [], mortgages: [sorteringsRaekke(1, 'Vej 1', 1, null, null)], ialt: 1200))->writeTo($s);
+    fclose($s);
+    $ark = \PhpOffice\PhpSpreadsheet\IOFactory::load($tmp)->getSheetByName('Oversigt');
+    @unlink($tmp);
+
+    expect($ark->getCell('A10')->getValue())->toBe('UFULDSTÆNDIG')
+        ->and($ark->getCell('B10')->getValue())->toContain('1 af 1200 rækker');
+});
+
+it('🚨 eksport fra siden af en delvis liste giver en fil mærket ufuldstændig', function () {
+    storListe(1200);
+    $c = koerHentning(Livewire::test(CompanyTinglysning::class, ['query' => '28963610']))->call('exportXlsx');
+
+    $indhold = base64_decode($c->effects['download']['content'] ?? '');
+    $tmp = tempnam(sys_get_temp_dir(), 'pte-');
+    file_put_contents($tmp, $indhold);
+    $ark = \PhpOffice\PhpSpreadsheet\IOFactory::load($tmp)->getSheetByName('Oversigt');
+    @unlink($tmp);
+
+    expect($ark->getCell('B10')->getValue())->toContain('500 af 1200 rækker')
+        ->and(\PhpOffice\PhpSpreadsheet\IOFactory::load((function () use ($c) { $t = tempnam(sys_get_temp_dir(), 'p'); file_put_contents($t, base64_decode($c->effects['download']['content'])); return $t; })())->getSheetByName('Pantebreve')->getHighestRow())->toBe(501);
+});
+
+it('🚨 polling ligger på et eget element, der kun findes mens der hentes (ellers stablede timerne sig)', function () {
+    storListe(1200);
+    $c = Livewire::test(CompanyTinglysning::class, ['query' => '28963610']);
+
+    expect(substr_count($c->html(), 'wire:poll'))->toBe(1);
+    $c->assertSeeHtml('data-tinglysning-poll');
+    expect(preg_match('/^\\s*<div[^>]*wire:poll/', $c->html()))->toBe(0); // ikke på roden
+
+    koerHentning($c);
+    expect(substr_count($c->html(), 'wire:poll'))->toBe(0);
+
+    $c->call('hentFlere');
+    expect(substr_count($c->html(), 'wire:poll'))->toBe(1);
+});
+
+it('efter en fejlet hentning kan resten ikke genoptages i baggrunden, og "Prøv igen" starter forfra med loftet', function () {
+    storListe(1200);
+    $c = koerHentning(Livewire::test(CompanyTinglysning::class, ['query' => '28963610']));
+    $c->call('hentFlere', true)->set('hasError', true)->set('streaming', false);
+
+    $c->call('hentFlere');
+    expect($c->get('streaming'))->toBeFalse();
+
+    koerHentning($c->call('retry'));
+    expect($c->get('mortgages'))->toHaveCount(500)->and($c->get('hentTil'))->toBe(CompanyTinglysning::AUTO_LOFT);
+});

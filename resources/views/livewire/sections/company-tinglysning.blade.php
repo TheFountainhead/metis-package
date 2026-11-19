@@ -1,4 +1,11 @@
-<div @if($streaming) wire:poll.5s="pollForUpdates" @endif>
+<div>
+    {{-- 🚨 Polling ligger på sit EGET element, der fjernes helt når hentningen stopper. Lå wire:poll på roden og
+         blev slået til og fra, satte Livewire en ny timer i gang hver gang attributten kom tilbage, mens den gamle
+         kun var sat på pause og genoptog: efter "Hent mere" to gange polledes der tre gange pr. 5 s. Et element, der
+         forsvinder, stopper sin timer. --}}
+    @if($streaming)
+        <div wire:poll.5s="pollForUpdates" wire:key="tinglysning-poll" class="hidden" data-tinglysning-poll></div>
+    @endif
     <flux:card>
         <flux:heading size="lg" class="mb-4">{{ __('Tinglysning') }}</flux:heading>
 
@@ -161,7 +168,7 @@
                             {{-- Under hentningen er listen ufuldstændig: en eksport ville give en halv fil uden at sige det. --}}
                             @if(! $treeMeta || $streaming) disabled @endif
                             class="flex-1 px-3 py-1.5 text-xs border rounded bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 border-zinc-300 dark:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="{{ $streaming ? __('Venter på at alle pantebreve er hentet') : __('Eksportér til XLSX (Oversigt + Tier-breakdown + Pantebreve)') }}">
+                            title="{{ $streaming ? __('Venter på at alle pantebreve er hentet') : ($this->ufuldstaendig ? __('Eksporterer kun de hentede pantebreve; filen mærkes ufuldstændig') : __('Eksportér til XLSX (Oversigt + Tier-breakdown + Pantebreve)')) }}">
                         <span wire:loading.remove wire:target="exportXlsx">{{ __('Eksportér XLSX') }}</span>
                         <span wire:loading wire:target="exportXlsx">{{ __('Eksporterer...') }}</span>
                     </button>
@@ -182,6 +189,23 @@
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     <span>{{ __('Henter pantebreve') }}: {{ $deliveredSoFar }} / {{ $totalExpected }}</span>
+                </div>
+            @endif
+
+            {{-- Stoppet ved loftet: sig det tydeligt, og lad brugeren hente resten. --}}
+            @if($this->ufuldstaendig)
+                @php($resterende = max(0, $totalExpected - count($mortgages)))
+                <div class="mb-4 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 text-sm dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800" data-ufuldstaendig role="status">
+                    <p class="font-medium">{{ __('Viser :hentet af :ialt pantebreve.', ['hentet' => number_format(count($mortgages), 0, ',', '.'), 'ialt' => number_format($totalExpected, 0, ',', '.')]) }}</p>
+                    <p class="mt-1">{{ __('Resten hentes ikke automatisk, fordi koncernen er stor. Sortering, sampant, panthavere og eksport gælder kun de hentede pantebreve.') }}</p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <button type="button" wire:click="hentFlere" class="px-3 py-1.5 text-xs border rounded bg-white hover:bg-zinc-50 border-amber-300 dark:bg-zinc-900 dark:border-amber-800">
+                            {{ __('Hent :antal mere', ['antal' => number_format(min($resterende, \TheFountainhead\Metis\Livewire\Sections\CompanyTinglysning::AUTO_LOFT), 0, ',', '.')]) }}
+                        </button>
+                        <button type="button" wire:click="hentFlere(true)" class="px-3 py-1.5 text-xs border rounded bg-white hover:bg-zinc-50 border-amber-300 dark:bg-zinc-900 dark:border-amber-800">
+                            {{ __('Hent alle (ca. :min min.)', ['min' => max(1, (int) ceil($resterende / 50 * 5 / 60))]) }}
+                        </button>
+                    </div>
                 </div>
             @endif
 
@@ -237,7 +261,7 @@
                  portefølje giver et for lavt beløb pr. panthaver, og til
                  forskel fra pantebrevs-tabellen (der har spinner + skeleton)
                  ville tallet her se afsluttet ud mens det stadig voksede. --}}
-            @if(! $streaming && count($this->lenders) > 0)
+            @if(! $streaming && ! $this->ufuldstaendig && count($this->lenders) > 0)
                 <div class="mb-6">
                     <h3 class="text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-2">{{ __('Panthavere') }}</h3>
                     <div class="overflow-x-auto">

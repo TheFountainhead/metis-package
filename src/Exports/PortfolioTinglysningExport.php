@@ -24,6 +24,8 @@ class PortfolioTinglysningExport
         public readonly array $tierBreakdown,
         public readonly array $mortgages,
         public readonly array $filters = [],
+        // Sat når listen kun er delvist hentet: så mange pantebreve er der i alt.
+        public readonly ?int $ialt = null,
     ) {
         // phpoffice/phpspreadsheet is a `suggest` dependency — only required
         // for the XLSX export feature. Guard at construction so callers get
@@ -164,6 +166,12 @@ class PortfolioTinglysningExport
 
         $sheet->setCellValue('A9', 'Eksporteret');
         $sheet->setCellValue('B9', now()->toIso8601String());
+
+        if ($this->ialt !== null) {
+            $sheet->setCellValue('A10', 'UFULDSTÆNDIG');
+            $sheet->setCellValueExplicit('B10', sprintf('Indeholder %d af %d rækker. Resten var ikke hentet, da filen blev dannet. Samlet hovedstol, antal pantebreve og sampant ovenfor gælder kun de hentede rækker; antal ejendomme, vægtet LTV og arket Tier-breakdown gælder hele resultatet med de valgte filtre.', count($this->mortgages), $this->ialt), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->getStyle('A10:B10')->getFont()->setBold(true)->getColor()->setRGB('B91C1C');
+        }
 
         foreach (['A1', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9'] as $cell) {
             if ($cell === 'A1') {
