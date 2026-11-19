@@ -169,7 +169,7 @@ class PortfolioTinglysningExport
 
         if ($this->ialt !== null) {
             $sheet->setCellValue('A10', 'UFULDSTÆNDIG');
-            $sheet->setCellValueExplicit('B10', sprintf('Indeholder %d af %d rækker. Resten var ikke hentet, da filen blev dannet. Samlet hovedstol, antal pantebreve og sampant ovenfor gælder kun de hentede rækker; antal ejendomme, vægtet LTV og arket Tier-breakdown gælder hele koncernen.', count($this->mortgages), $this->ialt), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('B10', sprintf('Indeholder %d af %d rækker. Resten var ikke hentet, da filen blev dannet. Samlet hovedstol, antal pantebreve og sampant ovenfor gælder kun de hentede rækker; antal ejendomme, vægtet LTV og arket Tier-breakdown gælder hele resultatet med de valgte filtre.', count($this->mortgages), $this->ialt), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             $sheet->getStyle('A10:B10')->getFont()->setBold(true)->getColor()->setRGB('B91C1C');
         }
 
