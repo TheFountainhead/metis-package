@@ -108,7 +108,7 @@ class CompanyTinglysning extends MetisSection
      */
     public function hentFlere(bool $alle = false): void
     {
-        if ($this->cursor === null || $this->streaming) {
+        if ($this->cursor === null || $this->streaming || $this->hasError) {
             return;
         }
 
@@ -131,6 +131,8 @@ class CompanyTinglysning extends MetisSection
         // strømmen: taelleren stod stadig på 2 fra før. Invarianten skal holde
         // ALLE steder tilstanden nulstilles, ikke kun på succes-stien.
         $this->pollFailures = 0;
+        // Forfra fra side 1: loftet gælder igen, også efter "Hent alle".
+        $this->hentTil = self::AUTO_LOFT;
         $this->fetch();
     }
 

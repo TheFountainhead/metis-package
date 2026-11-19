@@ -1,4 +1,11 @@
-<div @if($streaming) wire:poll.5s="pollForUpdates" @endif>
+<div>
+    {{-- 🚨 Polling ligger på sit EGET element, der fjernes helt når hentningen stopper. Lå wire:poll på roden og
+         blev slået til og fra, satte Livewire en ny timer i gang hver gang attributten kom tilbage, mens den gamle
+         kun var sat på pause og genoptog: efter "Hent mere" to gange polledes der tre gange pr. 5 s. Et element, der
+         forsvinder, stopper sin timer. --}}
+    @if($streaming)
+        <div wire:poll.5s="pollForUpdates" wire:key="tinglysning-poll" class="hidden" data-tinglysning-poll></div>
+    @endif
     <flux:card>
         <flux:heading size="lg" class="mb-4">{{ __('Tinglysning') }}</flux:heading>
 

@@ -902,7 +902,7 @@ it('🚨 en delvis eksport mærkes ufuldstændig i regnearket', function () {
     @unlink($tmp);
 
     expect($ark->getCell('A10')->getValue())->toBe('UFULDSTÆNDIG')
-        ->and($ark->getCell('B10')->getValue())->toContain('1 af 1200 pantebreve');
+        ->and($ark->getCell('B10')->getValue())->toContain('1 af 1200 rækker');
 });
 
 it('🚨 eksport fra siden af en delvis liste giver en fil mærket ufuldstændig', function () {
@@ -915,6 +915,33 @@ it('🚨 eksport fra siden af en delvis liste giver en fil mærket ufuldstændig
     $ark = \PhpOffice\PhpSpreadsheet\IOFactory::load($tmp)->getSheetByName('Oversigt');
     @unlink($tmp);
 
-    expect($ark->getCell('B10')->getValue())->toContain('500 af 1200 pantebreve')
+    expect($ark->getCell('B10')->getValue())->toContain('500 af 1200 rækker')
         ->and(\PhpOffice\PhpSpreadsheet\IOFactory::load((function () use ($c) { $t = tempnam(sys_get_temp_dir(), 'p'); file_put_contents($t, base64_decode($c->effects['download']['content'])); return $t; })())->getSheetByName('Pantebreve')->getHighestRow())->toBe(501);
+});
+
+it('🚨 polling ligger på et eget element, der kun findes mens der hentes (ellers stablede timerne sig)', function () {
+    storListe(1200);
+    $c = Livewire::test(CompanyTinglysning::class, ['query' => '28963610']);
+
+    expect(substr_count($c->html(), 'wire:poll'))->toBe(1);
+    $c->assertSeeHtml('data-tinglysning-poll');
+    expect(preg_match('/^\\s*<div[^>]*wire:poll/', $c->html()))->toBe(0); // ikke på roden
+
+    koerHentning($c);
+    expect(substr_count($c->html(), 'wire:poll'))->toBe(0);
+
+    $c->call('hentFlere');
+    expect(substr_count($c->html(), 'wire:poll'))->toBe(1);
+});
+
+it('efter en fejlet hentning kan resten ikke genoptages i baggrunden, og "Prøv igen" starter forfra med loftet', function () {
+    storListe(1200);
+    $c = koerHentning(Livewire::test(CompanyTinglysning::class, ['query' => '28963610']));
+    $c->call('hentFlere', true)->set('hasError', true)->set('streaming', false);
+
+    $c->call('hentFlere');
+    expect($c->get('streaming'))->toBeFalse();
+
+    koerHentning($c->call('retry'));
+    expect($c->get('mortgages'))->toHaveCount(500)->and($c->get('hentTil'))->toBe(CompanyTinglysning::AUTO_LOFT);
 });
